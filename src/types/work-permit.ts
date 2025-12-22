@@ -26,11 +26,12 @@ export interface ParsedField {
   cellKey: string;        // 单元格坐标 "R1C1"
   label: string;          // 标签内容 (左侧单元格)
   fieldName: string;      // 规范化字段名 "department", "location", "date"
-  fieldType: 'text' | 'department' | 'date' | 'number' | 'personnel' | 'signature' | 'option' | 'match' | 'other'; // 字段类型，match 用于匹配专用字段
+  fieldType: 'text' | 'department' | 'date' | 'number' | 'personnel' | 'signature' | 'option' | 'match' | 'section' | 'other'; // 🟢 新增 section 类型
   hint: string;           // 提示文本
   editableHint?: string;  // 编辑后的提示（在编辑器中修改）
   options?: string[];     // 🟢 互斥选项列表（如 ["是", "否"]）
   required?: boolean;     // 🟢 是否为必填项（模板设计时指定）
+  boundTemplateId?: string; // 🟢 section类型绑定的二级模板ID
 }
 
 // 🟢 审批人策略：新增 'specific_dept_manager'、'template_text_match'、'template_option_match'
@@ -50,6 +51,9 @@ export type Template = {
     text: string; // 如 "仅供内部审批"
     enabled: boolean;
   };
+  // 🟢 V3.3 模板级别系统
+  level?: string; // 'primary' | 'secondary'
+  sectionBindings?: string; // JSON字符串，存储section单元格与二级模板的绑定关系
 };
 
 // ==========================================

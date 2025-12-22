@@ -58,6 +58,10 @@ model WorkPermitTemplate {
   // 格式: [{ cellKey: "R1C1", label: "部门", fieldName: "department", fieldType: "department", hint: "..." }]
   parsedFields  String?
 
+  // 🟢 V3.3 模板级别系统
+  level         String   @default("primary")  // primary=一级, secondary=二级
+  sectionBindings String?                    // JSON: { "R5C3": "templateId", ... } section单元格绑定的二级模板
+
   isLocked      Boolean  @default(false)
   createdAt     DateTime @default(now())
   records       WorkPermitRecord[]
