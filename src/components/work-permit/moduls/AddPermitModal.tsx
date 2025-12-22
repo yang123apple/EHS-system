@@ -355,6 +355,8 @@ export default function AddPermitModal({
                     onClick={() => {
                       setSelectedTemplate(t);
                       setPermitFormData({});
+                      // 🟢 V3.4 应用模板的纸张方向
+                      setOrientation((t.orientation as 'portrait' | 'landscape') || 'portrait');
                     }}
                     className={`p-3 rounded-lg cursor-pointer text-sm transition-all border ${
                       selectedTemplate?.id === t.id
@@ -543,6 +545,10 @@ export default function AddPermitModal({
               fieldName={currentSectionCell.fieldName}
               boundTemplate={boundTemplate}
               parentCode={previewCode}
+              parentFormData={permitFormData}
+              parentParsedFields={selectedTemplate?.parsedFields ? JSON.parse(selectedTemplate.parsedFields) : []}
+              parentApprovalLogs={[]} // 新建作业单时暂无审批日志
+              parentWorkflowConfig={selectedTemplate?.workflowConfig ? JSON.parse(selectedTemplate.workflowConfig) : []}
               existingData={permitFormData[`SECTION_${currentSectionCell.cellKey}`]}
               onSave={handleSectionSave}
               onClose={() => {

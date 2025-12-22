@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   X,
   Printer,
@@ -51,6 +51,13 @@ export default function RecordDetailModal({
   // 🔵 V3.4 Section相关state
   const [sectionModalOpen, setSectionModalOpen] = useState(false);
   const [currentSectionCell, setCurrentSectionCell] = useState<{ cellKey: string; fieldName: string } | null>(null);
+
+  // 🟢 V3.4 初始化纸张方向
+  useEffect(() => {
+    if (record.template?.orientation) {
+      setOrientation(record.template.orientation as 'portrait' | 'landscape');
+    }
+  }, [record.template?.orientation]);
 
   // 预解析表单数据和模板解析字段，供找人策略使用
   const recordData = useMemo(() => {
@@ -714,6 +721,12 @@ export default function RecordDetailModal({
         // 从allTemplates中查找完整的template信息
         const boundTemplate = allTemplates.find(t => t.id === sectionData.templateId) || null;
         
+        // 解析审批日志
+        const approvalLogs = record.approvalLogs ? JSON.parse(record.approvalLogs) : [];
+        
+        // 解析流程配置
+        const workflowConfig = record.template?.workflowConfig ? JSON.parse(record.template.workflowConfig) : [];
+        
         return (
           <SectionFormModal
             isOpen={true}
@@ -721,6 +734,10 @@ export default function RecordDetailModal({
             fieldName={currentSectionCell.fieldName}
             boundTemplate={boundTemplate}
             parentCode={record.code}
+            parentFormData={recordData}
+            parentParsedFields={parsedFields}
+            parentApprovalLogs={approvalLogs}
+            parentWorkflowConfig={workflowConfig}
             existingData={sectionData}
             onSave={() => {}} // 只读模式，不需要保存
             onClose={() => {

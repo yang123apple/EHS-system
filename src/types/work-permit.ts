@@ -54,6 +54,8 @@ export type Template = {
   // ğŸŸ¢ V3.3 æ¨¡æ¿çº§åˆ«ç³»ç»Ÿ
   level?: string; // 'primary' | 'secondary'
   sectionBindings?: string; // JSONå­—ç¬¦ä¸²ï¼Œå­˜å‚¨sectionå•å…ƒæ ¼ä¸äºŒçº§æ¨¡æ¿çš„ç»‘å®šå…³ç³»
+  // ğŸŸ¢ V3.4 çº¸å¼ æ–¹å‘
+  orientation?: string; // 'portrait' | 'landscape'
 };
 
 // ==========================================
@@ -196,16 +198,16 @@ export interface Department {
   children?: Department[];
 }
 // ==========================================
-// 5.  V3.4 ¶ş¼¶Ä£°åPartÏµÍ³
+// 5.  V3.4 ï¿½ï¿½ï¿½ï¿½Ä£ï¿½ï¿½PartÏµÍ³
 // ==========================================
 
-// PartÊ°È¡²ßÂÔ
-export type PartPickStrategy = 'field_match'; // Ö¸¶¨×Ö¶Î²éÕÒ
+// PartÊ°È¡ï¿½ï¿½ï¿½ï¿½
+export type PartPickStrategy = 'field_match'; // Ö¸ï¿½ï¿½ï¿½Ö¶Î²ï¿½ï¿½ï¿½
 
-// PartÅäÖÃÏî
+// Partï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 export interface WorkflowPart {
-  part: number;              // PartĞòºÅ (1, 2, 3...)
-  pickStrategy: PartPickStrategy; // Ê°È¡²ßÂÔ
+  part: number;              // Partï¿½ï¿½ï¿½ (1, 2, 3...)
+  pickStrategy: PartPickStrategy; // Ê°È¡ï¿½ï¿½ï¿½ï¿½
   pickConfig: {
   };
 }

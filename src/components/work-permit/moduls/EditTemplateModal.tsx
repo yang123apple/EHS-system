@@ -77,6 +77,9 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
       } else {
         setSectionBindings({});
       }
+      
+      // 🟢 V3.4 初始化纸张方向
+      setOrientation((template.orientation as 'portrait' | 'landscape') || 'portrait');
     }
   }, [isOpen, template]);
 
@@ -110,7 +113,9 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
         watermarkSettings: watermark,
         // 🟢 V3.4 保存级别和绑定
         level,
-        sectionBindings: JSON.stringify(sectionBindings)
+        sectionBindings: JSON.stringify(sectionBindings),
+        // 🟢 V3.4 保存纸张方向
+        orientation
       });
 
       alert('修改已保存');

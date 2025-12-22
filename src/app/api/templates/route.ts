@@ -19,7 +19,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, type, structureJson, isLocked, workflowConfig, userId, userName, parsedFields: clientParsedFields } = body;
+    const { name, type, structureJson, isLocked, workflowConfig, userId, userName, parsedFields: clientParsedFields, orientation } = body;
     if (!name || !type || !structureJson) {
       return NextResponse.json({ error: '缺少必填字段' }, { status: 400 });
     }
@@ -63,6 +63,7 @@ export async function POST(req: Request) {
         isLocked: isLocked || false,
         workflowConfig: workflowConfig || null, // ✅ 支持创建时带流程
         parsedFields: JSON.stringify(parsedFields), // 🟢 保存解析结果
+        orientation: orientation || 'portrait', // 🟢 V3.4 保存纸张方向
       },
     });
 
@@ -127,7 +128,7 @@ export async function DELETE(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-    const { id, isLocked, structureJson, name, type, workflowConfig, userId, userName, parsedFields: clientParsedFields, level, sectionBindings, watermarkSettings } = body; 
+    const { id, isLocked, structureJson, name, type, workflowConfig, userId, userName, parsedFields: clientParsedFields, level, sectionBindings, watermarkSettings, orientation } = body; 
 
     if (!id) return NextResponse.json({ error: '缺少参数' }, { status: 400 });
 
@@ -183,8 +184,8 @@ export async function PATCH(req: Request) {
     // if (watermarkSettings !== undefined) dataToUpdate.watermarkSettings = watermarkSettings;
     // �🔵 V3.4 更新模板级别和section绑定
     if (level !== undefined) dataToUpdate.level = level;
-    if (sectionBindings !== undefined) dataToUpdate.sectionBindings = sectionBindings;
-
+    if (sectionBindings !== undefined) dataToUpdate.sectionBindings = sectionBindings;    // 🟢 V3.4 更新纸张方向
+    if (orientation !== undefined) dataToUpdate.orientation = orientation;
     const updatedTemplate = await prisma.workPermitTemplate.update({
       where: { id },
       data: dataToUpdate,

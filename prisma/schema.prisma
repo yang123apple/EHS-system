@@ -62,6 +62,9 @@ model WorkPermitTemplate {
   level         String   @default("primary")  // primary=一级, secondary=二级
   sectionBindings String?                    // JSON: { "R5C3": "templateId", ... } section单元格绑定的二级模板
 
+  // 🟢 V3.4 纸张方向设置
+  orientation   String   @default("portrait") // portrait=纵向, landscape=横向
+
   isLocked      Boolean  @default(false)
   createdAt     DateTime @default(now())
   records       WorkPermitRecord[]

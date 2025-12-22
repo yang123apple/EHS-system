@@ -17,6 +17,10 @@ interface Props {
   fieldName: string; // 字段名，用于生成编号
   boundTemplate: Template | null; // 绑定的二级模板
   parentCode: string; // 父表单编号
+  parentFormData?: Record<string, any>; // 🔵 母单表单数据，用于Part字段继承
+  parentParsedFields?: ParsedField[]; // 🔵 母单解析字段
+  parentApprovalLogs?: any[]; // 🔵 母单审批日志（用于提取审核字段）
+  parentWorkflowConfig?: any[]; // 🔵 母单流程配置（用于匹配步骤和单元格）
   existingData?: SectionData; // 已有的section数据（编辑模式）
   onSave: (data: SectionData) => void;
   readOnly?: boolean; // 只读模式
@@ -29,6 +33,10 @@ export default function SectionFormModal({
   fieldName,
   boundTemplate,
   parentCode,
+  parentFormData = {},
+  parentParsedFields = [],
+  parentApprovalLogs = [],
+  parentWorkflowConfig = [],
   existingData,
   onSave,
   readOnly = false
@@ -66,18 +74,179 @@ export default function SectionFormModal({
     }
   }, [boundTemplate?.parsedFields]);
 
-  // 初始化表单数据
+  // 🔵 解析Part配置（二级模板的workflowConfig）
+  const workflowParts = useMemo(() => {
+    if (!boundTemplate?.workflowConfig) return [];
+    try {
+      const config = JSON.parse(boundTemplate.workflowConfig);
+      return Array.isArray(config) ? config : [];
+    } catch (e) {
+      console.error('Failed to parse workflow parts:', e);
+      return [];
+    }
+  }, [boundTemplate?.workflowConfig]);
+
+  // 🔵 Part字段继承：从母单数据或审批日志中提取字段值
+  const inheritedData = useMemo(() => {
+    const inherited: Record<string, any> = {};
+    
+    if (workflowParts.length === 0) {
+      return inherited;
+    }
+
+    console.log('🔵 Part字段继承开始:', {
+      workflowParts,
+      parentParsedFields,
+      parentFormData,
+      parentApprovalLogs,
+      parentWorkflowConfig
+    });
+
+    // 遍历每个Part配置
+    workflowParts.forEach((part: any) => {
+      if (part.pickStrategy === 'field_match' && part.pickConfig?.fieldName && part.outputCell) {
+        const targetFieldName = part.pickConfig.fieldName;
+        
+        // 在母单解析字段中查找匹配的字段
+        const matchedField = parentParsedFields.find(
+          (field) => field.label === targetFieldName || field.fieldName === targetFieldName
+        );
+
+        if (matchedField) {
+          const cellKey = matchedField.cellKey; // 例如 "R30C4"
+          const [r, c] = cellKey.substring(1).split('C').map(n => parseInt(n) - 1);
+          const inputKey = `${r}-${c}`;
+          let value = parentFormData[inputKey];
+
+          // 🟢 如果formData中没有值，尝试从审批日志中提取（针对workflow审核字段）
+          if (!value && parentApprovalLogs.length > 0 && parentWorkflowConfig.length > 0) {
+            console.log('🔍 尝试从审批日志提取:', {
+              cellKey,
+              r: r + 1,
+              parentWorkflowConfig,
+              parentApprovalLogs
+            });
+
+            // 查找该单元格对应的workflow步骤
+            const workflowStep = parentWorkflowConfig.find(
+              (step: any) => {
+                console.log('🔍 检查workflow步骤:', {
+                  step,
+                  cellKey,
+                  r,
+                  matchCellKey: step.cellKey === cellKey,
+                  matchRowIndex: step.rowIndex === r
+                });
+                return step.cellKey === cellKey || step.rowIndex === r;
+              }
+            );
+
+            console.log('🔍 找到workflow步骤:', workflowStep);
+
+            if (workflowStep) {
+              // 在审批日志中查找该步骤的签核记录
+              const approvalLog = parentApprovalLogs.find(
+                (log: any) => {
+                  console.log('🔍 检查审批日志:', {
+                    log,
+                    matchStep: log.step === workflowStep.step,
+                    matchStepIndex: log.stepIndex === workflowStep.step
+                  });
+                  return log.step === workflowStep.step || log.stepIndex === workflowStep.step;
+                }
+              );
+
+              console.log('🔍 找到审批日志:', approvalLog);
+
+              if (approvalLog) {
+                // 拼接审核信息：意见 + 人名 + 日期
+                const parts = [];
+                if (approvalLog.opinion) parts.push(approvalLog.opinion);
+                // 优先使用approver，其次operatorName，最后userName
+                const name = approvalLog.approver || approvalLog.operatorName || approvalLog.userName;
+                if (name) parts.push(name);
+                if (approvalLog.timestamp) {
+                  const date = new Date(approvalLog.timestamp);
+                  parts.push(date.toLocaleDateString('zh-CN'));
+                }
+                value = parts.join(' ');
+
+                console.log('✅ 从审批日志提取字段值:', {
+                  part: part.name,
+                  fieldName: targetFieldName,
+                  cellKey,
+                  workflowStep: workflowStep.name,
+                  approvalLog,
+                  extractedParts: parts,
+                  value
+                });
+              }
+            }
+          }
+
+          if (value) {
+            // 计算子单outputCell的inputKey
+            const [outR, outC] = part.outputCell.substring(1).split('C').map((n: string) => parseInt(n) - 1);
+            const outputKey = `${outR}-${outC}`;
+            inherited[outputKey] = value;
+
+            console.log('✅ Part字段继承成功:', {
+              part: part.name,
+              fieldName: targetFieldName,
+              fromCell: cellKey,
+              toCell: part.outputCell,
+              value
+            });
+          } else {
+            console.warn('⚠️ Part字段值为空:', {
+              part: part.name,
+              fieldName: targetFieldName,
+              cellKey,
+              inputKey,
+              formDataValue: parentFormData[inputKey],
+              hasApprovalLogs: parentApprovalLogs.length > 0,
+              hasWorkflowConfig: parentWorkflowConfig.length > 0,
+              noWorkflowStepFound: '未找到对应的workflow步骤'
+            });
+          }
+        } else {
+          console.warn('⚠️ Part字段未找到:', {
+            part: part.name,
+            targetFieldName,
+            availableFields: parentParsedFields.map(f => ({ label: f.label, fieldName: f.fieldName }))
+          });
+        }
+      }
+    });
+
+    return inherited;
+  }, [parentFormData, parentParsedFields, parentApprovalLogs, parentWorkflowConfig, workflowParts]);
+
+  // 初始化表单数据（合并继承数据）
   useEffect(() => {
     if (isOpen) {
       if (existingData?.data) {
-        setFormData(existingData.data);
+        // 编辑模式：合并已有数据和继承数据（继承数据优先级更低）
+        const mergedData = { ...inheritedData, ...existingData.data };
+        setFormData(mergedData);
+        console.log('🔵 子单合并数据:', { inheritedData, existingData: existingData.data, mergedData });
       } else {
-        setFormData({});
+        // 新建时使用继承的数据
+        console.log('🔵 子单初始化数据 - inheritedData:', inheritedData);
+        setFormData(inheritedData);
+        console.log('🔵 子单设置formData完成');
+      }
+      
+      // 🟢 V3.4 初始化纸张方向
+      if (boundTemplate?.orientation) {
+        setOrientation(boundTemplate.orientation as 'portrait' | 'landscape');
       }
     }
-  }, [isOpen, existingData]);
+  }, [isOpen, existingData, inheritedData, boundTemplate?.orientation]);
 
   const handleSave = () => {
+    if (!boundTemplate) return;
+    
     // 验证必填字段
     const requiredFields = parsedFields.filter(f => f.required);
     const missingFields: string[] = [];
@@ -190,6 +359,7 @@ export default function SectionFormModal({
 
             {templateData && (
               <ExcelRenderer
+                key={`${boundTemplate?.id}-${JSON.stringify(formData)}`}
                 templateData={templateData}
                 initialData={formData}
                 parsedFields={parsedFields}

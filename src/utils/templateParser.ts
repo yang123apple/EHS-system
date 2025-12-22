@@ -205,12 +205,34 @@ const FIELD_TYPE_KEYWORDS: Record<string, string[]> = {
 
 /** 检测字符串中是否包含选项标记符（£、□、☑等） */
 function hasOptionMarker(str: string): boolean {
-  return /[£□☑]/.test(str);
+  // Unicode选项标记符
+  if (/[£□☑✓✔]/.test(str)) return true;
+  
+  // Wingdings/Wingdings2字体的选项标记字符
+  // R = ☑ (Wingdings2), P = ☐ (Wingdings2), O = ☐ (Wingdings)
+  const trimmed = str.trim();
+  if (trimmed === 'R' || trimmed === 'P' || trimmed === 'O') return true;
+  
+  // 检测是否为纯符号（单字符且为特殊符号）
+  if (trimmed.length === 1 && /[ROPQSTUVWXYZ]/.test(trimmed)) {
+    // 这些字母在Wingdings系列字体中通常是复选框/单选框标记
+    return true;
+  }
+  
+  return false;
 }
 
 /** 移除字符串中的所有选项标记符 */
 function stripOptionMarkers(str: string): string {
-  return str.replace(/[£□☑]/g, '').trim();
+  // 移除Unicode标记符
+  let result = str.replace(/[£□☑✓✔]/g, '').trim();
+  
+  // 移除Wingdings标记字符（单独出现时）
+  if (/^[ROPQSTUVWXYZ]$/.test(result)) {
+    return '';
+  }
+  
+  return result;
 }
 
 /**
