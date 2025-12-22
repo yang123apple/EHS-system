@@ -13,7 +13,7 @@ interface Props {
   allTemplates?: Template[]; // 🟢 V3.4 所有模板列表（用于选择二级模板）
 }
 
-export default function EditTemplateModal({ isOpen, onClose, template, onSuccess }: Props) {
+export default function EditTemplateModal({ isOpen, onClose, template, onSuccess, allTemplates }: Props) {
   const [name, setName] = useState('');
   const [type, setType] = useState('');
   const [templateData, setTemplateData] = useState<any>(null);

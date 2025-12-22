@@ -29,6 +29,7 @@ interface ExcelRendererProps {
   // 🔵 V3.4 Section绑定回调
   onSectionBind?: (cellKey: string) => void;
   sectionBindings?: Record<string, string>; // cellKey -> templateId
+  onSectionClick?: (cellKey: string, fieldName: string) => void; // Section单元格点击（编辑模式）
 }
 
 // 自定义日期选择器：支持临时状态（tempDate/tempTime），只有在用户点“确认”后才触发 onChange
@@ -236,8 +237,19 @@ export default function ExcelRenderer({
   onCellClick,
   isPickingCell = false,
   onSectionBind,
-  sectionBindings = {}
+  sectionBindings = {},
+  onSectionClick
 }: ExcelRendererProps) {
+  // 🔵 调试：检查parsedFields中是否有section字段
+  useEffect(() => {
+    const sectionFields = parsedFields.filter(f => f.fieldType === 'section');
+    if (sectionFields.length > 0) {
+      console.log('🟣 Found section fields in parsedFields:', sectionFields);
+    } else {
+      console.log('⚠️ No section fields found in parsedFields. Total fields:', parsedFields.length);
+    }
+  }, [parsedFields]);
+  
   // 使用惰性初始化：只在挂载时从 props.templateData 读取一次，避免后续 props 引用变化导致重复同步和死循环
   const [gridData, setGridData] = useState<any[][]>(() => {
     const rawGrid = Array.isArray(templateData) ? templateData : (templateData?.grid || []);
@@ -533,6 +545,14 @@ export default function ExcelRenderer({
 
     // 🟣 V3.4 Section类型单元格处理
     if (parsedField?.fieldType === 'section') {
+      console.log('🟣 Rendering section cell:', { 
+        cellKey, 
+        mode, 
+        fieldType: parsedField.fieldType, 
+        hasSectionData: !!formData[`SECTION_${cellKey}`],
+        sectionData: formData[`SECTION_${cellKey}`]
+      });
+      
       // 设计模式：显示绑定按钮
       if (mode === 'design') {
         const boundTemplateId = sectionBindings[cellKey];
@@ -567,22 +587,47 @@ export default function ExcelRenderer({
                 ? 'bg-green-50 border-green-500 text-green-700 font-bold' 
                 : 'bg-blue-50 border-blue-400 text-blue-700 hover:bg-blue-100'
             }`}
-            onClick={() => alert('Section表单填写功能开发中...')}
+            onClick={() => {
+              console.log('🔵 Section button clicked:', { 
+                cellKey, 
+                label: parsedField.label, 
+                onSectionClick: typeof onSectionClick 
+              });
+              if (onSectionClick) {
+                onSectionClick(cellKey, parsedField.label || '子表单');
+              } else {
+                console.error('❌ onSectionClick is undefined');
+              }
+            }}
             style={styleObj}
           >
             {sectionData ? '✓ 已填写' : '📝 填写子表单'}
           </button>
         );
       }
-      // 查看模式：显示状态
+      // 查看模式：显示可点击按钮
       if (mode === 'view') {
         const sectionData = formData[`SECTION_${cellKey}`];
         return (
-          <div className={`w-full h-full flex items-center justify-center text-xs ${
-            sectionData ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'
-          }`} style={styleObj}>
-            {sectionData ? '✓ 已填写' : '未填写'}
-          </div>
+          <button
+            type="button"
+            className={`w-full h-full px-2 text-xs rounded border-2 transition print:border-0 print:bg-transparent ${
+              sectionData 
+                ? 'bg-green-50 border-green-500 text-green-700 font-bold hover:bg-green-100' 
+                : 'bg-slate-100 border-slate-300 text-slate-500'
+            }`}
+            onClick={() => {
+              if (sectionData && onSectionClick) {
+                console.log('🔵 View mode section clicked:', { cellKey, sectionData });
+                onSectionClick(cellKey, parsedField.label || '子表单');
+              }
+            }}
+            disabled={!sectionData}
+            style={styleObj}
+          >
+            <span className="print:hidden">{sectionData ? '👁️ 查看子表单' : '未填写'}</span>
+            <span className="hidden print:inline">{sectionData ? '✓ 已填写' : '未填写'}</span>
+          </button>
         );
       }
     }

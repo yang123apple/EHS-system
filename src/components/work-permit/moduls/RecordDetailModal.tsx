@@ -13,6 +13,7 @@ import {
 import { PermitRecord } from '@/types/work-permit';
 import { PermitService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
+import SectionFormModal from './SectionFormModal';
 import PrintStyle from '../PrintStyle';
 // 🟢 引入工具函数
 import { findDeptRecursive } from '@/utils/departmentUtils';
@@ -26,6 +27,7 @@ interface Props {
   user: any;
   departments: any[];
   allUsers: any[];
+  allTemplates: any[]; // 🔵 新增：用于section模板查询
   onRefresh: () => void;
   onOpenApproval: () => void;
   onViewAttachments: (files: any[]) => void;
@@ -38,12 +40,17 @@ export default function RecordDetailModal({
   user,
   departments,
   allUsers,
+  allTemplates,
   onRefresh,
   onOpenApproval,
   onViewAttachments,
 }: Props) {
   const [replyText, setReplyText] = useState<{ [key: number]: string }>({});
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  
+  // 🔵 V3.4 Section相关state
+  const [sectionModalOpen, setSectionModalOpen] = useState(false);
+  const [currentSectionCell, setCurrentSectionCell] = useState<{ cellKey: string; fieldName: string } | null>(null);
 
   // 预解析表单数据和模板解析字段，供找人策略使用
   const recordData = useMemo(() => {
@@ -64,6 +71,13 @@ export default function RecordDetailModal({
       return [] as any[];
     }
   }, [record.template?.parsedFields, record.template?.id]);
+
+  // 🔵 V3.4 Section点击处理
+  const handleSectionClick = (cellKey: string, fieldName: string) => {
+    console.log('🔵 RecordDetailModal section clicked:', { cellKey, fieldName });
+    setCurrentSectionCell({ cellKey, fieldName });
+    setSectionModalOpen(true);
+  };
 
   // 2. 解析动态审批人
   const resolveDynamicApprovers = (stepConfig: any) => {
@@ -573,9 +587,11 @@ export default function RecordDetailModal({
               workflowConfig={
                 record.template.workflowConfig ? JSON.parse(record.template.workflowConfig) : []
               }
+              parsedFields={parsedFields}
               permitCode={record.code} // 🟢 新增：传递作业单编号
               orientation={orientation}
               mode="view"
+              onSectionClick={handleSectionClick}
             />
           </div>
 
@@ -684,6 +700,37 @@ export default function RecordDetailModal({
           </div>
         </div>
       </div>
+      
+      {/* 🔵 V3.4 Section表单查看弹窗 */}
+      {sectionModalOpen && currentSectionCell && (() => {
+        const sectionData = recordData[`SECTION_${currentSectionCell.cellKey}`];
+        
+        if (!sectionData) {
+          return null;
+        }
+        
+        console.log('🔵 Rendering section view modal:', { sectionData });
+        
+        // 从allTemplates中查找完整的template信息
+        const boundTemplate = allTemplates.find(t => t.id === sectionData.templateId) || null;
+        
+        return (
+          <SectionFormModal
+            isOpen={true}
+            cellKey={currentSectionCell.cellKey}
+            fieldName={currentSectionCell.fieldName}
+            boundTemplate={boundTemplate}
+            parentCode={record.code}
+            existingData={sectionData}
+            onSave={() => {}} // 只读模式，不需要保存
+            onClose={() => {
+              setSectionModalOpen(false);
+              setCurrentSectionCell(null);
+            }}
+            readOnly={true}
+          />
+        );
+      })()}
     </div>
   );
 }

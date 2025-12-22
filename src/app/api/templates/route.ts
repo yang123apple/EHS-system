@@ -127,12 +127,13 @@ export async function DELETE(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-    const { id, isLocked, structureJson, name, type, workflowConfig, userId, userName, parsedFields: clientParsedFields } = body; 
+    const { id, isLocked, structureJson, name, type, workflowConfig, userId, userName, parsedFields: clientParsedFields, level, sectionBindings, watermarkSettings } = body; 
 
     if (!id) return NextResponse.json({ error: '缺少参数' }, { status: 400 });
 
     // 动态构建更新数据
     const dataToUpdate: any = {};
+    if (isLocked !== undefined) dataToUpdate.isLocked = isLocked;
     if (isLocked !== undefined) dataToUpdate.isLocked = isLocked;
     if (structureJson !== undefined) {
       // 🟢 处理 structureJson 中的列宽和字段解析
@@ -178,6 +179,11 @@ export async function PATCH(req: Request) {
     if (type !== undefined) dataToUpdate.type = type;
     // ✅ 新增：更新流程配置
     if (workflowConfig !== undefined) dataToUpdate.workflowConfig = workflowConfig;
+    // 🟢 水印设置 - 暂时忽略（数据库没有此字段）
+    // if (watermarkSettings !== undefined) dataToUpdate.watermarkSettings = watermarkSettings;
+    // �🔵 V3.4 更新模板级别和section绑定
+    if (level !== undefined) dataToUpdate.level = level;
+    if (sectionBindings !== undefined) dataToUpdate.sectionBindings = sectionBindings;
 
     const updatedTemplate = await prisma.workPermitTemplate.update({
       where: { id },

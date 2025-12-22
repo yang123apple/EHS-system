@@ -195,3 +195,17 @@ export interface Department {
   users?: DeptUser[];
   children?: Department[];
 }
+// ==========================================
+// 5.  V3.4 二级模板Part系统
+// ==========================================
+
+// Part拾取策略
+export type PartPickStrategy = 'field_match'; // 指定字段查找
+
+// Part配置项
+export interface WorkflowPart {
+  part: number;              // Part序号 (1, 2, 3...)
+  pickStrategy: PartPickStrategy; // 拾取策略
+  pickConfig: {
+  };
+}

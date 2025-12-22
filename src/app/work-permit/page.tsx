@@ -339,6 +339,7 @@ export default function WorkPermitPage() {
           onClose={() => toggleModal('editTemplate', false)}
           template={selectedTemplate}
           onSuccess={fetchTemplates}
+          allTemplates={templates}
         />
       )}
 
@@ -350,6 +351,7 @@ export default function WorkPermitPage() {
           user={user}
           departments={departments}
           allUsers={allUsers}
+          allTemplates={templates}
           onRefresh={() => {
             fetchAllRecords();
             if (selectedProject) fetchProjectRecords(selectedProject.id);

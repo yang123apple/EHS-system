@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Save, X, Trash2, RefreshCw, Users, User, GitBranch, Briefcase, UserCog, Filter } from 'lucide-react';
-import { Template, WorkflowStep, ParsedField } from '@/types/work-permit';
+import { Template, WorkflowStep, ParsedField, WorkflowPart } from '@/types/work-permit';
 import { TemplateService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
 import DepartmentSelectModal from './DepartmentSelectModal';
@@ -26,10 +26,13 @@ export default function WorkflowEditorModal({
   onSuccess,
 }: Props) {
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
+  const [workflowParts, setWorkflowParts] = useState<WorkflowPart[]>([]); // 🔵 V3.4 Part系统
   const [initialEditData, setInitialEditData] = useState<any>(null);
   const [parsedFields, setParsedFields] = useState<ParsedField[]>([]);
   const [isPickingCell, setIsPickingCell] = useState(false);
   const [editingStepIndex, setEditingStepIndex] = useState<number>(-1);
+  const [editingPartIndex, setEditingPartIndex] = useState<number>(-1); // 🔵 编辑中的Part
+  const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
   // 部门选择器状态
   const [selectorTarget, setSelectorTarget] = useState<{
@@ -38,6 +41,9 @@ export default function WorkflowEditorModal({
     approverIdx?: number;
   } | null>(null);
 
+  // 🔵 判断是否为二级模板
+  const isSecondaryTemplate = template?.level === 'secondary';
+
   useEffect(() => {
     if (isOpen && template) {
       try {
@@ -45,16 +51,28 @@ export default function WorkflowEditorModal({
         setInitialEditData(parsedData);
         const cfg = template.workflowConfig ? JSON.parse(template.workflowConfig) : [];
 
-        // 数据归一化
-        const normalized = (cfg as any[]).map(s => ({
-          ...s,
-          approvers: s.approvers || [],
-          approvalMode: s.approvalMode || 'OR',
-          approverStrategy: s.approverStrategy || 'fixed',
-          strategyConfig: s.strategyConfig || { targetDeptId: '', roleName: '' },
-        }));
-
-        setWorkflowSteps(normalized);
+        // 🔵 根据模板级别加载不同配置
+        if (isSecondaryTemplate) {
+          // 二级模板：加载Part配置并归一化
+          const normalizedParts = (cfg as any[]).map(p => ({
+            part: p.part || 1,
+            name: p.name || '',
+            outputCell: p.outputCell,
+            pickStrategy: p.pickStrategy || 'field_match',
+            pickConfig: p.pickConfig || { fieldName: '' },
+          }));
+          setWorkflowParts(normalizedParts);
+        } else {
+          // 一级模板：加载Step配置
+          const normalized = (cfg as any[]).map(s => ({
+            ...s,
+            approvers: s.approvers || [],
+            approvalMode: s.approvalMode || 'OR',
+            approverStrategy: s.approverStrategy || 'fixed',
+            strategyConfig: s.strategyConfig || { targetDeptId: '', roleName: '' },
+          }));
+          setWorkflowSteps(normalized);
+        }
 
         // 🟢 加载解析的字段
         if (template.parsedFields) {
@@ -130,8 +148,10 @@ export default function WorkflowEditorModal({
 
   const handleSave = async () => {
     try {
+      // 🔵 根据模板级别保存不同配置
+      const configToSave = isSecondaryTemplate ? workflowParts : workflowSteps;
       await TemplateService.update(template.id, {
-        workflowConfig: JSON.stringify(workflowSteps),
+        workflowConfig: JSON.stringify(configToSave),
       });
       alert('保存成功');
       onSuccess();
@@ -142,6 +162,15 @@ export default function WorkflowEditorModal({
   };
 
   const handleCellPicked = (r: number, c: number) => {
+    const cellKey = `R${r + 1}C${c + 1}`;
+    
+    // 🔵 二级模板Part拾取
+    if (isSecondaryTemplate && isPickingCell && editingPartIndex !== -1) {
+      handleCellPickedForPart(cellKey);
+      return;
+    }
+    
+    // 一级模板Step拾取
     if (isPickingCell && editingStepIndex !== -1) {
       updateStep(editingStepIndex, { outputCell: { r, c } });
       setIsPickingCell(false);
@@ -173,6 +202,47 @@ export default function WorkflowEditorModal({
     });
   };
 
+  // 🔵 V3.4 Part系统相关函数
+  const handleAddPart = () => {
+    setWorkflowParts(prev => [
+      ...prev,
+      {
+        part: prev.length + 1,
+        name: `Part ${prev.length + 1}`,
+        outputCell: undefined,
+        pickStrategy: 'field_match',
+        pickConfig: { fieldName: '' },
+      },
+    ]);
+  };
+
+  const handleDeletePart = (idx: number) => {
+    if (confirm('确认删除此Part？')) {
+      setWorkflowParts(prev => prev.filter((_, i) => i !== idx).map((p, i) => ({ ...p, part: i + 1 })));
+    }
+  };
+
+  const updatePart = (idx: number, changes: Partial<WorkflowPart>) => {
+    const newParts = [...workflowParts];
+    newParts[idx] = { 
+      ...newParts[idx], 
+      ...changes,
+      // 深度合并pickConfig
+      pickConfig: changes.pickConfig 
+        ? { ...newParts[idx].pickConfig, ...changes.pickConfig }
+        : newParts[idx].pickConfig
+    };
+    setWorkflowParts(newParts);
+  };
+
+  const handleCellPickedForPart = (cellKey: string) => {
+    if (editingPartIndex >= 0) {
+      updatePart(editingPartIndex, { outputCell: cellKey });
+      setIsPickingCell(false);
+      setEditingPartIndex(-1);
+    }
+  };
+
   const updateApprover = (stepIdx: number, approverIdx: number, field: string, value: string) => {
     const newSteps = [...workflowSteps];
     const approver = newSteps[stepIdx].approvers[approverIdx];
@@ -202,15 +272,33 @@ export default function WorkflowEditorModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-xl w-full max-w-7xl h-[95vh] flex flex-col shadow-2xl overflow-hidden">
+      <div className="bg-white rounded-xl w-full max-w-[95vw] h-[95vh] flex flex-col shadow-2xl overflow-hidden">
         <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-          <h3 className="font-bold text-lg text-slate-800">流程配置: {template.name}</h3>
+          <h3 className="font-bold text-lg text-slate-800">
+            {isSecondaryTemplate ? '字段继承配置' : '流程配置'}: {template.name}
+            {isSecondaryTemplate && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">二级模板</span>}
+          </h3>
           <div className="flex gap-2">
             <button
-              onClick={handleAddStep}
+              onClick={() => setOrientation(orientation === 'portrait' ? 'landscape' : 'portrait')}
+              className="p-2 rounded border transition flex items-center justify-center bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400"
+              title={orientation === 'portrait' ? '当前：竖向纸张，点击切换为横向' : '当前：横向纸张，点击切换为竖向'}
+            >
+              {orientation === 'portrait' ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="7" y="2" width="10" height="20" rx="1" />
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="2" y="7" width="20" height="10" rx="1" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={isSecondaryTemplate ? handleAddPart : handleAddStep}
               className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1"
             >
-              <Plus size={16} /> 添加步骤
+              <Plus size={16} /> {isSecondaryTemplate ? '添加Part' : '添加步骤'}
             </button>
             <button
               onClick={handleSave}
@@ -226,7 +314,80 @@ export default function WorkflowEditorModal({
 
         <div className="flex flex-1 overflow-hidden">
           <div className="w-96 border-r bg-slate-50 p-4 overflow-y-auto flex flex-col gap-3">
-            {workflowSteps.map((step, idx) => (
+            {/* 🔵 二级模板：Part配置界面 */}
+            {isSecondaryTemplate && workflowParts.map((part, idx) => (
+              <div
+                key={idx}
+                className="bg-white p-4 rounded-lg border border-purple-200 shadow-sm"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-purple-600 font-bold">Part {part.part}</span>
+                  </div>
+                  <button
+                    onClick={() => handleDeletePart(idx)}
+                    className="text-red-500 hover:text-red-700 p-1"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+
+                {/* Part名称 */}
+                <div className="mb-3">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Part名称</label>
+                  <input
+                    type="text"
+                    className="w-full border rounded px-2 py-1 text-sm"
+                    value={part.name}
+                    onChange={(e) => updatePart(idx, { name: e.target.value })}
+                    placeholder="如：需求单位审批"
+                  />
+                </div>
+
+                {/* 输出单元格 */}
+                <div className="mb-3">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">输出单元格</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      className="flex-1 border rounded px-2 py-1 text-sm bg-slate-50"
+                      value={part.outputCell || ''}
+                      readOnly
+                      placeholder="点击右侧拾取"
+                    />
+                    <button
+                      onClick={() => {
+                        setEditingPartIndex(idx);
+                        setIsPickingCell(true);
+                      }}
+                      className="px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600"
+                    >
+                      拾取
+                    </button>
+                  </div>
+                </div>
+
+                {/* 拾取策略 */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">拾取策略</label>
+                  <div className="bg-slate-50 p-2 rounded border">
+                    <div className="text-xs text-slate-500 mb-2">指定字段查找</div>
+                    <input
+                      type="text"
+                      className="w-full border rounded px-2 py-1 text-sm"
+                      value={part.pickConfig.fieldName}
+                      onChange={(e) => updatePart(idx, { 
+                        pickConfig: { fieldName: e.target.value } 
+                      })}
+                      placeholder="一级模板字段名，如：需求单位意见"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* 一级模板：Step配置界面 */}
+            {!isSecondaryTemplate && workflowSteps.map((step, idx) => (
               <div
                 key={idx}
                 className={`bg-white p-4 rounded-lg border transition-all ${
@@ -943,12 +1104,20 @@ export default function WorkflowEditorModal({
           </div>
 
           <div className="flex-1 overflow-auto bg-slate-100 p-6 flex justify-center">
-            <div className="bg-white shadow-lg w-full max-w-5xl h-fit min-h-[800px] p-8">
+            <div 
+              className="bg-white shadow-lg p-8"
+              style={{
+                width: orientation === 'portrait' ? '210mm' : '297mm',
+                minHeight: orientation === 'portrait' ? '297mm' : '210mm',
+                maxWidth: '100%',
+              }}
+            >
               {initialEditData && (
                 <ExcelRenderer
                   key={template.id}
                   templateData={initialEditData}
                   mode="view"
+                  orientation={orientation}
                   isPickingCell={isPickingCell}
                   onCellClick={handleCellPicked}
                 />

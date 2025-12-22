@@ -3,6 +3,7 @@ import { X, Paperclip, CheckCircle, FileText } from 'lucide-react';
 import { Project, Template } from '@/types/work-permit';
 import { PermitService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
+import SectionFormModal from './SectionFormModal';
 // 🟢 1. 引入工具函数（替换原内联定义）
 import { findDeptRecursive } from '@/utils/departmentUtils';
 
@@ -35,6 +36,19 @@ export default function AddPermitModal({
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [previewCode, setPreviewCode] = useState<string>(''); // 🟢 预览编号
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 🔵 V3.4 Section表单状态
+  const [sectionModalOpen, setSectionModalOpen] = useState(false);
+  const [currentSectionCell, setCurrentSectionCell] = useState<{ cellKey: string; fieldName: string } | null>(null);
+  const [allTemplates, setAllTemplates] = useState<Template[]>([]);
+
+  // 🔵 加载所有模板（用于section绑定）
+  useEffect(() => {
+    fetch('/api/templates')
+      .then(res => res.json())
+      .then(data => setAllTemplates(data))
+      .catch(err => console.error('加载模板失败:', err));
+  }, []);
 
   const selectedTemplateData = useMemo(() => {
     if (!selectedTemplate) return null;
@@ -100,6 +114,32 @@ export default function AddPermitModal({
 
   const handleRemoveAttachment = (index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // 🔵 V3.4 Section相关处理函数
+  const handleSectionClick = (cellKey: string, fieldName: string) => {
+    console.log('🔵 Section clicked:', { cellKey, fieldName, selectedTemplate });
+    setCurrentSectionCell({ cellKey, fieldName });
+    setSectionModalOpen(true);
+    console.log('🔵 Section modal opened');
+  };
+
+  const handleSectionSave = (sectionData: {
+    templateId: string;
+    templateName: string;
+    code: string;
+    data: Record<string, any>;
+  }) => {
+    if (!currentSectionCell) return;
+    
+    // 存储section数据到permitFormData中，使用SECTION_前缀
+    setPermitFormData(prev => ({
+      ...prev,
+      [`SECTION_${currentSectionCell.cellKey}`]: sectionData
+    }));
+    
+    setSectionModalOpen(false);
+    setCurrentSectionCell(null);
   };
 
   // 🟢 2. 完全替换 preCheckWorkflow 函数（使用外部 findDeptRecursive）
@@ -409,6 +449,8 @@ export default function AddPermitModal({
                     orientation={orientation}
                     mode="edit"
                     onDataChange={setPermitFormData}
+                    onSectionClick={handleSectionClick}
+                    sectionBindings={selectedTemplate.sectionBindings ? JSON.parse(selectedTemplate.sectionBindings) : {}}
                   />
                 </div>
 
@@ -446,6 +488,72 @@ export default function AddPermitModal({
           </div>
         </div>
       </div>
+
+      {/* 🔵 V3.4 Section表单弹窗 */}
+      {(() => {
+        console.log('🔵 SectionFormModal render check:', {
+          sectionModalOpen,
+          currentSectionCell,
+          hasSelectedTemplate: !!selectedTemplate,
+          shouldRender: sectionModalOpen && currentSectionCell && selectedTemplate
+        });
+        
+        if (sectionModalOpen && currentSectionCell && selectedTemplate) {
+          const bindings = selectedTemplate.sectionBindings 
+            ? JSON.parse(selectedTemplate.sectionBindings) 
+            : {};
+          const templateId = bindings[currentSectionCell.cellKey];
+          const boundTemplate = allTemplates.find(t => t.id === templateId) || null;
+          
+          console.log('🔵 Rendering SectionFormModal:', {
+            cellKey: currentSectionCell.cellKey,
+            fieldName: currentSectionCell.fieldName,
+            boundTemplate: boundTemplate?.name,
+            parentCode: previewCode
+          });
+          
+          // 检查是否已绑定二级模板
+          if (!boundTemplate) {
+            return (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-lg p-6 max-w-md shadow-xl">
+                  <h3 className="text-lg font-bold text-red-600 mb-4">⚠️ 未绑定二级模板</h3>
+                  <p className="text-slate-600 mb-4">
+                    此单元格（{currentSectionCell.cellKey}）尚未绑定二级模板。
+                    <br />请先在模板编辑页面为该section字段绑定一个二级模板。
+                  </p>
+                  <button
+                    onClick={() => {
+                      setSectionModalOpen(false);
+                      setCurrentSectionCell(null);
+                    }}
+                    className="w-full px-4 py-2 bg-slate-600 text-white rounded hover:bg-slate-700"
+                  >
+                    关闭
+                  </button>
+                </div>
+              </div>
+            );
+          }
+          
+          return (
+            <SectionFormModal
+              isOpen={true}
+              cellKey={currentSectionCell.cellKey}
+              fieldName={currentSectionCell.fieldName}
+              boundTemplate={boundTemplate}
+              parentCode={previewCode}
+              existingData={permitFormData[`SECTION_${currentSectionCell.cellKey}`]}
+              onSave={handleSectionSave}
+              onClose={() => {
+                setSectionModalOpen(false);
+                setCurrentSectionCell(null);
+              }}
+            />
+          );
+        }
+        return null;
+      })()}
     </div>
   );
 }
