@@ -603,6 +603,7 @@ function generateHint(label: string, fieldType: ParsedField['fieldType']): strin
     // ✅ number 类型统一为“请输入{label}”，兼容电话号码/身份证号
     number: `请输入${label}`,        // 数值：输入
     match: `请输入${label}编码`,     // 匹配：输入编码
+    section: `点击填写${label}`,     // 🟣 V3.4 Section：点击填写
     other: `请填写${label}`          // 其他：填写
   };
 

@@ -26,6 +26,9 @@ interface ExcelRendererProps {
   // 新增：单元格拾取支持
   onCellClick?: (rowIndex: number, colIndex: number) => void;
   isPickingCell?: boolean;
+  // 🔵 V3.4 Section绑定回调
+  onSectionBind?: (cellKey: string) => void;
+  sectionBindings?: Record<string, string>; // cellKey -> templateId
 }
 
 // 自定义日期选择器：支持临时状态（tempDate/tempTime），只有在用户点“确认”后才触发 onChange
@@ -231,7 +234,9 @@ export default function ExcelRenderer({
   onDataChange,
   onTemplateChange,
   onCellClick,
-  isPickingCell = false
+  isPickingCell = false,
+  onSectionBind,
+  sectionBindings = {}
 }: ExcelRendererProps) {
   // 使用惰性初始化：只在挂载时从 props.templateData 读取一次，避免后续 props 引用变化导致重复同步和死循环
   const [gridData, setGridData] = useState<any[][]>(() => {
@@ -525,6 +530,62 @@ export default function ExcelRenderer({
     const parsedField = parsedFields?.find(f => f.cellKey === cellKey);
     const isDesignMode = mode === 'design';
     const isRequired = parsedField?.required === true;
+
+    // 🟣 V3.4 Section类型单元格处理
+    if (parsedField?.fieldType === 'section') {
+      // 设计模式：显示绑定按钮
+      if (mode === 'design') {
+        const boundTemplateId = sectionBindings[cellKey];
+        const isBound = !!boundTemplateId;
+        
+        return (
+          <button
+            type="button"
+            onClick={() => onSectionBind && onSectionBind(cellKey)}
+            className={`w-full h-full flex flex-col items-center justify-center rounded border-2 transition ${
+              isBound
+                ? 'bg-purple-100 border-purple-500 text-purple-700 hover:bg-purple-200'
+                : 'bg-purple-50 border-purple-300 text-purple-600 hover:bg-purple-100'
+            }`}
+            style={styleObj}
+            title={isBound ? '点击修改绑定' : '点击绑定二级模板'}
+          >
+            <div className="text-xs font-bold">🟣 SECTION</div>
+            {isBound && <div className="text-[10px] mt-1">✓ 已绑定</div>}
+            {!isBound && <div className="text-[10px] mt-1">点击绑定</div>}
+          </button>
+        );
+      }
+      // 编辑模式：显示填写按钮（暂时显示占位符，后续实现弹窗）
+      if (mode === 'edit') {
+        const sectionData = formData[`SECTION_${cellKey}`];
+        return (
+          <button
+            type="button"
+            className={`w-full h-full px-2 text-xs rounded border-2 transition ${
+              sectionData 
+                ? 'bg-green-50 border-green-500 text-green-700 font-bold' 
+                : 'bg-blue-50 border-blue-400 text-blue-700 hover:bg-blue-100'
+            }`}
+            onClick={() => alert('Section表单填写功能开发中...')}
+            style={styleObj}
+          >
+            {sectionData ? '✓ 已填写' : '📝 填写子表单'}
+          </button>
+        );
+      }
+      // 查看模式：显示状态
+      if (mode === 'view') {
+        const sectionData = formData[`SECTION_${cellKey}`];
+        return (
+          <div className={`w-full h-full flex items-center justify-center text-xs ${
+            sectionData ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'
+          }`} style={styleObj}>
+            {sectionData ? '✓ 已填写' : '未填写'}
+          </div>
+        );
+      }
+    }
 
     // ✅ 1. 优先处理流程输出单元格 (修改后的逻辑)
     // 查找当前单元格是否绑定了流程步骤
@@ -940,6 +1001,7 @@ export default function ExcelRenderer({
                 <option value="personnel">人员</option>
                 <option value="signature">签字</option>
                 <option value="option">选项</option>
+                <option value="section">🟣 Section(嵌套表单)</option>
                 <option value="other">其他</option>
               </select>
               <input

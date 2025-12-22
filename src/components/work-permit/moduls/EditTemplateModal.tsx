@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Save, X, ShieldCheck } from 'lucide-react';
+import { Save, X, ShieldCheck, Link2 } from 'lucide-react';
 import { Template, ParsedField } from '@/types/work-permit';
 import { TemplateService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
+import TemplateBindingModal from './TemplateBindingModal';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   template: Template;
   onSuccess: () => void;
+  allTemplates?: Template[]; // 🟢 V3.4 所有模板列表（用于选择二级模板）
 }
 
 export default function EditTemplateModal({ isOpen, onClose, template, onSuccess }: Props) {
@@ -21,6 +23,12 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
   
   // 🟢 新增水印状态
   const [watermark, setWatermark] = useState({ text: '仅供内部审批', enabled: true });
+  
+  // 🟢 V3.4 模板级别和section绑定
+  const [level, setLevel] = useState<'primary' | 'secondary'>('primary');
+  const [sectionBindings, setSectionBindings] = useState<Record<string, string>>({});
+  const [bindingModalOpen, setBindingModalOpen] = useState(false);
+  const [bindingCellKey, setBindingCellKey] = useState<string>('');
 
   useEffect(() => {
     if (isOpen && template) {
@@ -57,8 +65,39 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
       } else {
         setWatermark({ text: '仅供内部审批', enabled: true });
       }
+      
+      // 🟢 V3.4 初始化级别和绑定
+      setLevel((template.level as 'primary' | 'secondary') || 'primary');
+      if (template.sectionBindings) {
+        try {
+          setSectionBindings(JSON.parse(template.sectionBindings));
+        } catch (e) {
+          setSectionBindings({});
+        }
+      } else {
+        setSectionBindings({});
+      }
     }
   }, [isOpen, template]);
+
+  // 🟢 V3.4 处理section绑定
+  const handleBindTemplate = (cellKey: string) => {
+    setBindingCellKey(cellKey);
+    setBindingModalOpen(true);
+  };
+
+  const handleBindConfirm = (templateId: string) => {
+    if (templateId) {
+      setSectionBindings(prev => ({ ...prev, [bindingCellKey]: templateId }));
+    } else {
+      // 解除绑定
+      setSectionBindings(prev => {
+        const newBindings = { ...prev };
+        delete newBindings[bindingCellKey];
+        return newBindings;
+      });
+    }
+  };
 
   const handleSave = async () => {
     try {
@@ -68,7 +107,10 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
         structureJson: JSON.stringify(templateData),
         parsedFields: JSON.stringify(parsedFields),
         // 🟢 直接保存 watermarkSettings 字段（与类型定义对齐）
-        watermarkSettings: watermark
+        watermarkSettings: watermark,
+        // 🟢 V3.4 保存级别和绑定
+        level,
+        sectionBindings: JSON.stringify(sectionBindings)
       });
 
       alert('修改已保存');
@@ -101,6 +143,15 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
                 onChange={(e) => setType(e.target.value)}
                 placeholder="类型"
               />
+              {/* 🟢 V3.4 模板级别选择 */}
+              <select
+                className="border rounded px-2 py-1 text-sm w-24 bg-white"
+                value={level}
+                onChange={(e) => setLevel(e.target.value as 'primary' | 'secondary')}
+              >
+                <option value="primary">一级模板</option>
+                <option value="secondary">二级模板</option>
+              </select>
             </div>
             <div className="flex gap-2">
               <button
@@ -158,6 +209,16 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
               启用
             </label>
           </div>
+
+          {/* 🟣 V3.4 Section绑定提示 */}
+          {!parseEditMode && level === 'primary' && parsedFields.some(f => f.fieldType === 'section') && (
+            <div className="flex items-center gap-3 pt-2 border-t border-slate-200 bg-purple-50 px-3 py-2 rounded">
+              <Link2 size={16} className="text-purple-600" />
+              <span className="text-xs text-purple-700">
+                💡 提示：点击表格中的紫色 SECTION 单元格可以绑定二级模板
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto p-8 bg-slate-100">
@@ -178,11 +239,23 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
                 orientation={orientation}
                 mode="design"
                 onTemplateChange={setTemplateData}
+                onSectionBind={handleBindTemplate}
+                sectionBindings={sectionBindings}
               />
             )}
           </div>
         </div>
       </div>
+
+      {/* 🟣 V3.4 模板绑定弹窗 */}
+      <TemplateBindingModal
+        isOpen={bindingModalOpen}
+        onClose={() => setBindingModalOpen(false)}
+        cellKey={bindingCellKey}
+        currentTemplateId={sectionBindings[bindingCellKey]}
+        templates={allTemplates || []}
+        onBind={handleBindConfirm}
+      />
     </div>
   );
 }
