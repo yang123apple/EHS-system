@@ -1,0 +1,832 @@
+﻿import { ParsedField } from '@/types/work-permit';
+
+/**
+ * 从结构数据中提取二维表格
+ * 兼容多种格式：LuckySheet的sheets[0].data、celldata、直接的grid/data等
+ * 对于celldata格式，会自动处理合并单元格的填充
+ */
+function extractGrid(structure: any): any[][] {
+  if (!structure) return [];
+
+  if (Array.isArray(structure?.sheets?.[0]?.data)) {
+    return structure.sheets[0].data as any[][];
+  }
+
+  const celldata = structure?.sheets?.[0]?.celldata;
+  const merges = structure?.sheets?.[0]?.merges || [];
+  if (Array.isArray(celldata) && celldata.length > 0) {
+    const maxR = Math.max(...celldata.map((c: any) => Number(c.r) || 0));
+    const maxC = Math.max(...celldata.map((c: any) => Number(c.c) || 0));
+    const grid: any[][] = Array.from({ length: maxR + 1 }, () => Array(maxC + 1).fill(''));
+
+    celldata.forEach((cell: any) => {
+      if (cell && typeof cell.r === 'number' && typeof cell.c === 'number') {
+        const val = cell.v?.m ?? cell.v?.v ?? cell.v ?? '';
+        if (grid[cell.r]) {
+          grid[cell.r][cell.c] = val;
+        }
+      }
+    });
+
+    if (Array.isArray(merges)) {
+      merges.forEach((merge: any) => {
+        const startR = merge.s?.r ?? merge.r;
+        const startC = merge.s?.c ?? merge.c;
+        const endR = merge.e?.r ?? (startR + (merge.rs || merge.rowspan || 1) - 1);
+        const endC = merge.e?.c ?? (startC + (merge.cs || merge.colspan || 1) - 1);
+
+        if (startR !== undefined && startC !== undefined && endR !== undefined && endC !== undefined) {
+          const startVal = grid[startR]?.[startC] ?? '';
+          for (let r = startR; r <= endR && r < grid.length; r++) {
+            for (let c = startC; c <= endC && c < grid[r].length; c++) {
+              if (!(r === startR && c === startC)) {
+                grid[r][c] = startVal;
+              }
+            }
+          }
+        }
+      });
+    }
+
+    return grid;
+  }
+
+  if (Array.isArray(structure?.grid)) return structure.grid as any[][];
+  if (Array.isArray(structure?.data)) return structure.data as any[][];
+  return [];
+}
+
+/**
+ * 判断单元格值是否为空
+ * 包括null、undefined、空字符串以及常见的占位符（如"点击填写"等）
+ */
+function isEmptyCellValue(cell: any): boolean {
+  if (cell === null || cell === undefined) return true;
+  const str = String(cell).trim();
+  if (!str) return true;
+  const placeholders = [
+    '点击填写', '/', '-', '—',
+    '请选择日期', '请选择时间', '选择日期', '选择时间',
+    'yyyy-mm-dd', 'YYYY-MM-DD'
+  ];
+  return placeholders.includes(str.toLowerCase());
+}
+
+/**
+ * 从指定单元格向左查找最近的非空标签
+ * 用于识别"标签在左，空白输入框在右"的布局
+ * 搜索范围无限制（最多往前200列），可处理多个空白列的情况
+ */
+function findLeftLabel(data: any[][], row: number, col: number): string | null {
+  // 只检查紧邻左侧一格，防止穿透多个空白导致误绑定整行
+  if (col <= 0) return null;
+  const candidate = data[row]?.[col - 1];
+  if (!isEmptyCellValue(candidate)) {
+    return String(candidate).trim();
+  }
+  return null;
+}
+
+/**
+ * 从指定单元格向上查找最近的非空标签
+ * 用于识别"标签在上，大块空白输入框在下"的布局（如意见栏）
+ * 搜索范围最多15行，防止跨越过多行导致的不相关标签识别
+ */
+function findTopLabel(data: any[][], row: number, col: number): string | null {
+  for (let r = row - 1; r >= 0 && r >= row - 15; r--) {
+    const candidate = data[r]?.[col];
+    if (!isEmptyCellValue(candidate)) {
+      return String(candidate).trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * 顶层：判断标签是否可忽略（选项词/大标题等）
+ * 供空白格与日期占位格的左侧标签扫描复用
+ */
+function isIgnorableLabel(str: string): boolean {
+  if (!str) return true;
+  const clean = String(str).replace(/[£□☑\s,，\/\\.]/g, '').trim();
+  // 选项黑名单
+  const optionBlacklist = ['是', '否', '是否', '有', '无', '有无', 'Yes', 'No', 'N/A'];
+  // 大标题黑名单
+  if (clean.endsWith('单') || clean.endsWith('表') || clean.endsWith('书')) {
+    if (clean.includes('申请') || clean.includes('审批') || clean.includes('作业') || clean.includes('记录')) {
+      return true;
+    }
+  }
+  // 选项或其重复组合
+  if (optionBlacklist.includes(clean) || /^(是|否|有|无)+$/.test(clean)) return true;
+  return false;
+}
+
+/**
+ * 智能向左查找有效标签：最多跨越5格，跳过空白；遇到已识别输入格则停止
+ * 🟢 兼容选项标记（如"£其他"）：自动strip后作为标签
+ */
+function findSmartLeftLabel(
+  data: any[][],
+  row: number,
+  col: number,
+  processedCells: Set<string>,
+  maxScan: number = 5
+): string | null {
+  for (let offset = 1; offset <= maxScan; offset++) {
+    const leftCol = col - offset;
+    if (leftCol < 0) break;
+    const leftKey = `R${row + 1}C${leftCol + 1}`;
+    if (processedCells.has(leftKey)) break; // 左侧已有输入框，停止认领
+    const candidate = data[row]?.[leftCol];
+    if (isEmptyCellValue(candidate)) continue; // 跳过排版空白
+    const cleanCandidate = stripOptionMarkers(String(candidate)).trim();
+    if (cleanCandidate && !isIgnorableLabel(cleanCandidate)) {
+      return String(candidate).trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * 查找指定单元格所在的合并区域
+ * 如果单元格在某个合并区域内，返回该合并区域对象
+ * 如果不在任何合并区域内，返回 null
+ */
+function findMergeContainingCell(row: number, col: number, merges: any[]): any {
+  return merges.find(merge => {
+    const startR = merge.s.r;
+    const endR = merge.e.r;
+    const startC = merge.s.c;
+    const endC = merge.e.c;
+    return row >= startR && row <= endR && col >= startC && col <= endC;
+  }) || null;
+}
+
+
+interface ParsedStructure {
+  sheets?: Array<{
+    data?: any[][];        // 二维数组格式的表格数据
+    celldata?: any[];       // LuckySheet的单元格数据格式
+    merges?: any[];         // 合并单元格信息
+    name?: string;          // 工作表名称
+  }>;
+  grid?: any[][];
+  data?: any[][];
+}
+
+/** 列宽自动计算配置 */
+const COL_WIDTH_CONFIG = {
+  minWidth: 60,
+  charWidthPx: 7.2,        // 英文字符宽
+  zhCharWidthPx: 14,       // 🟢 新增：中文字符宽 (约等于字号)
+  paddingPx: 8,
+  fontSizePx: 14
+};
+
+interface MergeRange {
+  s: { r: number; c: number };  // 起始位置（行、列）
+  e: { r: number; c: number };  // 结束位置（行、列）
+}
+
+/** 字段类型关键词映射表，用于推断单元格的字段类型 */
+const FIELD_TYPE_KEYWORDS: Record<string, string[]> = {
+  signature: ['签名', '签字', '意见'],                      // 签名/意见字段（最高优先级）
+  department: ['部门', '需求部门', '申请部门'],              // 部门字段
+  personnel: ['人员', '姓名', '名字', '操作人员', '人'],            // 人员字段
+  location: ['地点', '位置', '场所'],                      // 地点字段
+  // ⚠️ 避免“日期/结束/时间”触发日期类型，仅保留更明确的开始类关键词
+  date: ['年', '月', '日', '时'],                            // 日期时间字段（严格匹配）
+  option: [],                                              // 选项字段（通过符号检测）
+  // ✅ 增加“电话/联系方式/身份证号”等识别为 number 类型
+  number: ['数量', '数字', '个数', '电话', '联系方式', '联系电话', '身份证号', '证件号', '身份证'],
+  text: []                                                 // 文本字段（默认）
+};
+
+/** 检测字符串中是否包含选项标记符（£、□、☑等） */
+function hasOptionMarker(str: string): boolean {
+  return /[£□☑]/.test(str);
+}
+
+/** 移除字符串中的所有选项标记符 */
+function stripOptionMarkers(str: string): string {
+  return str.replace(/[£□☑]/g, '').trim();
+}
+
+/**
+ * 解析Excel模板，提取所有字段定义
+ * 
+ * 核心逻辑分两个步骤：
+ * STEP 1 - 解析所有有值的单元格
+ *   - 包含时间关键词（年/月/日/时/分/截止）→ 类型为date，字段名从左边单元格读取
+ *   - 包含选项符号（£）→ 类型为option，字段名从本单元格读取
+ * 
+ * STEP 2 - 解析所有空白单元格（包括合并单元格）
+ *   - 读取左边的有值单元格作为字段名
+ *   - 根据字段名推断类型（文本/签名/地点/部门等）
+ * 
+ * @param structureJson - JSON字符串格式的模板结构数据
+ * @returns 解析后的字段数组
+ */
+export function parseTemplateFields(structureJson: string): ParsedField[] {
+  if (!structureJson) return [];
+
+  try {
+    const structure = JSON.parse(structureJson) as ParsedStructure;
+    const fields: ParsedField[] = [];
+    const data = extractGrid(structure);
+    if (!data || data.length === 0) return fields;
+    
+    const processedCells = new Set<string>();
+    // 🟢 记录字段名出现次数，用于生成唯一字段名（避免“电话”“负责人”等被合并成一个）
+    const fieldNameCounts = new Map<string, number>();
+    const merges = extractMerges(structure);
+
+    // 🟢 生成唯一字段名（第一次保留原名，重复时加行号后缀）
+    const getUniqueFieldName = (baseName: string, rowIndex: number) => {
+      const count = fieldNameCounts.get(baseName) || 0;
+      fieldNameCounts.set(baseName, count + 1);
+      return count === 0 ? baseName : `${baseName}_row${rowIndex + 1}`;
+    };
+
+    // 🟢 统一创建字段的辅助函数
+    const createField = (cellKey: string, label: string, r: number, c: number, fixedType?: ParsedField['fieldType']): ParsedField => {
+      const cleanLabel = stripOptionMarkers(label).trim();
+      const baseFieldName = inferFieldName(cleanLabel);
+      const fieldName = getUniqueFieldName(baseFieldName, r);
+      const fieldType = fixedType || inferFieldType(cleanLabel);
+      return {
+        cellKey,
+        label: cleanLabel,
+        fieldName,
+        fieldType,
+        hint: generateHint(cleanLabel, fieldType)
+      };
+    };
+
+    // ===== STEP 1: 解析所有有值的单元格 =====
+    for (let r = 0; r < data.length; r++) {
+      const row = data[r];
+      if (!row) continue;
+
+      for (let c = 0; c < row.length; c++) {
+        const cell = row[c];
+        if (isEmptyCellValue(cell)) continue; // 跳过空白单元格
+        
+        const cellStr = String(cell).trim();
+        const cellKey = `R${r + 1}C${c + 1}`;
+        
+        // 检测是否为选项字段（包含£符号）
+        const isOptionField = hasOptionMarker(cellStr);
+        
+        // 严格检测是否为时间/日期字段：仅当内容像"日期/时间格式"时识别
+        // 例：年 月 日；年 月 日 时 分；月 日；月 日 时；YYYY-MM-DD 等占位符格式
+        const chinesePlaceholder = /^[\s]*年[\s]*月[\s]*日(\s*时\s*分)?[\s]*$|^[\s]*月[\s]*日(\s*时)?[\s]*$|^[\s]*月[\s]*日[\s]*时[\s]*$/; // 年月日占位
+        const numericPlaceholder = /(yyyy[-\/]mm[-\/]dd|YYYY[-\/]MM[-\/]DD|hh:mm|HH:MM|H:MM)/i; // 英文数字占位
+        const isDateField = chinesePlaceholder.test(cellStr) || numericPlaceholder.test(cellStr);
+        
+        if (isDateField || isOptionField) {
+          // 日期：优先用智能左查找的标签
+          if (isDateField) {
+            const leftLabel = findSmartLeftLabel(data, r, c, processedCells, 5);
+            if (leftLabel) {
+              fields.push(createField(cellKey, leftLabel, r, c, 'date'));
+              processedCells.add(cellKey);
+            }
+            continue;
+          }
+
+          // 🟢 选项：优先用本格内容（如"£钻孔" -> "钻孔"）；若本格为纯选项符号则向左/上查找
+          let groupLabel = stripOptionMarkers(cellStr).trim();
+          if (!groupLabel) {
+            // 本格无有效内容，退化为向左/上查找
+            const labelLeft = findSmartLeftLabel(data, r, c, processedCells, 5);
+            const labelTop = findTopLabel(data, r, c);
+            groupLabel = labelLeft && !isIgnorableLabel(labelLeft)
+              ? labelLeft
+              : (labelTop && !isIgnorableLabel(labelTop) ? labelTop : '');
+          }
+
+          // 聚合同一行的连续选项单元格
+          const consumedCols: number[] = [];
+          const gatheredOptions: string[] = [];
+          const pushOptionsFromCell = (val: string) => {
+            const parts = extractOptionsFromCell(val);
+            for (const p of parts) {
+              if (!gatheredOptions.includes(p)) gatheredOptions.push(p);
+            }
+          };
+
+          // 从当前列开始，向右收集连续的选项格
+          for (let cc = c; cc < row.length; cc++) {
+            const candidate = row[cc];
+            if (isEmptyCellValue(candidate)) break;
+            const candStr = String(candidate).trim();
+            if (!hasOptionMarker(candStr)) break; // 非选项符号则停止
+            consumedCols.push(cc);
+            pushOptionsFromCell(candStr);
+          }
+
+          // 若能确定分组标签，则创建单一字段；否则退化为当前格独立字段
+          if (groupLabel) {
+            const baseFieldName = inferFieldName(groupLabel);
+            const fieldName = getUniqueFieldName(baseFieldName, r);
+            fields.push({
+              cellKey,
+              label: stripOptionMarkers(groupLabel),
+              fieldName,
+              fieldType: 'option',
+              hint: generateHint(groupLabel, 'option'),
+              options: gatheredOptions
+            });
+            // 标记所有被聚合的格为已处理
+            for (const cc of consumedCols) {
+              processedCells.add(`R${r + 1}C${cc + 1}`);
+            }
+          } else {
+            // 无可靠标签：将当前格作为独立选项字段（用于“焊接/切割”等行内单格情况）
+            const labelFromCell = stripOptionMarkers(cellStr).trim();
+            const options = extractOptionsFromCell(cellStr);
+            const baseFieldName = inferFieldName(labelFromCell);
+            const fieldName = getUniqueFieldName(baseFieldName, r);
+            fields.push({
+              cellKey,
+              label: labelFromCell,
+              fieldName,
+              fieldType: 'option',
+              hint: generateHint(labelFromCell, 'option'),
+              options
+            });
+            processedCells.add(cellKey);
+          }
+        }
+      }
+    }
+
+    // ===== STEP 2: 解析所有空白单元格（包括合并单元格）=====
+    // 🟢 封装通用的空白单元格处理逻辑
+    const processEmptyCell = (r: number, c: number, cellKey: string) => {
+      if (processedCells.has(cellKey)) return;
+
+      // 1. 尝试向左找标签（智能策略：允许跨越最多5个空白，遇到已识别输入框则停止）
+      let finalLabel = '';
+
+      // 使用顶层 isIgnorableLabel 过滤标签
+
+      // 智能向左查找：跨越最多5个格子，跳过空白；若遇到已识别的输入框则停止
+      const MAX_LEFT_SCAN = 5;
+      for (let offset = 1; offset <= MAX_LEFT_SCAN; offset++) {
+        const leftCol = c - offset;
+        if (leftCol < 0) break;
+        const leftKey = `R${r + 1}C${leftCol + 1}`;
+        // 遇到左侧已被解析为输入框的单元格，则停止向左“认领”标签
+        if (processedCells.has(leftKey)) break;
+
+        const candidate = data[r]?.[leftCol];
+        if (isEmptyCellValue(candidate)) {
+          // 排版空白，允许继续跨越
+          continue;
+        }
+
+        const cleanCandidate = stripOptionMarkers(String(candidate)).trim();
+        if (cleanCandidate.length > 0 && !isIgnorableLabel(cleanCandidate)) {
+          finalLabel = String(candidate).trim();
+          break; // 找到有效左标签，停止
+        }
+        // 无效标签（选项或标题），继续向左尝试
+      }
+
+      // 2. 如果左边无效（没字，或者是“是/否”这种选项），尝试向上找
+      // 这会让代码穿透上面的空行，一直找到表头的“确认人”
+      if (!finalLabel) {
+        const topLabel = findTopLabel(data, r, c);
+        // 向上找的时候，只要不是纯选项符号就行
+        if (topLabel && !hasOptionMarker(topLabel)) {
+          finalLabel = topLabel;
+        }
+      }
+
+      // 3. 创建字段
+      if (finalLabel) {
+        fields.push(createField(cellKey, finalLabel, r, c));
+        processedCells.add(cellKey);
+      }
+    };
+
+    // 遍历所有合并单元格
+    merges.forEach((merge) => {
+      const startR = merge.s.r;
+      const startC = merge.s.c;
+      const cellKey = `R${startR + 1}C${startC + 1}`;
+      const cellValue = data[startR]?.[startC];
+      
+      if (isEmptyCellValue(cellValue)) {
+        processEmptyCell(startR, startC, cellKey);
+      }
+    });
+    
+    // 遍历所有普通单元格
+    for (let r = 0; r < data.length; r++) {
+      const row = data[r];
+      if (!row) continue;
+
+      for (let c = 0; c < row.length; c++) {
+        const cellKey = `R${r + 1}C${c + 1}`;
+        // 跳过已处理 或 在合并区域内的
+        const merge = findMergeContainingCell(r, c, merges);
+        if (processedCells.has(cellKey) || merge) continue;
+        
+        const cell = row[c];
+        if (isEmptyCellValue(cell)) {
+          processEmptyCell(r, c, cellKey);
+        }
+      }
+    }
+
+    return fields;
+  } catch (error) {
+    console.error('Failed to parse template fields:', error);
+    return [];
+  }
+}
+
+/**
+ * 从标签文本中提取完整的字段信息
+ * 自动推断字段名称、类型，并生成用户提示文本
+ * 
+ * @param cellKey - 单元格坐标（如"R1C2"）
+ * @param label - 原始标签文本
+ * @param row - 行索引
+ * @param col - 列索引
+ * @returns 解析后的字段信息，若标签为空则返回null
+ */
+function extractFieldInfo(
+  cellKey: string,
+  label: string,
+  row: number,
+  col: number
+): ParsedField | null {
+  // 防守检查：确保标签非空
+  if (!label || !label.trim()) return null;
+
+  const fieldName = inferFieldName(label);
+  const fieldType = inferFieldType(label);
+  const hint = generateHint(label, fieldType);
+
+  // 返回完整的字段定义
+  return {
+    cellKey,
+    label: label.trim(),
+    fieldName,
+    fieldType,
+    hint
+  };
+}
+
+/**
+ * 推断字段的规范化名称
+ * 首先尝试通过已知的标签-名称映射匹配，不匹配则将标签转换为camelCase
+ * 
+ * @param label - 原始标签文本
+ * @returns 规范化的字段名称（如projectName、deptOpinion等）
+ */
+function inferFieldName(label: string): string {
+  // 先移除选项符号
+  let cleanLabel = stripOptionMarkers(label);
+  const normalized = cleanLabel.trim().toLowerCase();
+
+  // 常见标签到字段名的映射表（保持中文key便于查询）
+  const nameMap: Record<string, string> = {
+    // 精确匹配（优先级最高）
+    '需求部门意见': 'deptOpinion',
+    '部门意见': 'deptOpinion',
+    '已开展作业危害分析': 'hazardAnalysis',
+    '交叉作业': 'crossWorkCoordination',
+    '开始日期': 'startDate',
+    '开始时间': 'startTime',
+    '结束日期': 'endDate',
+    '结束时间': 'endTime',
+    '工程名称': 'projectName',
+    '项目名称': 'projectName',
+    '钻孔': '钻孔',
+    '其他': '其他',
+    '焊接': '焊接',
+    '切割': '切割',
+    '打磨': '打磨',
+    '持证': '持证',
+    
+    // 次级匹配（包含关系）
+    '工程': 'projectName',
+    '项目': 'projectName',
+    '需求部门': 'requestDept',
+    '申请部门': 'requestDept',
+    '部门': 'department',
+    '意见': 'opinion',
+    '作业人员': 'operator',
+    '操作人员': 'operator',
+    '人员': 'personnel',
+    '日期': 'date',
+    '时间': 'time',
+    '签名': 'signature',
+    '签字': 'signature',
+    '备注': 'remarks',
+    '说明': 'description',
+    '位置': 'location',
+    '地点': 'location',
+    '场所': 'location',
+    '分析': 'analysis',
+    '措施': 'measures',
+    '协调': 'coordination',
+    '风险': 'risk'
+  };
+
+  // 逐一检查已知映射（优先精确匹配）
+  if (nameMap[normalized]) {
+    return nameMap[normalized];
+  }
+  
+  // 然后检查包含关系（长的key优先检查，避免"需求部门"被"部门"匹配）
+  const sortedEntries = Object.entries(nameMap).sort((a, b) => b[0].length - a[0].length);
+  for (const [key, value] of sortedEntries) {
+    if (normalized.includes(key.toLowerCase())) {
+      return value;
+    }
+  }
+
+  // 若无匹配，直接返回清理后的中文标签（不转换为下划线英文）
+  return cleanLabel.trim();
+}
+
+/**
+ * 推断字段类型（用于STEP 2：空白单元格根据标签名推断类型）
+ * 通过检查标签中的特征关键词来判断字段类型
+ * 优先级：签名 > 部门 > 地点 > 人员 > 日期时间 > 数值 > 默认text
+ * 
+ * @param label - 原始标签文本（从左边单元格读取）
+ * @returns 字段类型
+ */
+function inferFieldType(label: string): ParsedField['fieldType'] {
+  const str = label.trim().toLowerCase();
+
+  // ✅ 优先：若标签中包含选项标记符，则直接判定为 option
+  if (hasOptionMarker(label)) return 'option';
+
+  // 逐一检查字段类型关键词（优先级从高到低）
+  if (FIELD_TYPE_KEYWORDS.signature.some(kw => str.includes(kw))) return 'signature';
+  if (FIELD_TYPE_KEYWORDS.department.some(kw => str.includes(kw))) return 'department';
+  if (FIELD_TYPE_KEYWORDS.location.some(kw => str.includes(kw))) return 'text'; // 地点暂时映射为text
+  if (FIELD_TYPE_KEYWORDS.personnel.some(kw => str.includes(kw))) return 'personnel';
+  if (FIELD_TYPE_KEYWORDS.date.some(kw => str.includes(kw))) return 'date';
+  if (FIELD_TYPE_KEYWORDS.number.some(kw => str.includes(kw))) return 'number';
+
+  // 默认为文本字段
+  return 'text';
+}
+
+/**
+ * 为字段生成用户友好的提示文本
+ * 根据字段类型提供不同的交互提示（如"请输入"、"请选择"等）
+ * 
+ * @param label - 原始标签文本
+ * @param fieldType - 字段类型
+ * @returns 格式化的提示文本
+ */
+function generateHint(label: string, fieldType: ParsedField['fieldType']): string {
+  // 各字段类型的提示模板
+  const hints: Record<ParsedField['fieldType'], string> = {
+    text: `请输入${label}`,           // 文本：输入
+    date: `请选择${label}`,           // 日期：选择
+    department: `请选择${label}`,     // 部门：选择
+    personnel: `请输入${label}`,      // 人员：输入
+    signature: `请在此签名`,          // 签名：固定提示
+    option: `请选择${label}`,         // 选项：选择
+    // ✅ number 类型统一为“请输入{label}”，兼容电话号码/身份证号
+    number: `请输入${label}`,        // 数值：输入
+    match: `请输入${label}编码`,     // 匹配：输入编码
+    other: `请填写${label}`          // 其他：填写
+  };
+
+  // 返回对应类型的提示，若无则使用默认
+  return hints[fieldType] || `请填写${label}`;
+}
+
+/**
+ * 从模板结构中提取所有合并单元格的范围信息
+ * 支持两种合并单元格格式：{rs, cs}（行数、列数）和{rowspan, colspan}
+ * 将其统一转换为{s: {r, c}, e: {r, c}}的标准格式
+ * 
+ * @param structure - 模板结构数据
+ * @returns 合并单元格范围数组
+ */
+function extractMerges(structure: any): Array<{ s: { r: number; c: number }; e: { r: number; c: number } }> {
+  const merges: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }> = [];
+
+  // 从sheets[0].merges中读取合并单元格信息
+  const sheetMerges = structure?.sheets?.[0]?.merges;
+  if (Array.isArray(sheetMerges)) {
+    sheetMerges.forEach((m: any) => {
+      // 处理多种命名方式：rs/cs 或 rowspan/colspan
+      const rowSpan = m.rs || m.rowspan || 1;
+      const colSpan = m.cs || m.colspan || 1;
+      
+      // 转换为标准格式：{s: 起始, e: 结束}
+      merges.push({
+        s: { r: m.r, c: m.c },                                    // 起始位置
+        e: { r: m.r + rowSpan - 1, c: m.c + colSpan - 1 }        // 结束位置
+      });
+    });
+  }
+
+  // 🟢 兼容 XLSX 模板：structure.merges 形如 { s: { r, c }, e: { r, c } }
+  const xlsxMerges = structure?.merges;
+  if (Array.isArray(xlsxMerges)) {
+    xlsxMerges.forEach((m: any) => {
+      if (m && m.s && m.e && typeof m.s.r === 'number' && typeof m.s.c === 'number' && typeof m.e.r === 'number' && typeof m.e.c === 'number') {
+        merges.push({ s: { r: m.s.r, c: m.s.c }, e: { r: m.e.r, c: m.e.c } });
+      } else if (typeof m.r === 'number' && typeof m.c === 'number') {
+        const rowSpan = m.rs || m.rowspan || 1;
+        const colSpan = m.cs || m.colspan || 1;
+        merges.push({ s: { r: m.r, c: m.c }, e: { r: m.r + rowSpan - 1, c: m.c + colSpan - 1 } });
+      }
+    });
+  }
+
+  return merges;
+}
+
+/**
+ * 从本单元格内容中解析选项列表
+ * 支持符号：£、□、☑；分隔符：空格、逗号、顿号、斜杠、分号、竖线
+ */
+function extractOptionsFromCell(cellStr: string): string[] {
+  if (!cellStr) return [];
+  // 去除选项符号
+  const cleaned = stripOptionMarkers(String(cellStr)).trim();
+  if (!cleaned) return [];
+  // 按常见分隔符拆分
+  const parts = cleaned.split(/[、,，;；\/\|\s]+/).map(s => s.trim()).filter(Boolean);
+  // 去重并过滤过短项
+  const uniq: string[] = [];
+  for (const p of parts) {
+    if (p.length === 0) continue;
+    if (!uniq.includes(p)) uniq.push(p);
+  }
+  return uniq;
+}
+
+/**
+ * 辅助函数：计算单个单元格内容所需宽度
+ * 区分中英文字符，中文字符按 zhCharWidthPx 计算，英文按 charWidthPx 计算
+ */
+function getContentWidth(val: any): number {
+  if (val === null || val === undefined || val === '') return 0;
+  const str = String(val).trim();
+  if (!str) return 0;
+  let width = 0;
+  for (const char of str) {
+    // 区分中英文计算
+    width += char.charCodeAt(0) > 255 
+      ? COL_WIDTH_CONFIG.zhCharWidthPx 
+      : COL_WIDTH_CONFIG.charWidthPx;
+  }
+  return width + COL_WIDTH_CONFIG.paddingPx;
+}
+
+/**
+ * 自动计算各列的最优宽度（新算法）
+ * 三轮处理：
+ * 1. 处理非合并单元格，建立列宽骨架
+ * 2. 处理合并单元格，按需补偿宽度
+ * 3. 应用最大值约束
+ */
+export function autoCalculateColumnWidths(structureJson: string): Array<{ wpx: number }> {
+  if (!structureJson) return [];
+
+  try {
+    const structure = JSON.parse(structureJson);
+    const data = extractGrid(structure);
+    const merges = extractMerges(structure);
+    if (!data || data.length === 0) return [];
+    
+    // 计算总列数
+    const colCountFromData = data.length > 0 ? Math.max(...data.map(row => row ? row.length : 0)) : 0;
+    const colCountFromMerge = merges.reduce((max, m) => Math.max(max, m.e.c + 1), 0);
+    const colCount = Math.max(colCountFromData, colCountFromMerge);
+
+    // 初始化所有列宽为最小宽度
+    let colWidths = new Array(colCount).fill(COL_WIDTH_CONFIG.minWidth);
+
+    // ================================================================
+    // 🟢 第一轮：处理【非合并】单元格 (确立骨架)
+    // ================================================================
+    for (let rIndex = 0; rIndex < data.length; rIndex++) {
+      const row = data[rIndex];
+      if (!row) continue;
+
+      for (let cIndex = 0; cIndex < row.length; cIndex++) {
+        const cellVal = row[cIndex];
+        
+        // 检查当前单元格是否是合并单元格的起始点
+        const mergeInfo = merges.find(m => m.s.r === rIndex && m.s.c === cIndex);
+        
+        // 如果是合并单元格起始点，直接跳过，不让它影响单列宽度
+        if (mergeInfo) continue;
+
+        // 检查当前单元格是否被别的合并覆盖（不是起始点，但在范围内）
+        const isCovered = merges.some(m => 
+          rIndex >= m.s.r && rIndex <= m.e.r && 
+          cIndex >= m.s.c && cIndex <= m.e.c
+        );
+        if (isCovered) continue;
+
+        // 计算当前单格所需宽度
+        const needed = getContentWidth(cellVal);
+        if (needed > colWidths[cIndex]) {
+          colWidths[cIndex] = needed;
+        }
+      }
+    }
+
+    // ================================================================
+    // 🟢 第二轮：处理【合并】单元格 (补偿宽度)
+    // ================================================================
+    merges.forEach(m => {
+      const { s, e } = m;
+      // 获取该合并单元格的内容
+      const cellVal = data[s.r]?.[s.c];
+      if (!cellVal) return;
+
+      const neededTotalWidth = getContentWidth(cellVal);
+      
+      // 计算当前涉及的列的总宽度 (Column s.c 到 e.c)
+      let currentTotalWidth = 0;
+      for (let c = s.c; c <= e.c; c++) {
+        currentTotalWidth += colWidths[c];
+      }
+
+      // 如果当前总宽度 < 所需宽度，说明合并格太挤了，需要撑大
+      if (currentTotalWidth < neededTotalWidth) {
+        const diff = neededTotalWidth - currentTotalWidth;
+        const span = e.c - s.c + 1;
+        const addPerCol = diff / span; // 平均分配给每一列
+
+        for (let c = s.c; c <= e.c; c++) {
+          colWidths[c] += addPerCol;
+        }
+      }
+    });
+
+    // ================================================================
+    // 🟢 第三轮：设置最大上限，防止极端情况
+    // ================================================================
+    const MAX_WIDTH = 500;
+    return colWidths.map(w => ({ wpx: Math.min(Math.round(w), MAX_WIDTH) }));
+  } catch (error) {
+    console.error('Failed to calculate column widths:', error);
+    return [];
+  }
+}
+
+/**
+ * 检测模板中所有包含换行符的单元格
+ * 用于识别模板中可能需要特殊处理的大文本输入框（如意见栏）
+ * 
+ * @param structureJson - JSON字符串格式的模板结构数据
+ * @returns 包含换行符的单元格数组，每项包含{r, c, cellKey}
+ */
+export function checkCellLineBreaks(structureJson: string): Array<{ r: number; c: number; cellKey: string }> {
+  if (!structureJson) return [];
+
+  try {
+    const structure = JSON.parse(structureJson);
+    const data = extractGrid(structure);
+    if (!data || data.length === 0) return [];
+    const cellsWithLineBreaks: Array<{ r: number; c: number; cellKey: string }> = [];
+
+    // 遍历所有单元格，检测换行符
+    for (let r = 0; r < data.length; r++) {
+      const row = data[r];
+      if (!row) continue;
+
+      for (let c = 0; c < row.length; c++) {
+        const cell = row[c];
+        // 非空单元格且包含换行符（\n）
+        if (cell !== null && cell !== undefined && cell !== '') {
+          const cellStr = String(cell);
+          if (cellStr.includes('\n')) {
+            cellsWithLineBreaks.push({
+              r,
+              c,
+              cellKey: `R${r + 1}C${c + 1}`
+            });
+          }
+        }
+      }
+    }
+
+    return cellsWithLineBreaks;
+  } catch (error) {
+    console.error('Failed to check cell line breaks:', error);
+    return [];
+  }
+}

@@ -1,0 +1,135 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { createLog } from '@/lib/logger';
+
+// GET: 获取所有工程/项目列表
+export async function GET() {
+  try {
+    // 🟢 修改：确保查出 deletedAt 为空的
+    const projects = await prisma.project.findMany({
+      where: { deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { permits: true } } }
+    });
+    return NextResponse.json(projects);
+  } catch (error) {
+    return NextResponse.json({ error: '获取项目失败' }, { status: 500 });
+  }
+}
+
+// 辅助函数：生成项目编号
+async function generateSequentialCode() {
+    const now = new Date();
+    const prefix = `${now.getFullYear().toString().slice(-2)}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}`;
+    const latest = await prisma.project.findFirst({ where: { code: { startsWith: `${prefix}-` } }, orderBy: { code: 'desc' }, select: { code: true } });
+    let seq = 1;
+    if (latest?.code) { const parts = latest.code.split('-'); if (parts.length===2) seq = parseInt(parts[1]) + 1; }
+    return `${prefix}-${seq.toString().padStart(3, '0')}`;
+}
+
+// POST: 创建新项目
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    // 🟢 1. 解构 attachments
+    const { name, contractNo, location, startDate, endDate, requestDept, requestHead, requestContact, mgmtDept, mgmtHead, mgmtContact, supplierName, supplierHead, supplierContact, attachments, userId, userName } = body;
+    if (!name || !location || !supplierName) return NextResponse.json({ error: '缺少必填字段' }, { status: 400 });
+    const autoCode = await generateSequentialCode();
+    const newProject = await prisma.project.create({
+      data: {
+        code: autoCode,
+        name, contractNo, location,
+        startDate: new Date(startDate), endDate: new Date(endDate),
+        requestDept, requestHead: requestHead||"", requestContact: requestContact||"",
+        mgmtDept, mgmtHead, mgmtContact,
+        supplierName, supplierHead: supplierHead||"", supplierContact: supplierContact||"",
+        // 🟢 2. 保存附件 (转 JSON 字符串)
+        attachments: attachments ? JSON.stringify(attachments) : null
+      }
+    });
+
+    // 🟢 插入日志
+    if (userId && userName) {
+      createLog(
+        userId,
+        userName,
+        'CREATE_PROJECT',
+        newProject.id,
+        `创建项目: ${name}`
+      );
+    }
+
+    return NextResponse.json(newProject);
+  } catch (error) {
+    console.error("Create Project Error:", error);
+    return NextResponse.json({ error: '创建失败' }, { status: 500 });
+  }
+}
+
+// ✅ PATCH: 更新项目信息 (用于工期调整)
+export async function PATCH(req: Request) {
+  try {
+    const body = await req.json();
+    const { id, startDate, endDate, userId, userName } = body;
+
+    if (!id) return NextResponse.json({ error: '缺少 ID' }, { status: 400 });
+
+    const dataToUpdate: any = {};
+    if (startDate) dataToUpdate.startDate = new Date(startDate);
+    if (endDate) dataToUpdate.endDate = new Date(endDate);
+
+    const updatedProject = await prisma.project.update({
+      where: { id },
+      data: dataToUpdate,
+    });
+
+    // 🟢 插入日志
+    if (userId && userName) {
+      createLog(
+        userId,
+        userName,
+        'UPDATE_PROJECT',
+        id,
+        '更新项目信息'
+      );
+    }
+
+    return NextResponse.json(updatedProject);
+  } catch (error) {
+    console.error("Update Project Error:", error);
+    return NextResponse.json({ error: '更新失败' }, { status: 500 });
+  }
+}
+
+// DELETE: 删除项目 (软删除)
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+    const userId = searchParams.get('userId');
+    const userName = searchParams.get('userName');
+    if (!id) return NextResponse.json({ error: '缺少 ID' }, { status: 400 });
+    
+    // 🟢 软删除：更新 deletedAt 字段
+    await prisma.project.update({ 
+      where: { id },
+      data: { deletedAt: new Date() }
+    });
+
+    // 🟢 插入日志
+    if (userId && userName) {
+      createLog(
+        userId,
+        userName,
+        'DELETE_PROJECT',
+        id,
+        '删除项目'
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Delete Project Error:", error);
+    return NextResponse.json({ error: '删除失败' }, { status: 500 });
+  }
+}

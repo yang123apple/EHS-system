@@ -1,0 +1,44 @@
+// src/lib/constants.ts
+
+export const SYSTEM_MODULES = [
+  {
+    key: 'work_permit',
+    name: '作业许可系统',
+    permissions: [
+      { key: 'create_project', name: '新建工程' },
+      { key: 'delete_project', name: '删除工程' },
+      { key: 'adjust_schedule', name: '工期调整' },  
+      { key: 'create_permit', name: '新建关联表单' },
+      { key: 'delete_permit', name: '删除关联表单' },
+      { key: 'upload_template', name: '上传模板' },
+      { key: 'edit_template', name: '编辑模板' },
+      { key: 'lock_template', name: '锁定模板' },
+      { key: 'delete_template', name: '删除模板' },
+      { key: 'approve_permit', name: '审批作业票' }, 
+    ]
+  },
+  {
+    key: 'hidden_danger',
+    name: '隐患排查治理系统',
+    permissions: [
+      { key: 'report', name: '隐患上报' },
+      { key: 'handle', name: '整改/验收隐患' },
+      { key: 'assign', name: '指派责任人 (管理)' },
+      { key: 'view_stats', name: '查看统计报表' },
+      { key: 'manage_config', name: '配置基础数据 (Admin)' },
+      { key: 'delete', name: '删除隐患记录 (Admin)' }, 
+    ]
+  },
+  {
+    key: 'doc_sys',
+    name: 'EHS文档管理系统',
+    permissions: [
+      { key: 'upload', name: '上传文件 (DOCX/PDF)' },
+      { key: 'down_docx_l123', name: '下载 DOCX (1-3级体系文件)' },
+      { key: 'down_docx_l4', name: '下载 DOCX (4级记录表格)' },
+      { key: 'down_pdf', name: '下载 PDF 源文件' },
+      { key: 'delete', name: '删除文件' },
+      { key: 'edit', name: '编辑文件信息' }
+    ]
+  }
+];

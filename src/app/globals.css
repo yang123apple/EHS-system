@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  /* 定义 Hytzer 品牌色 */
+  --color-hytzer-blue: #1E88E5;
+  --color-hytzer-dark: #0F172A; /* 深空蓝 */
+  --color-hytzer-light: #F8FAFC;
+}
+
+/* 基础样式 */
+body {
+  @apply bg-slate-50 text-slate-900;
+}
