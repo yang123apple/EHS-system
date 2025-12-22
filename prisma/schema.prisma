@@ -111,3 +111,17 @@ model SystemLog {
   ip        String?  // 操作IP (可选)
   createdAt DateTime @default(now())
 }
+
+// 🟢 新增：消息通知表
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String   // 接收通知的用户ID
+  type        String   // 通知类型: approval_pending, approval_passed, approval_rejected, etc.
+  title       String   // 通知标题
+  content     String   // 通知内容
+  relatedType String?  // 关联对象类型: permit, hazard, document
+  relatedId   String?  // 关联对象ID (如作业票ID)
+  isRead      Boolean  @default(false) // 是否已读
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

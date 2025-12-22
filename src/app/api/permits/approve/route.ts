@@ -154,7 +154,8 @@ export async function POST(req: Request) {
         currentStep: nextStep,
         status: nextStatus,
         dataJson: updatedDataJson // ✅ 保存 Excel 数据
-      }
+      },
+      include: { project: true, template: true } // 包含项目和模板信息，用于通知
     });
 
     // 🟢 插入日志
@@ -166,6 +167,54 @@ export async function POST(req: Request) {
       recordId, 
       `审批意见: ${opinion}`
     );
+
+    // 🟢 创建通知
+    try {
+      // 如果是通过，且还有下一步，通知下一个审批人
+      if (action === 'pass' && nextStep < workflow.length) {
+        const nextStepConfig = workflow.find((w: any) => {
+          const stepNum = w.step ?? w.stepIndex;
+          return String(stepNum) === String(nextStep);
+        });
+
+        if (nextStepConfig && nextStepConfig.approvers && nextStepConfig.approvers.length > 0) {
+          // 为每个审批人创建通知
+          const approverIds = nextStepConfig.approvers.map((a: any) => a.id || a.userId).filter(Boolean);
+          
+          const notificationPromises = approverIds.map((approverId: string) => 
+            prisma.notification.create({
+              data: {
+                userId: approverId,
+                type: 'approval_pending',
+                title: '待审批作业票',
+                content: `【${updatedRecord.template.name}】 ${updatedRecord.project.name} - 等待您审批（第${nextStep + 1}步：${nextStepConfig.name}）`,
+                relatedType: 'permit',
+                relatedId: recordId,
+                isRead: false,
+              }
+            })
+          );
+
+          await Promise.all(notificationPromises);
+          console.log(`✅ 已为 ${approverIds.length} 位下一步审批人创建通知`);
+        }
+      }
+      
+      // 如果是驳回，通知创建人
+      if (action === 'reject') {
+        // TODO: 需要在WorkPermitRecord中添加creatorId字段来通知创建人
+        console.log('⚠️ 作业票已驳回，需要通知创建人');
+      }
+
+      // 如果全部通过，通知相关人员
+      if (nextStatus === 'approved') {
+        // TODO: 通知创建人和相关部门负责人
+        console.log('✅ 作业票已全部审批通过');
+      }
+    } catch (notificationError) {
+      console.error('❌ 创建通知失败:', notificationError);
+      // 通知创建失败不影响审批流程
+    }
 
     return NextResponse.json(updatedRecord);
 

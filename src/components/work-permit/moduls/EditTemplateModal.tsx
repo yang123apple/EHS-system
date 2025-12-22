@@ -80,8 +80,13 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
       
       // 🟢 V3.4 初始化纸张方向
       setOrientation((template.orientation as 'portrait' | 'landscape') || 'portrait');
+    } else if (!isOpen) {
+      // 🔴 关闭时清理状态，避免下次打开时闪现旧数据
+      setTemplateData(null);
+      setParsedFields([]);
+      setSectionBindings({});
     }
-  }, [isOpen, template]);
+  }, [isOpen, template?.id]); // 使用template.id确保模板切换时重新初始化
 
   // 🟢 V3.4 处理section绑定
   const handleBindTemplate = (cellKey: string) => {
@@ -237,6 +242,7 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
           >
             {templateData && (
               <ExcelRenderer
+                key={`${template.id}-${isOpen}`} // 强制在模板切换或弹窗打开时重新渲染
                 templateData={templateData}
                 parsedFields={parsedFields}
                 parseEditMode={parseEditMode}
