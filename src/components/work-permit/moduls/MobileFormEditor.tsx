@@ -19,6 +19,7 @@ export interface MobileFormConfig {
   enabled: boolean;
   fields: MobileFormField[];
   groups?: Array<{ name: string; order: number }>; // 分组配置
+  title?: string; // 表单标题
 }
 
 interface Props {
@@ -37,7 +38,9 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
     { name: '安全措施', order: 1 },
     { name: '审批意见', order: 2 }
   ]);
+  const [title, setTitle] = useState('作业许可申请');
   const [editingField, setEditingField] = useState<MobileFormField | null>(null);
+  const [editingGroupIndex, setEditingGroupIndex] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('preview'); // 默认预览模式
 
   useEffect(() => {
@@ -45,12 +48,31 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
       if (currentConfig) {
         setEnabled(currentConfig.enabled);
         setFields(currentConfig.fields);
+        setTitle(currentConfig.title || '作业许可申请');
         if (currentConfig.groups) {
           setGroups(currentConfig.groups);
         }
       } else {
-        // 自动从parsedFields生成初始配置
-        const autoFields: MobileFormField[] = parsedFields
+        // 🟢 自动从parsedFields生成初始配置，按坐标排序（先行后列）
+        const sortedParsedFields = [...parsedFields].sort((a, b) => {
+          // 优先使用rowIndex/colIndex
+          if (a.rowIndex !== undefined && b.rowIndex !== undefined) {
+            if (a.rowIndex !== b.rowIndex) return a.rowIndex - b.rowIndex;
+            return (a.colIndex || 0) - (b.colIndex || 0);
+          }
+          // 兜底：从cellKey解析
+          const matchA = a.cellKey?.match(/R(\d+)C(\d+)/);
+          const matchB = b.cellKey?.match(/R(\d+)C(\d+)/);
+          if (matchA && matchB) {
+            const rowA = parseInt(matchA[1]);
+            const rowB = parseInt(matchB[1]);
+            if (rowA !== rowB) return rowA - rowB;
+            return parseInt(matchA[2]) - parseInt(matchB[2]);
+          }
+          return 0;
+        });
+
+        const autoFields: MobileFormField[] = sortedParsedFields
           .map((f, index) => ({
             id: `field-${Date.now()}-${index}`,
             label: f.fieldName || f.label,
@@ -143,8 +165,58 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
       enabled,
       fields: fields.map((f, i) => ({ ...f, order: i })),
       groups,
+      title,
     });
     onClose();
+  };
+
+  // 分组管理函数
+  const handleAddGroup = () => {
+    const newGroup = {
+      name: '新分组',
+      order: groups.length
+    };
+    setGroups([...groups, newGroup]);
+    setEditingGroupIndex(groups.length);
+  };
+
+  const handleDeleteGroup = (index: number) => {
+    const groupName = groups[index].name;
+    // 将该分组的字段移到"其他信息"
+    setFields(fields.map(f => 
+      f.group === groupName ? { ...f, group: '其他信息' } : f
+    ));
+    setGroups(groups.filter((_, i) => i !== index));
+    if (editingGroupIndex === index) {
+      setEditingGroupIndex(null);
+    }
+  };
+
+  const handleUpdateGroup = (index: number, name: string) => {
+    const oldName = groups[index].name;
+    const newGroups = [...groups];
+    newGroups[index] = { ...newGroups[index], name };
+    setGroups(newGroups);
+    // 更新字段的分组名称
+    setFields(fields.map(f => 
+      f.group === oldName ? { ...f, group: name } : f
+    ));
+  };
+
+  const handleMoveGroupUp = (index: number) => {
+    if (index === 0) return;
+    const newGroups = [...groups];
+    [newGroups[index - 1], newGroups[index]] = [newGroups[index], newGroups[index - 1]];
+    newGroups.forEach((g, i) => g.order = i);
+    setGroups(newGroups);
+  };
+
+  const handleMoveGroupDown = (index: number) => {
+    if (index === groups.length - 1) return;
+    const newGroups = [...groups];
+    [newGroups[index], newGroups[index + 1]] = [newGroups[index + 1], newGroups[index]];
+    newGroups.forEach((g, i) => g.order = i);
+    setGroups(newGroups);
   };
 
   // 渲染移动端预览
@@ -193,7 +265,7 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
           <div className="p-4 space-y-4">
             {/* 表单标题 */}
             <div className="bg-white rounded-lg p-4 shadow-sm border">
-              <h3 className="text-lg font-bold text-slate-800 text-center">作业许可申请</h3>
+              <h3 className="text-lg font-bold text-slate-800 text-center">{title}</h3>
               <p className="text-sm text-blue-600 mt-2 text-center font-mono">编号：预览模式</p>
             </div>
 
@@ -449,13 +521,22 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
                   />
                   启用移动端表单
                 </label>
-                <button
-                  onClick={handleAddField}
-                  disabled={!enabled}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition"
-                >
-                  <Plus size={14} /> 添加
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setEditingField(null); setEditingGroupIndex(-1); }}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition"
+                    title="编辑表单标题和分组"
+                  >
+                    <Settings size={14} /> 设置
+                  </button>
+                  <button
+                    onClick={handleAddField}
+                    disabled={!enabled}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition"
+                  >
+                    <Plus size={14} /> 添加字段
+                  </button>
+                </div>
               </div>
               <p className="text-xs text-slate-500">
                 点击字段编辑属性，拖动排序
@@ -528,9 +609,120 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
             {renderMobilePreview()}
           </div>
 
-          {/* 右侧：字段属性编辑 */}
-          <div className={`${viewMode === 'edit' && editingField ? 'w-1/3' : 'w-0'} border-l flex flex-col transition-all overflow-hidden`}>
-            {editingField && (
+          {/* 右侧：字段属性编辑 / 表单设置 */}
+          <div className={`${viewMode === 'edit' && (editingField || editingGroupIndex !== null) ? 'w-1/3' : 'w-0'} border-l flex flex-col transition-all overflow-hidden`}>
+            {editingGroupIndex === -1 ? (
+              /* 表单标题和分组管理 */
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Settings size={16} /> 表单设置
+                  </h4>
+                  <button
+                    onClick={() => setEditingGroupIndex(null)}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    关闭
+                  </button>
+                </div>
+
+                {/* 表单标题 */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">表单标题</label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="w-full border rounded px-3 py-2 text-sm"
+                    placeholder="例如：作业许可申请"
+                  />
+                </div>
+
+                {/* 分组管理 */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold text-slate-700">分组管理</label>
+                    <button
+                      onClick={handleAddGroup}
+                      className="flex items-center gap-1 px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition"
+                    >
+                      <Plus size={12} /> 新增分组
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {groups.map((group, index) => (
+                      <div
+                        key={index}
+                        className={`border rounded-lg p-3 transition ${
+                          editingGroupIndex === index
+                            ? 'border-purple-500 bg-purple-50'
+                            : 'border-slate-200 bg-white'
+                        }`}
+                      >
+                        {editingGroupIndex === index ? (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={group.name}
+                              onChange={(e) => handleUpdateGroup(index, e.target.value)}
+                              className="w-full border rounded px-2 py-1 text-sm"
+                              placeholder="分组名称"
+                            />
+                            <button
+                              onClick={() => setEditingGroupIndex(null)}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              完成
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-sm text-slate-800">{group.name}</span>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => setEditingGroupIndex(index)}
+                                className="p-1 hover:bg-slate-200 rounded text-xs"
+                                title="编辑"
+                              >
+                                <Edit2 size={12} />
+                              </button>
+                              <button
+                                onClick={() => handleMoveGroupUp(index)}
+                                disabled={index === 0}
+                                className="p-1 hover:bg-slate-200 rounded disabled:opacity-30 disabled:cursor-not-allowed text-xs"
+                                title="上移"
+                              >
+                                ▲
+                              </button>
+                              <button
+                                onClick={() => handleMoveGroupDown(index)}
+                                disabled={index === groups.length - 1}
+                                className="p-1 hover:bg-slate-200 rounded disabled:opacity-30 disabled:cursor-not-allowed text-xs"
+                                title="下移"
+                              >
+                                ▼
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (confirm(`确定删除分组"${group.name}"吗？该分组的字段将移至"其他信息"`)) {
+                                    handleDeleteGroup(index);
+                                  }
+                                }}
+                                className="p-1 hover:bg-red-100 text-red-600 rounded"
+                                title="删除"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : editingField ? (
+              /* 字段属性编辑 */
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="font-bold text-slate-800 flex items-center gap-2">
@@ -651,7 +843,7 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
                   </label>
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
 
