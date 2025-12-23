@@ -149,6 +149,42 @@ function findSmartLeftLabel(
 }
 
 /**
+ * 为option类型字段向左查找标签：跳过左侧的option类型单元格，直到找到非option的有值单元格
+ * 🟢 新规则：对于option字段，字段名取左侧第一个非option类型的单元格值
+ */
+function findLabelForOption(
+  data: any[][],
+  row: number,
+  col: number
+): string | null {
+  // 从当前列的左侧开始查找
+  for (let leftCol = col - 1; leftCol >= 0; leftCol--) {
+    const candidate = data[row]?.[leftCol];
+    
+    // 如果遇到空白单元格，继续向左查找
+    if (isEmptyCellValue(candidate)) {
+      continue;
+    }
+    
+    const candidateStr = String(candidate).trim();
+    
+    // 如果左侧单元格也是option类型（包含选项标记），继续向左查找
+    if (hasOptionMarker(candidateStr)) {
+      continue;
+    }
+    
+    // 找到第一个非option的有值单元格，返回其值（去除标记符号后）
+    const cleanLabel = stripOptionMarkers(candidateStr).trim();
+    if (cleanLabel && !isIgnorableLabel(cleanLabel)) {
+      return cleanLabel;
+    }
+  }
+  
+  // 如果整行左侧都没有找到合适的标签，返回null
+  return null;
+}
+
+/**
  * 查找指定单元格所在的合并区域
  * 如果单元格在某个合并区域内，返回该合并区域对象
  * 如果不在任何合并区域内，返回 null
@@ -320,15 +356,18 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
             continue;
           }
 
-          // 🟢 选项：优先用本格内容（如"£钻孔" -> "钻孔"）；若本格为纯选项符号则向左/上查找
-          let groupLabel = stripOptionMarkers(cellStr).trim();
+          // 🟢 选项：字段名从左侧非option单元格获取，跳过左侧的option类型单元格
+          let groupLabel = findLabelForOption(data, r, c);
+          
+          // 如果左侧找不到合适的标签，尝试向上查找
           if (!groupLabel) {
-            // 本格无有效内容，退化为向左/上查找
-            const labelLeft = findSmartLeftLabel(data, r, c, processedCells, 5);
             const labelTop = findTopLabel(data, r, c);
-            groupLabel = labelLeft && !isIgnorableLabel(labelLeft)
-              ? labelLeft
-              : (labelTop && !isIgnorableLabel(labelTop) ? labelTop : '');
+            groupLabel = labelTop && !isIgnorableLabel(labelTop) ? labelTop : '';
+          }
+          
+          // 如果还是找不到标签，使用本格内容（去除选项标记后）
+          if (!groupLabel) {
+            groupLabel = stripOptionMarkers(cellStr).trim();
           }
 
           // 聚合同一行的连续选项单元格
