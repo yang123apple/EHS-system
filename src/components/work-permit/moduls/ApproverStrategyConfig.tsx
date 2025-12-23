@@ -54,14 +54,12 @@ export default function ApproverStrategyConfig({
 
   // 获取策略名称
   const getStrategyLabel = (strategy: ApproverStrategy) => {
-    const labels: Record<ApproverStrategy, string> = {
-      fixed: '固定人员',
-      current_dept_manager: '申请人所在部门负责人',
-      specific_dept_manager: '指定部门负责人',
-      template_field_dept_manager: '表单字段指定部门负责人',
-      template_text_match: '文本字段匹配',
-      template_option_match: '选项字段匹配',
+    const labels: any = {
+      specific_user: '指定人员',
       role: '角色',
+      direct_manager: '直属上级',
+      dept_manager: '部门负责人',
+      form_cell: '表单字段',
     };
     return labels[strategy] || strategy;
   };

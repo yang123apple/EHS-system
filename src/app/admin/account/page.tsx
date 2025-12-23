@@ -338,23 +338,23 @@ export default function AccountManagement() {
   if (isLoading) return <div className="p-8 text-center text-slate-500">加载中...</div>;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-10">
+    <div className="space-y-4 md:space-y-6 max-w-7xl mx-auto pb-10 px-3 md:px-0">
       <div className="flex justify-between items-center">
         <div>
-            <h1 className="text-3xl font-bold text-slate-900">账户管理</h1>
-            <p className="text-slate-500 mt-1">新增用户、批量管理头像与权限配置</p>
+            <h1 className="text-xl md:text-3xl font-bold text-slate-900">账户管理</h1>
+            <p className="text-slate-500 mt-1 text-xs md:text-sm">新增用户、批量管理头像与权限配置</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-8">
         {/* 左侧：新增表单 */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-fit space-y-6 sticky top-24">
+        <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200 h-fit space-y-4 md:space-y-6 lg:sticky lg:top-24">
             <div>
                 <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
                     <UserPlus className="text-hytzer-blue" size={20} />
                     <h2 className="text-lg font-bold text-slate-800">新增账号</h2>
                 </div>
-                <form onSubmit={handleAddUser} className="space-y-4">
+                <form onSubmit={handleAddUser} className="space-y-3 md:space-y-4">
                     <div>
                         <label className="text-xs font-bold text-slate-500 uppercase block mb-1">登录账号</label>
                         <input type="text" required value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" placeholder="wang.xm" />
@@ -382,9 +382,9 @@ export default function AccountManagement() {
             </div>
              
              {/* 批量上传 */}
-             <div className="pt-6 border-t border-slate-100 space-y-3">
-                <button onClick={() => folderInputRef.current?.click()} className="w-full border border-purple-200 text-purple-700 bg-white hover:bg-purple-50 py-2 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2">
-                    <UploadCloud size={16} /> 选择头像文件夹
+             <div className="pt-4 md:pt-6 border-t border-slate-100 space-y-2 md:space-y-3">
+                <button onClick={() => folderInputRef.current?.click()} className="w-full border border-purple-200 text-purple-700 bg-white hover:bg-purple-50 py-2 rounded-lg font-medium text-xs md:text-sm transition-colors flex items-center justify-center gap-2">
+                    <UploadCloud size={14} className="md:hidden" /><UploadCloud size={16} className="hidden md:block" /> 选择头像文件夹
                 </button>
                 <input type="file" ref={folderInputRef} className="hidden" 
                 // @ts-ignore
@@ -408,20 +408,20 @@ export default function AccountManagement() {
         </div>
 
         {/* 右侧：用户列表 */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[600px]">
+        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[400px] md:min-h-[600px]">
           {/* 搜索栏 */}
-          <div className="p-4 border-b border-slate-100 bg-slate-50/50 space-y-3">
+          <div className="p-3 md:p-4 border-b border-slate-100 bg-slate-50/50 space-y-2 md:space-y-3">
              <div className="flex justify-between items-center">
-                 <h2 className="text-lg font-bold text-slate-800">用户列表 <span className="text-slate-400 text-sm font-normal">({filteredUsers.length})</span></h2>
+                 <h2 className="text-base md:text-lg font-bold text-slate-800">用户列表 <span className="text-slate-400 text-xs md:text-sm font-normal">({filteredUsers.length})</span></h2>
              </div>
-             <div className="flex gap-4">
+             <div className="flex flex-col sm:flex-row gap-2 md:gap-4">
                  <div className="relative flex-1">
-                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                     <input type="text" placeholder="搜索姓名、账号..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" />
+                     <Search className="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                     <input type="text" placeholder="搜索..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-7 md:pl-9 pr-3 md:pr-4 py-1.5 md:py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" />
                  </div>
-                 <div className="relative w-40">
-                     <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                     <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none appearance-none cursor-pointer hover:bg-slate-50">
+                 <div className="relative w-full sm:w-40">
+                     <Filter className="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                     <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="w-full pl-7 md:pl-9 pr-3 md:pr-4 py-1.5 md:py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm outline-none appearance-none cursor-pointer hover:bg-slate-50">
                          <option value="">所有部门</option>
                          {allDepts.map(dept => <option key={dept} value={dept}>{dept}</option>)}
                      </select>
@@ -430,20 +430,20 @@ export default function AccountManagement() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-xs md:text-sm min-w-[640px]">
               <thead className="bg-slate-50 text-slate-500 uppercase sticky top-0 z-10">
                 <tr>
-                    <th className="px-6 py-4 font-semibold">基本信息</th>
-                    <th className="px-6 py-4 font-semibold">职务 & 汇报线</th>
-                    <th className="px-6 py-4 font-semibold text-right">操作</th>
+                    <th className="px-3 md:px-6 py-2 md:py-4 font-semibold">基本信息</th>
+                    <th className="px-3 md:px-6 py-2 md:py-4 font-semibold">职务 & 汇报线</th>
+                    <th className="px-3 md:px-6 py-2 md:py-4 font-semibold text-right">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredUsers.map(u => (
                   <tr key={u.id} className="hover:bg-slate-50 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden border border-slate-100 shrink-0">
+                    <td className="px-3 md:px-6 py-2 md:py-4">
+                      <div className="flex items-center gap-2 md:gap-3">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-slate-200 overflow-hidden border border-slate-100 shrink-0">
                             {u.avatar ? <img src={u.avatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-400"><UserIcon size={20}/></div>}
                         </div>
                         <div>
@@ -503,8 +503,8 @@ export default function AccountManagement() {
 
       {/* Edit User Modal (单人编辑弹窗) */}
       {showEditModal && editingUser && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm p-4">
-            <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl animate-fade-in">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm p-3 md:p-4">
+            <div className="bg-white rounded-xl w-full max-w-md p-4 md:p-6 shadow-2xl animate-fade-in max-h-[95vh] overflow-y-auto">
                 <h3 className="text-lg font-bold mb-6 text-slate-900 flex items-center gap-2">
                     <Edit size={20} className="text-hytzer-blue"/> 
                     编辑用户: {editingUser.name}

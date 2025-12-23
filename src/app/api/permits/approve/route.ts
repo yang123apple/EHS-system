@@ -222,7 +222,7 @@ export async function POST(req: Request) {
           if (applicantUserId) {
             const applicantUser = await db.getUserById(applicantUserId);
             console.log('🔍 [调试] 发起人用户信息:', JSON.stringify(applicantUser));
-            applicantDept = applicantUser?.departmentId || applicantUser?.department || '';
+            applicantDept = (applicantUser as any)?.departmentId || applicantUser?.department || '';
           }
           
           if (!applicantDept) {

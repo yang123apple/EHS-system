@@ -441,45 +441,46 @@ export default function HiddenDangerPage() {
       {/* 隐藏的文件输入框，用于批量导入 */}
       <input type="file" ref={importInputRef} accept=".xlsx, .xls" className="hidden" onChange={handleBatchImport} />
 
-      <div className="w-64 bg-white border-r border-slate-200 flex flex-col p-4 space-y-2">
-         <div className="mb-6 flex items-center gap-2 text-slate-800 font-bold text-lg px-2"><AlertTriangle className="text-red-500" />隐患排查治理</div>
-         <NavBtn active={viewMode==='overview'} icon={<LayoutDashboard size={18}/>} label="工作台概览" onClick={()=>setViewMode('overview')} />
-         <NavBtn active={viewMode==='my_tasks'} icon={<ListTodo size={18}/>} label="我的任务" onClick={()=>setViewMode('my_tasks')} />
-         <NavBtn active={viewMode==='all_list'} icon={<Search size={18}/>} label="隐患查询" onClick={()=>setViewMode('all_list')} />
-         {hasPerm('view_stats') && <NavBtn active={viewMode==='stats'} icon={<BarChart3 size={18}/>} label="统计分析" onClick={()=>setViewMode('stats')} />}
-         <div className="border-t pt-4 mt-4">
-             {hasPerm('report') && <button onClick={() => setShowReportModal(true)} className="w-full bg-red-600 text-white py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-red-700 transition shadow-sm mb-2"><Plus size={18} /> 立即上报</button>}
-             {hasPerm('manage_config') && <NavBtn active={viewMode==='config'} icon={<Settings size={18}/>} label="基础设置 (Admin)" onClick={()=>setViewMode('config')} />}
+      <div className="w-16 md:w-64 bg-white border-r border-slate-200 flex flex-col p-2 md:p-4 space-y-1 md:space-y-2 transition-all">
+         <div className="mb-3 md:mb-6 flex items-center gap-2 text-slate-800 font-bold text-sm md:text-lg px-1 md:px-2">
+           <AlertTriangle className="text-red-500" size={18} />
+           <span className="hidden md:inline">隐患排查治理</span>
+         </div>
+         <NavBtn active={viewMode==='overview'} icon={<LayoutDashboard size={18} />} label="工作台" onClick={()=>setViewMode('overview')} />
+         <NavBtn active={viewMode==='my_tasks'} icon={<ListTodo size={18} />} label="我的任务" onClick={()=>setViewMode('my_tasks')} />
+         <NavBtn active={viewMode==='all_list'} icon={<Search size={18} />} label="隐患查询" onClick={()=>setViewMode('all_list')} />
+         {hasPerm('view_stats') && <NavBtn active={viewMode==='stats'} icon={<BarChart3 size={18} />} label="统计" onClick={()=>setViewMode('stats')} />}
+         <div className="border-t pt-2 md:pt-4 mt-2 md:mt-4">
+             {hasPerm('report') && <button onClick={() => setShowReportModal(true)} className="w-full bg-red-600 text-white py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-red-700 transition shadow-sm mb-2 text-xs md:text-sm">
+               <Plus size={18} /> 
+               <span className="hidden md:inline">立即上报</span>
+             </button>}
+             {hasPerm('manage_config') && <NavBtn active={viewMode==='config'} icon={<Settings size={18} />} label="设置" onClick={()=>setViewMode('config')} />}
          </div>
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {['overview', 'my_tasks', 'all_list'].includes(viewMode) && (
-            <div className="bg-white border-b p-4 flex gap-3 items-center flex-wrap">
+            <div className="bg-white border-b p-2 md:p-4 flex gap-2 md:gap-3 items-center flex-wrap">
                 {/* 筛选条件 */}
-                <div className="flex items-center gap-2 bg-slate-50 border rounded-lg px-3 py-2">
-                    <Filter size={16} className="text-slate-400"/>
-                    <select className="bg-transparent outline-none text-sm" value={filterType} onChange={e=>setFilterType(e.target.value)}><option value="">所有类型</option>{config.types.map(t=><option key={t} value={t}>{t}</option>)}</select>
+                <div className="flex items-center gap-1 md:gap-2 bg-slate-50 border rounded-lg px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm">
+                    <Filter size={14} className="text-slate-400 hidden md:block"/>
+                    <select className="bg-transparent outline-none text-xs md:text-sm" value={filterType} onChange={e=>setFilterType(e.target.value)}><option value="">类型</option>{config.types.map(t=><option key={t} value={t}>{t}</option>)}</select>
                 </div>
-                <div className="flex items-center gap-2 bg-slate-50 border rounded-lg px-3 py-2">
-                    <MapPin size={16} className="text-slate-400"/>
-                    <select className="bg-transparent outline-none text-sm" value={filterArea} onChange={e=>setFilterArea(e.target.value)}><option value="">所有区域</option>{config.areas.map(a=><option key={a} value={a}>{a}</option>)}</select>
-                </div>
-                <div className="flex items-center gap-2 bg-slate-50 border rounded-lg px-3 py-2">
-                    <Siren size={16} className="text-slate-400"/>
-                    <select className="bg-transparent outline-none text-sm" value={filterRisk} onChange={e=>setFilterRisk(e.target.value)}><option value="">所有风险</option><option value="low">低风险</option><option value="medium">中风险</option><option value="high">高风险</option><option value="major">重大风险</option></select>
+                <div className="flex items-center gap-1 md:gap-2 bg-slate-50 border rounded-lg px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm">
+                    <MapPin size={14} className="text-slate-400 hidden md:block"/>
+                    <select className="bg-transparent outline-none text-xs md:text-sm" value={filterArea} onChange={e=>setFilterArea(e.target.value)}><option value="">区域</option>{config.areas.map(a=><option key={a} value={a}>{a}</option>)}</select>
                 </div>
                 
                 {/* 按钮组 */}
                 <div className="ml-auto flex gap-2">
-                    {/* ✅ 批量导入按钮 */}
                     {hasPerm('report') && (
-                        <button onClick={()=>importInputRef.current?.click()} className="flex items-center gap-2 text-blue-700 bg-blue-50 border border-blue-200 px-3 py-2 rounded-lg text-sm hover:bg-blue-100 transition">
-                            <UploadCloud size={16}/> 批量导入
+                        <button onClick={()=>importInputRef.current?.click()} className="flex items-center gap-1 md:gap-2 text-blue-700 bg-blue-50 border border-blue-200 px-2 md:px-3 py-1.5 md:py-2 rounded-lg text-xs md:text-sm hover:bg-blue-100 transition">
+                            <UploadCloud size={14}/> <span className="hidden sm:inline">导入</span>
                         </button>
                     )}
-                    <button onClick={handleExport} className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 px-3 py-2 rounded-lg text-sm hover:bg-green-100 transition">
-                        <FileSpreadsheet size={16}/> 导出Excel
+                    <button onClick={handleExport} className="flex items-center gap-1 md:gap-2 text-green-700 bg-green-50 border border-green-200 px-2 md:px-3 py-1.5 md:py-2 rounded-lg text-xs md:text-sm hover:bg-green-100 transition">
+                        <FileSpreadsheet size={14}/> <span className="hidden sm:inline">导出</span>
                     </button>
                 </div>
             </div>
@@ -487,16 +488,16 @@ export default function HiddenDangerPage() {
 
         <div className="flex-1 overflow-auto p-6">
             {viewMode === 'overview' && (
-                <div className="space-y-6">
-                    <div className="grid grid-cols-4 gap-4">
+                <div className="space-y-4 md:space-y-6">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
                         <StatCard label="待整改 (高风险)" value={hazards.filter(h=>h.status==='assigned' && (h.riskLevel==='high'||h.riskLevel==='major')).length} color="text-red-600" />
                         <StatCard label="整改中" value={hazards.filter(h=>h.status==='rectifying').length} color="text-blue-600" />
                         <StatCard label="延期申请" value={hazards.filter(h=>h.isExtensionRequested).length} color="text-orange-600" />
                         <StatCard label="整改闭环率" value={stats.rate + '%'} color="text-green-600" />
                     </div>
                     <div>
-                        <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Clock size={18}/> 最新上报</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2 text-sm md:text-base"><Clock size={16} className="md:hidden"/><Clock size={18} className="hidden md:block"/> 最新上报</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                             {filteredHazards.slice(0, 6).map(h => <HazardCard key={h.id} data={h} onClick={()=>{setSelectedHazard(h); setShowDetailModal(true); setShowExtensionForm(false); setProcessData({}); }} />)}
                         </div>
                     </div>
@@ -504,9 +505,9 @@ export default function HiddenDangerPage() {
             )}
 
             {(viewMode === 'all_list' || viewMode === 'my_tasks') && (
-                 <div className="bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col h-full">
+                 <div className="bg-white rounded-lg md:rounded-xl shadow-sm border overflow-hidden flex flex-col h-full">
                     <div className="flex-1 overflow-auto">
-                        <table className="w-full text-sm text-left">
+                        <table className="w-full text-xs md:text-sm text-left min-w-[640px]">
                             <thead className="bg-slate-50 border-b text-slate-500 sticky top-0">
                                 <tr><th className="p-4">风险/状态</th><th className="p-4">描述</th><th className="p-4">责任信息</th><th className="p-4 text-right">操作</th></tr>
                             </thead>
@@ -544,9 +545,9 @@ export default function HiddenDangerPage() {
             )}
 
             {viewMode === 'stats' && backendStats && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-white p-6 rounded-xl border shadow-sm">
-                        <h4 className="font-bold mb-4 text-slate-700">隐患风险分布</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                    <div className="bg-white p-4 md:p-6 rounded-xl border shadow-sm">
+                        <h4 className="font-bold mb-3 md:mb-4 text-slate-700 text-sm md:text-base">隐患风险分布</h4>
                         <div className="flex gap-6 items-center">
                             <div className="w-32 h-32 rounded-full border-[10px] border-slate-100 flex items-center justify-center relative">
                                 {/* 这里使用简单的 CSS 渐变模拟饼图视觉，实际项目可用 ECharts/Recharts */}
@@ -580,8 +581,8 @@ export default function HiddenDangerPage() {
       </div>
 
       {showReportModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-           <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 md:p-4 backdrop-blur-sm">
+           <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl p-4 md:p-6 space-y-3 md:space-y-4 max-h-[95vh] overflow-y-auto">
                 <div className="flex justify-between font-bold text-lg"><h3>上报隐患</h3><button onClick={()=>setShowReportModal(false)}><X/></button></div>
                 
                 <div className="flex gap-2 overflow-x-auto pb-2">
@@ -627,8 +628,8 @@ export default function HiddenDangerPage() {
       )}
 
       {showDetailModal && selectedHazard && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-             <div className="bg-white w-full max-w-5xl rounded-xl shadow-2xl h-[90vh] flex flex-col">
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 md:p-4 backdrop-blur-sm">
+             <div className="bg-white w-full max-w-5xl rounded-xl shadow-2xl h-[95vh] md:h-[90vh] flex flex-col">
                  <div className="p-4 border-b flex justify-between items-center bg-slate-50">
                      <div className="flex items-center gap-3">
                          <h3 className="font-bold text-lg text-slate-800">隐患详情</h3>
@@ -641,8 +642,8 @@ export default function HiddenDangerPage() {
                      </div>
                  </div>
                  
-                 <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
-                     <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                 <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+                     <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-4 md:space-y-6">
                          <div className="bg-slate-50 p-4 rounded border">
                              <div className="font-bold text-lg mb-2">{selectedHazard.desc}</div>
                              <div className="flex gap-4 text-sm text-slate-500 mb-2">
@@ -672,7 +673,7 @@ export default function HiddenDangerPage() {
                          </div>
                      </div>
 
-                     <div className="w-full md:w-80 bg-slate-50 border-l p-4 overflow-y-auto">
+                     <div className="w-full lg:w-80 bg-slate-50 border-t lg:border-t-0 lg:border-l p-3 md:p-4 overflow-y-auto max-h-[40vh] lg:max-h-none">
                          <div className="mb-4 font-bold flex justify-between items-center">
                              <span>当前状态</span>
                              {getStatusBadge(selectedHazard.status)}
@@ -814,38 +815,38 @@ function HazardCard({ data, onClick }: { data: HazardRecord, onClick: () => void
     const r = riskMap[data.riskLevel] || riskMap['low'];
 
     return (
-        <div onClick={onClick} className="bg-white border rounded-xl p-4 shadow-sm hover:shadow-md transition cursor-pointer flex flex-col h-full group">
+        <div onClick={onClick} className="bg-white border rounded-lg md:rounded-xl p-3 md:p-4 shadow-sm hover:shadow-md transition cursor-pointer flex flex-col h-full group">
             <div className="flex justify-between items-start mb-2">
-                <div className="flex gap-2">
-                    <span className={`text-xs px-2 py-0.5 rounded border ${s.color} text-slate-600`}>{s.text}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded font-bold ${r.color}`}>{r.text}风险</span>
+                <div className="flex gap-1.5 md:gap-2">
+                    <span className={`text-[10px] md:text-xs px-1.5 md:px-2 py-0.5 rounded border ${s.color} text-slate-600`}>{s.text}</span>
+                    <span className={`text-[10px] md:text-xs px-1.5 md:px-2 py-0.5 rounded font-bold ${r.color}`}>{r.text}风险</span>
                 </div>
-                <span className="text-xs text-slate-400">{new Date(data.reportTime).toLocaleDateString()}</span>
+                <span className="text-[10px] md:text-xs text-slate-400">{new Date(data.reportTime).toLocaleDateString()}</span>
             </div>
             
-            <div className="flex gap-3 mb-3">
+            <div className="flex gap-2 md:gap-3 mb-2 md:mb-3">
                 {data.photos[0] ? (
-                    <img src={data.photos[0]} className="w-16 h-16 rounded object-cover border bg-slate-100 shrink-0" />
+                    <img src={data.photos[0]} className="w-12 h-12 md:w-16 md:h-16 rounded object-cover border bg-slate-100 shrink-0" />
                 ) : (
-                    <div className="w-16 h-16 rounded border bg-slate-50 flex items-center justify-center text-slate-300 shrink-0"><Camera size={16}/></div>
+                    <div className="w-12 h-12 md:w-16 md:h-16 rounded border bg-slate-50 flex items-center justify-center text-slate-300 shrink-0"><Camera size={14} className="md:hidden"/><Camera size={16} className="hidden md:block"/></div>
                 )}
                 <div>
-                    <h4 className="font-bold text-slate-800 text-sm line-clamp-2 mb-1 group-hover:text-red-600 transition-colors">{data.desc}</h4>
-                    <div className="text-xs text-slate-500 flex items-center gap-1"><MapPin size={10}/> {data.location}</div>
+                    <h4 className="font-bold text-slate-800 text-xs md:text-sm line-clamp-2 mb-1 group-hover:text-red-600 transition-colors">{data.desc}</h4>
+                    <div className="text-[10px] md:text-xs text-slate-500 flex items-center gap-1"><MapPin size={8} className="md:hidden"/><MapPin size={10} className="hidden md:block"/> {data.location}</div>
                 </div>
             </div>
 
-            <div className="mt-auto pt-3 border-t flex justify-between items-center text-xs text-slate-400">
+            <div className="mt-auto pt-2 md:pt-3 border-t flex justify-between items-center text-[10px] md:text-xs text-slate-400">
                 <span>{data.type}</span>
-                <span className="flex items-center gap-1 hover:text-slate-600">详情 <ArrowRight size={12}/></span>
+                <span className="flex items-center gap-1 hover:text-slate-600">详情 <ArrowRight size={10} className="md:hidden"/><ArrowRight size={12} className="hidden md:block"/></span>
             </div>
         </div>
     )
 }
 
 function NavBtn({ active, icon, label, onClick }: any) {
-    return <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all text-sm font-medium ${active ? 'bg-red-50 text-red-700 border border-red-100 shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{icon}{label}</button>
+    return <button onClick={onClick} className={`w-full flex items-center justify-center md:justify-start gap-2 md:gap-3 px-2 md:px-4 py-2 md:py-2.5 rounded-lg transition-all text-xs md:text-sm font-medium ${active ? 'bg-red-50 text-red-700 border border-red-100 shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{icon}<span className="hidden md:inline">{label}</span></button>
 }
 function StatCard({ label, value, color }: any) {
-    return <div className="bg-white p-4 rounded-xl border shadow-sm"><div className="text-slate-400 text-xs mb-1">{label}</div><div className={`text-2xl font-bold ${color}`}>{value}</div></div>
+    return <div className="bg-white p-3 md:p-4 rounded-xl border shadow-sm"><div className="text-slate-400 text-[10px] md:text-xs mb-1">{label}</div><div className={`text-lg md:text-2xl font-bold ${color}`}>{value}</div></div>
 }

@@ -338,11 +338,11 @@ export default function OrgStructurePage() {
       <div className="select-none transition-all">
         {/* 部门行 (Drop Zone) */}
         <div 
-            className={`flex items-center justify-between p-3 my-1 rounded-lg border transition-all duration-200 group
+            className={`flex items-center justify-between p-2 md:p-3 my-1 rounded-lg border transition-all duration-200 group
                 ${level === 0 ? 'bg-blue-50/80 border-blue-200 shadow-sm' : 'bg-white border-slate-100 hover:border-blue-200 hover:shadow-sm'}
                 ${isDragOver ? 'ring-2 ring-green-400 bg-green-50 scale-[1.01]' : ''} 
             `}
-            style={{ marginLeft: `${level * 28}px` }}
+            style={{ marginLeft: `${level * 20}px` }}
             
             onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
             onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
@@ -357,10 +357,11 @@ export default function OrgStructurePage() {
             </button>
             
             <div className="flex flex-col">
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2">
-                        <Briefcase size={16} className={level === 0 ? "text-hytzer-blue" : "text-slate-500"} />
-                        <span className="font-bold text-slate-800 text-sm truncate max-w-[150px] sm:max-w-xs">{node.name}</span>
+                <div className="flex items-center gap-2 md:gap-3">
+                    <div className="flex items-center gap-1 md:gap-2">
+                        <Briefcase size={14} className={level === 0 ? "text-hytzer-blue md:hidden" : "text-slate-500 md:hidden"} />
+                        <Briefcase size={16} className={level === 0 ? "text-hytzer-blue hidden md:block" : "text-slate-500 hidden md:block"} />
+                        <span className="font-bold text-slate-800 text-xs md:text-sm truncate max-w-[120px] sm:max-w-xs">{node.name}</span>
                     </div>
 
                     {/* 负责人徽章 */}
@@ -452,29 +453,30 @@ export default function OrgStructurePage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto pb-20">
-        <div className="flex justify-between items-end mb-8">
+    <div className="max-w-5xl mx-auto pb-20 px-3 md:px-0">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 md:mb-8 gap-3">
             <div>
-                <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
-                    <Network className="text-hytzer-blue" size={32} /> 
+                <h1 className="text-xl md:text-3xl font-bold text-slate-900 flex items-center gap-2 md:gap-3">
+                    <Network className="text-hytzer-blue" size={24} />
+                    <Network className="text-hytzer-blue hidden md:block" size={32} /> 
                     组织架构图谱
                 </h1>
-                <p className="text-slate-500 mt-2">
+                <p className="text-slate-500 mt-2 text-xs md:text-sm">
                     支持拖拽调整人员归属。部门人数包含所有下级子部门人数。
                 </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 md:gap-3 flex-wrap">
               {/* 🟢 批量导入导出 & 导入指南 按钮（始终显示） */}
               <button 
                 onClick={handleExportOrg}
                 disabled={tree.length === 0}
-                className={`flex items-center gap-2 px-4 py-2 border rounded-lg font-medium text-sm transition-colors ${tree.length === 0 ? 'border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed' : 'border-blue-200 text-blue-700 bg-white hover:bg-blue-50'}`}
+                className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 md:py-2 border rounded-lg font-medium text-xs md:text-sm transition-colors ${tree.length === 0 ? 'border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed' : 'border-blue-200 text-blue-700 bg-white hover:bg-blue-50'}`}
                 title={tree.length === 0 ? '当前暂无架构，导出不可用' : '导出当前组织架构为CSV'}
               >
-                <Download size={16} /> 导出架构
+                <Download size={14} className="md:hidden" /><Download size={16} className="hidden md:block" /> <span className="hidden sm:inline">导出架构</span>
               </button>
-              <label className="flex items-center gap-2 px-4 py-2 border border-green-200 text-green-700 bg-white hover:bg-green-50 rounded-lg font-medium text-sm transition-colors cursor-pointer">
-                <Upload size={16} /> 批量导入
+              <label className="flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 md:py-2 border border-green-200 text-green-700 bg-white hover:bg-green-50 rounded-lg font-medium text-xs md:text-sm transition-colors cursor-pointer">
+                <Upload size={14} className="md:hidden" /><Upload size={16} className="hidden md:block" /> <span className="hidden sm:inline">批量导入</span>
                 <input 
                   type="file" 
                   ref={importFileRef}
@@ -485,10 +487,10 @@ export default function OrgStructurePage() {
               </label>
               <button
                 onClick={() => setShowImportGuide(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-purple-200 text-purple-700 bg-white hover:bg-purple-50 rounded-lg font-medium text-sm transition-colors"
+                className="flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 md:py-2 border border-purple-200 text-purple-700 bg-white hover:bg-purple-50 rounded-lg font-medium text-xs md:text-sm transition-colors"
                 title="查看导入指南"
               >
-                <HelpCircle size={16} /> 导入指南
+                <HelpCircle size={14} className="md:hidden" /><HelpCircle size={16} className="hidden md:block" /> <span className="hidden sm:inline">导入指南</span>
               </button>
 
               {/* 保留初始化根节点提示 */}
@@ -498,7 +500,7 @@ export default function OrgStructurePage() {
             </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 min-h-[600px]">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-8 min-h-[400px] md:min-h-[600px]">
             {isLoading ? (
                 <div className="text-center py-20 text-slate-400">正在加载...</div>
             ) : tree.length === 0 ? (
@@ -512,8 +514,8 @@ export default function OrgStructurePage() {
         
         {/* Modal: 部门编辑 (保持不变) */}
         {showDeptModal && (
-           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm">
-                <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm p-3 md:p-0">
+                <div className="bg-white rounded-xl p-4 md:p-6 w-full max-w-md shadow-2xl max-h-[95vh] overflow-y-auto">
                     <div className="flex justify-between items-center mb-6">
                         <h3 className="font-bold text-xl text-slate-800">{editingNode ? '编辑部门' : '新增子部门'}</h3>
                         <button onClick={() => setShowDeptModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
@@ -543,8 +545,8 @@ export default function OrgStructurePage() {
 
         {/* Modal: 添加成员 (保持不变) */}
         {showMemberModal && targetDeptForMember && (
-            <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm animate-fade-in">
-                <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm animate-fade-in p-3 md:p-0">
+                <div className="bg-white rounded-xl p-4 md:p-6 w-full max-w-md shadow-2xl max-h-[95vh] overflow-y-auto">
                     <div className="flex justify-between items-center mb-6">
                         <div>
                             <h3 className="font-bold text-xl text-slate-800">添加成员</h3>
@@ -591,8 +593,8 @@ export default function OrgStructurePage() {
 
             {/* 🟢 导入指南模态框 */}
             {showImportGuide && (
-              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm p-4">
-                <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm p-2 md:p-4">
+                <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto shadow-2xl">
                   <div className="sticky top-0 bg-white border-b border-slate-200 p-6 flex justify-between items-center">
                     <div className="flex items-center gap-3">
                       <HelpCircle className="text-purple-600" size={24} />

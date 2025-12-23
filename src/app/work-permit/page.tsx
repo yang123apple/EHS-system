@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Project, Template, PermitRecord } from '@/types/work-permit';
 import { UserService, StructureService } from '@/services/workPermitService';
+import { Menu } from 'lucide-react';
 
 // === 组件引入 ===
 import PrintStyle from '@/components/work-permit/PrintStyle';
@@ -42,6 +43,7 @@ export default function WorkPermitPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<PermitRecord | null>(null);
   const [currentViewAttachments, setCurrentViewAttachments] = useState<any[]>([]);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // === 3. 弹窗控制状态 (集中管理) ===
   const [modals, setModals] = useState({
@@ -225,18 +227,56 @@ export default function WorkPermitPage() {
   return (
     <>
       <PrintStyle />
-      <div className="flex h-screen bg-slate-50 overflow-hidden print:hidden">
+      <div className="flex h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] bg-slate-50 overflow-hidden print:hidden relative">
+        {/* 移动端遮罩层 */}
+        {isMobileSidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden" 
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+        )}
+        
         {/* 左侧导航 */}
-        <Sidebar
-          viewMode={viewMode}
-          onSwitchView={setViewMode}
-          userRole={user?.role || 'user'} // 🟢 传入角色
-          hasPerm={hasPerm}
-          onNewProject={() => toggleModal('newProject', true)}
-          onManageTemplates={() => toggleModal('templateManage', true)}
-        />
+        <div className={`
+          fixed lg:relative inset-y-0 left-0 z-50 lg:z-0
+          transform transition-transform duration-300 ease-in-out
+          ${
+            isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          }
+        `}>
+          <Sidebar
+            viewMode={viewMode}
+            onSwitchView={(mode) => {
+              setViewMode(mode);
+              setIsMobileSidebarOpen(false);
+            }}
+            userRole={user?.role || 'user'} // 🔵 传入角色
+            hasPerm={hasPerm}
+            onNewProject={() => {
+              toggleModal('newProject', true);
+              setIsMobileSidebarOpen(false);
+            }}
+            onManageTemplates={() => {
+              toggleModal('templateManage', true);
+              setIsMobileSidebarOpen(false);
+            }}
+          />
+        </div>
 
         <div className="flex-1 flex flex-col overflow-hidden">
+          {/* 移动端顶部菜单按钮 */}
+          <div className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
+            <button
+              onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+              className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+            >
+              <Menu size={20} className="text-slate-600" />
+            </button>
+            <h2 className="font-bold text-slate-800">
+              {viewMode === 'projects' ? '工程项目列表' : viewMode === 'records' ? '所有作业记录' : '操作日志'}
+            </h2>
+          </div>
+          
           {/* 主视图区域 */}
           {viewMode === 'projects' ? (
             <ProjectListView

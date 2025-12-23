@@ -304,18 +304,18 @@ export default function DocSystemPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-80px)]">
-      <div className="flex items-center justify-between mb-6 shrink-0">
-         <div className="flex items-center gap-4"><Link href="/dashboard" className="p-2 hover:bg-slate-200 rounded-full text-slate-500"><ArrowLeft size={24} /></Link><div><h1 className="text-2xl font-bold text-slate-900">文档管理系统</h1><p className="text-sm text-slate-500">EHS 体系文件库</p></div></div>
+      <div className="flex items-center justify-between mb-3 md:mb-6 shrink-0 px-2 md:px-0">
+         <div className="flex items-center gap-2 md:gap-4"><Link href="/dashboard" className="p-1.5 md:p-2 hover:bg-slate-200 rounded-full text-slate-500"><ArrowLeft size={20} className="md:hidden" /><ArrowLeft size={24} className="hidden md:block" /></Link><div><h1 className="text-lg md:text-2xl font-bold text-slate-900">文档管理系统</h1><p className="text-xs md:text-sm text-slate-500 hidden sm:block">EHS 体系文件库</p></div></div>
       </div>
-      <div className="flex flex-1 gap-6 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 gap-3 md:gap-6 overflow-hidden">
          {/* Sidebar: 增加筛选控件 */}
-         <div className="w-80 bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col gap-6 shrink-0 h-full overflow-y-auto">
+         <div className="w-full md:w-80 bg-white rounded-lg md:rounded-xl shadow-sm border border-slate-200 p-3 md:p-5 flex flex-col gap-3 md:gap-6 shrink-0 h-auto md:h-full overflow-y-auto max-h-[40vh] md:max-h-none">
              
              {/* 1. 搜索 */}
-             <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} /><input type="text" placeholder="搜索文件名或内容..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" /></div>
+             <div className="relative"><Search className="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} /><input type="text" placeholder="搜索..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-7 md:pl-9 pr-3 md:pr-4 py-1.5 md:py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs md:text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" /></div>
              
              {/* 2. 部门筛选 */}
-             <div><label className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2"><Filter size={14} /> 部门筛选</label><select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none"><option value="">全部部门</option>{allDepts.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+             <div><label className="text-xs md:text-sm font-medium text-slate-700 mb-1 md:mb-2 flex items-center gap-1 md:gap-2"><Filter size={12} className="md:hidden" /><Filter size={14} className="hidden md:block" /> 部门筛选</label><select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} className="w-full px-2 md:px-3 py-1.5 md:py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs md:text-sm outline-none"><option value="">全部部门</option>{allDepts.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
              
              {/* 3. 级别筛选 (新增) */}
              <div>
@@ -338,15 +338,15 @@ export default function DocSystemPage() {
 
              <div className="border-t border-slate-100 my-2"></div>
 
-             {hasPerm('upload') ? <button onClick={() => { setShowUploadModal(true); setUploadLevel(1); }} className="w-full bg-hytzer-blue text-white py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-blue-600 shadow-lg shadow-blue-500/20 font-medium"><Upload size={18} /> 上传文件</button> : <div className="p-4 bg-slate-50 text-slate-400 text-sm text-center rounded-lg border border-dashed">暂无上传权限</div>}
+             {hasPerm('upload') ? <button onClick={() => { setShowUploadModal(true); setUploadLevel(1); }} className="w-full bg-hytzer-blue text-white py-2 md:py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-blue-600 shadow-lg shadow-blue-500/20 font-medium text-sm md:text-base"><Upload size={16} className="md:hidden" /><Upload size={18} className="hidden md:block" /> 上传文件</button> : <div className="p-3 md:p-4 bg-slate-50 text-slate-400 text-xs md:text-sm text-center rounded-lg border border-dashed">暂无上传权限</div>}
          </div>
-         <div className="flex-1 bg-slate-50/50 rounded-xl border border-slate-200 p-6 overflow-y-auto custom-scrollbar">{loading ? <div className="text-center py-10">加载中...</div> : renderTree(null)}</div>
+         <div className="flex-1 bg-slate-50/50 rounded-lg md:rounded-xl border border-slate-200 p-3 md:p-6 overflow-y-auto custom-scrollbar">{loading ? <div className="text-center py-10 text-sm">加载中...</div> : renderTree(null)}</div>
       </div>
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm">
-            <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl animate-fade-in">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm p-3 md:p-0">
+            <div className="bg-white rounded-xl w-full max-w-md p-4 md:p-6 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-bold mb-4">上传新文档</h3>
                 <form onSubmit={handleUpload} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
@@ -426,8 +426,8 @@ export default function DocSystemPage() {
       )}
 
       {showPreviewModal && currentFile && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl w-full max-w-5xl h-[90vh] flex flex-col shadow-2xl animate-fade-in">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 md:p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-lg md:rounded-xl w-full max-w-5xl h-[95vh] md:h-[90vh] flex flex-col shadow-2xl animate-fade-in">
             <div className="p-4 border-b flex justify-between items-start bg-slate-50 rounded-t-xl">
                 <div>
                     <div className="flex items-center gap-2 text-xs text-slate-500 mb-1"><span className="bg-slate-200 px-1 rounded">ROOT</span>{getBreadcrumbs(currentFile).map(p => <div key={p.id} className="flex items-center gap-2"><ChevronRight size={10} /><span className="hover:text-blue-600 cursor-pointer" onClick={() => handlePreview(p)}>{p.name}</span></div>)}</div>
@@ -435,13 +435,13 @@ export default function DocSystemPage() {
                 </div>
                 <button onClick={() => setShowPreviewModal(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-500">❌</button>
             </div>
-            <div className="flex flex-1 overflow-hidden">
-                <div className="flex-1 overflow-y-auto p-8 bg-slate-100">
-                    <div className={`bg-white shadow-sm p-10 min-h-full mx-auto ${currentFile.type === 'xlsx' ? 'max-w-full overflow-x-auto' : 'max-w-3xl prose prose-slate'}`}>
+            <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+                <div className="flex-1 overflow-y-auto p-3 md:p-8 bg-slate-100">
+                    <div className={`bg-white shadow-sm p-4 md:p-10 min-h-full mx-auto ${currentFile.type === 'xlsx' ? 'max-w-full overflow-x-auto' : 'max-w-3xl prose prose-slate prose-sm md:prose'}`}>
                         <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
                     </div>
                 </div>
-                <div className="w-72 bg-white border-l border-slate-200 p-4 overflow-y-auto shrink-0 flex flex-col gap-6">
+                <div className="w-full md:w-72 bg-white border-t md:border-t-0 md:border-l border-slate-200 p-3 md:p-4 overflow-y-auto shrink-0 flex flex-col gap-4 md:gap-6 max-h-[30vh] md:max-h-none">
                     <div>
                         <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><CornerDownRight size={14} /> 下级关联文件</h4>
                         <div className="space-y-2">{getChildrenPreview(currentFile).slice(0, 3).map(child => <div key={child.id} onClick={() => handlePreview(child)} className="p-2 border border-slate-100 rounded hover:bg-blue-50 cursor-pointer"><div className="text-xs text-slate-500">{child.fullNum}</div><div className="text-sm font-medium text-slate-800 truncate">{child.name}</div></div>)}

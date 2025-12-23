@@ -99,18 +99,18 @@ export default function ProfilePage() {
   if (!profile) return <div className="p-10 text-center">无法加载用户信息</div>;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-4 md:space-y-6 px-3 md:px-0">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">个人空间</h1>
-        <p className="text-slate-500">查看您的档案信息，维护个人资料</p>
+        <h1 className="text-xl md:text-3xl font-bold text-slate-900">个人空间</h1>
+        <p className="text-slate-500 text-xs md:text-sm">查看您的档案信息，维护个人资料</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
         
         {/* 左侧：头像卡片 */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-fit flex flex-col items-center text-center">
-            <div className="relative group cursor-pointer mb-4">
-                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-slate-50 shadow-inner">
+        <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200 h-fit flex flex-col items-center text-center">
+            <div className="relative group cursor-pointer mb-3 md:mb-4">
+                <div className="w-24 h-24 md:w-32 md:h-32 rounded-full overflow-hidden border-2 md:border-4 border-slate-50 shadow-inner">
                     {avatarPreview ? (
                         <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
                     ) : (
@@ -125,11 +125,11 @@ export default function ProfilePage() {
                 </div>
                 <input id="avatar-upload" type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
             </div>
-            <h2 className="text-xl font-bold text-slate-800">{profile.name}</h2>
-            <p className="text-sm text-slate-500 mb-4">@{profile.username}</p>
+            <h2 className="text-lg md:text-xl font-bold text-slate-800">{profile.name}</h2>
+            <p className="text-xs md:text-sm text-slate-500 mb-3 md:mb-4">@{profile.username}</p>
             
-            <div className="w-full pt-4 border-t border-slate-100 space-y-2">
-                <div className="flex items-center justify-between text-sm">
+            <div className="w-full pt-3 md:pt-4 border-t border-slate-100 space-y-1.5 md:space-y-2">
+                <div className="flex items-center justify-between text-xs md:text-sm">
                     <span className="text-slate-500">部门</span>
                     <span className="font-medium text-slate-700">{profile.department}</span>
                 </div>
@@ -144,43 +144,44 @@ export default function ProfilePage() {
         </div>
 
         {/* 右侧：编辑表单 */}
-        <div className="md:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <h3 className="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-100">基本资料</h3>
+        <div className="md:col-span-2 bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200">
+            <h3 className="text-base md:text-lg font-bold text-slate-800 mb-4 md:mb-6 pb-2 border-b border-slate-100">基本资料</h3>
             
-            <form onSubmit={handleSave} className="space-y-6">
+            <form onSubmit={handleSave} className="space-y-4 md:space-y-6">
                 
                 {/* 1. 姓名 (可修改) */}
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">真实姓名</label>
+                    <label className="block text-xs md:text-sm font-medium text-slate-700 mb-1">真实姓名</label>
                     <input 
                         type="text" 
                         value={name} 
                         onChange={e => setName(e.target.value)}
-                        className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-hytzer-blue transition-all"
+                        className="w-full px-3 md:px-4 py-1.5 md:py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-hytzer-blue transition-all text-sm md:text-base"
                     />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                     {/* 2. 部门 (只读) */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-1">
-                            <Building size={14} className="text-slate-400"/> 所属部门
+                        <label className="block text-xs md:text-sm font-medium text-slate-700 mb-1 flex items-center gap-1">
+                            <Building size={12} className="text-slate-400 md:hidden"/><Building size={14} className="text-slate-400 hidden md:block"/> 所属部门
                         </label>
                         <div className="relative">
                             <input 
                                 type="text" 
                                 value={profile.department} 
                                 disabled 
-                                className="w-full px-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 cursor-not-allowed"
+                                className="w-full px-3 md:px-4 py-1.5 md:py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 cursor-not-allowed text-sm md:text-base"
                             />
-                            <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <Lock size={12} className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 text-slate-400 md:hidden" />
+                            <Lock size={14} className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 text-slate-400 hidden md:block" />
                         </div>
                     </div>
 
                     {/* 3. 职务 (只读 - 核心需求) */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-1">
-                            <Briefcase size={14} className="text-slate-400"/> 职务岗位
+                        <label className="block text-xs md:text-sm font-medium text-slate-700 mb-1 flex items-center gap-1">
+                            <Briefcase size={12} className="text-slate-400 md:hidden"/><Briefcase size={14} className="text-slate-400 hidden md:block"/> 职务岗位
                         </label>
                         <div className="relative">
                             <input 
@@ -188,34 +189,36 @@ export default function ProfilePage() {
                                 // 如果为空显示暂无
                                 value={profile.jobTitle || '暂无职务信息'} 
                                 disabled 
-                                className="w-full px-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 cursor-not-allowed"
+                                className="w-full px-3 md:px-4 py-1.5 md:py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 cursor-not-allowed text-sm md:text-base"
                             />
                             {/* 锁图标暗示不可修改 */}
-                            <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <Lock size={12} className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 text-slate-400 md:hidden" />
+                            <Lock size={14} className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 text-slate-400 hidden md:block" />
                         </div>
                         <p className="text-[10px] text-slate-400 mt-1 ml-1">* 如需变更职务信息，请联系管理员</p>
                     </div>
                 </div>
 
                 {/* 4. 修改密码 */}
-                <div className="pt-4 border-t border-slate-100">
-                     <label className="block text-sm font-medium text-slate-700 mb-1">修改密码</label>
+                <div className="pt-3 md:pt-4 border-t border-slate-100">
+                     <label className="block text-xs md:text-sm font-medium text-slate-700 mb-1">修改密码</label>
                      <input 
                         type="password" 
                         placeholder="如果不修改请留空"
                         value={password}
                         onChange={e => setPassword(e.target.value)}
-                        className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-hytzer-blue transition-all"
+                        className="w-full px-3 md:px-4 py-1.5 md:py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-hytzer-blue transition-all text-sm md:text-base"
                     />
                 </div>
 
-                <div className="pt-4 flex justify-end">
+                <div className="pt-3 md:pt-4 flex justify-end">
                     <button 
                         type="submit" 
                         disabled={saving}
-                        className="flex items-center gap-2 px-6 py-2 bg-hytzer-blue text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-wait"
+                        className="flex items-center gap-2 px-4 md:px-6 py-1.5 md:py-2 bg-hytzer-blue text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-wait text-sm md:text-base"
                     >
-                        {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                        {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                        <Save size={18} className="hidden md:block" />
                         保存更改
                     </button>
                 </div>

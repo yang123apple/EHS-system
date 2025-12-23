@@ -67,23 +67,24 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-6 sm:space-y-8 animate-fade-in">
       {/* 顶部欢迎区 */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-2">
-            <ShieldCheck className="text-hytzer-blue"/> 
-            EHS 安全管理工作台
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 flex items-center gap-2">
+            <ShieldCheck className="text-hytzer-blue w-6 h-6 sm:w-8 sm:h-8"/> 
+            <span className="hidden sm:inline">EHS 安全管理工作台</span>
+            <span className="sm:hidden">EHS 工作台</span>
           </h1>
-          <p className="text-slate-500 mt-1">欢迎回来，{user?.name || '用户'}，请选择您要处理的业务模块</p>
+          <p className="text-slate-500 mt-1 text-sm sm:text-base">欢迎回来，{user?.name || '用户'}，请选择您要处理的业务模块</p>
         </div>
-        <div className="text-sm text-slate-400 font-mono">
+        <div className="text-xs sm:text-sm text-slate-400 font-mono">
            {new Date().toLocaleDateString()}
         </div>
       </div>
 
       {/* 核心功能入口 Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         
         {/* 1. 渲染筛选后的模块 */}
         {visibleModules.map((item) => (
@@ -91,21 +92,21 @@ export default function Dashboard() {
             key={item.key} 
             href={item.href}
             className={`
-              relative group p-6 rounded-xl border bg-white shadow-sm transition-all duration-300
+              relative group p-4 sm:p-6 rounded-xl border bg-white shadow-sm transition-all duration-300
               ${item.hover}
             `}
           >
-            <div className="flex items-start justify-between mb-4">
-              <div className={`p-3 rounded-lg ${item.color}`}>
+            <div className="flex items-start justify-between mb-3 sm:mb-4">
+              <div className={`p-2 sm:p-3 rounded-lg ${item.color}`}>
                 {item.icon}
               </div>
-              <ArrowRight className="text-slate-300 group-hover:text-slate-500 group-hover:translate-x-1 transition-transform" size={20}/>
+              <ArrowRight className="text-slate-300 group-hover:text-slate-500 group-hover:translate-x-1 transition-transform" size={18}/>
             </div>
             
-            <h3 className="text-lg font-bold text-slate-800 mb-2 group-hover:text-hytzer-blue transition-colors">
+            <h3 className="text-base sm:text-lg font-bold text-slate-800 mb-1 sm:mb-2 group-hover:text-hytzer-blue transition-colors">
               {item.title}
             </h3>
-            <p className="text-sm text-slate-500 leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
               {item.description}
             </p>
           </Link>
@@ -121,20 +122,20 @@ export default function Dashboard() {
         {/* 2. 管理员专属卡片 (硬编码逻辑，始终只对 admin 可见) */}
         {user?.role === 'admin' && (
            <Link href="/admin/account" className="group block">
-             <div className="bg-slate-800 rounded-xl shadow-sm border border-slate-700 p-6 transition-all duration-300 hover:shadow-lg hover:border-hytzer-blue hover:-translate-y-1 h-full relative overflow-hidden">
+             <div className="bg-slate-800 rounded-xl shadow-sm border border-slate-700 p-4 sm:p-6 transition-all duration-300 hover:shadow-lg hover:border-hytzer-blue hover:-translate-y-1 h-full relative overflow-hidden">
                <div className="absolute -right-4 -top-4 w-24 h-24 bg-hytzer-blue/20 rounded-full blur-xl"></div>
                
-               <div className="flex items-start justify-between relative z-10 mb-4">
-                 <div className="bg-slate-700 p-3 rounded-lg">
-                   <Settings className="w-6 h-6 text-white" />
+               <div className="flex items-start justify-between relative z-10 mb-3 sm:mb-4">
+                 <div className="bg-slate-700 p-2 sm:p-3 rounded-lg">
+                   <Settings className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                  </div>
-                 <span className="bg-hytzer-blue text-white text-[10px] px-2 py-0.5 rounded font-bold tracking-wider">ADMIN</span>
+                 <span className="bg-hytzer-blue text-white text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded font-bold tracking-wider">ADMIN</span>
                </div>
                
-               <h3 className="text-lg font-bold text-white group-hover:text-hytzer-blue transition-colors relative z-10 mb-2">
+               <h3 className="text-base sm:text-lg font-bold text-white group-hover:text-hytzer-blue transition-colors relative z-10 mb-1 sm:mb-2">
                  账户管理系统
                </h3>
-               <p className="text-sm text-slate-400 relative z-10 leading-relaxed">
+               <p className="text-xs sm:text-sm text-slate-400 relative z-10 leading-relaxed">
                  仅管理员可见：管理员工账号、部门架构及权限配置。
                </p>
              </div>
@@ -159,9 +160,9 @@ export default function Dashboard() {
 
 function StatCard({ label, value, unit, color = "text-slate-900" }: any) {
     return (
-        <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+        <div className="bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-100">
             <div className="text-xs text-slate-500 mb-1">{label}</div>
-            <div className={`text-2xl font-bold ${color}`}>
+            <div className={`text-xl sm:text-2xl font-bold ${color}`}>
                 {value} <span className="text-xs font-normal text-slate-400">{unit}</span>
             </div>
         </div>
