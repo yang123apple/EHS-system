@@ -72,27 +72,76 @@ export default function AddPermitModal({
     }
   }, [selectedTemplate?.parsedFields]);
 
-  // 🟢 解析移动端表单配置
-  const mobileFormConfig = useMemo<MobileFormConfig | null>(() => {
-    if (!selectedTemplate?.mobileFormConfig) {
-      console.log('📱 没有移动端表单配置');
-      return null;
-    }
-    try {
-      const config = JSON.parse(selectedTemplate.mobileFormConfig);
-      console.log('📱 移动端表单配置:', config);
-      if (config.enabled) {
-        console.log('✅ 移动端表单已启用，字段数:', config.fields?.length);
-        return config;
-      } else {
-        console.log('❌ 移动端表单未启用');
-        return null;
+  // 🟢 自动解析模板单元格用于移动端展示（从上到下、从左到右）
+  const mobileCells = useMemo(() => {
+    if (!selectedTemplateData?.grid) return [];
+    
+    const cells: Array<{
+      rowIndex: number;
+      colIndex: number;
+      value: string;
+      isTitle: boolean;
+      rowSpan: number;
+      colSpan: number;
+      inputKey: string;
+      cellKey: string;
+      parsedField?: any;
+    }> = [];
+
+    const grid = selectedTemplateData.grid;
+    const merges = selectedTemplateData.merges || [];
+
+    // 辅助函数：获取单元格的合并信息
+    const getCellSpan = (r: number, c: number) => {
+      const mergeInfo = merges.find((m: any) => m.s.r === r && m.s.c === c);
+      if (!mergeInfo) {
+        // 检查是否被其他合并单元格覆盖
+        const isCovered = merges.some((m: any) => 
+          r >= m.s.r && r <= m.e.r && c >= m.s.c && c <= m.e.c && !(r === m.s.r && c === m.s.c)
+        );
+        return { rowSpan: 1, colSpan: 1, isCovered };
       }
-    } catch (e) {
-      console.error('❌ 解析移动端表单配置失败:', e);
-      return null;
-    }
-  }, [selectedTemplate?.mobileFormConfig]);
+      return {
+        rowSpan: mergeInfo.e.r - mergeInfo.s.r + 1,
+        colSpan: mergeInfo.e.c - mergeInfo.s.c + 1,
+        isCovered: false
+      };
+    };
+
+    // 遍历所有单元格
+    grid.forEach((row: any[], rIndex: number) => {
+      row.forEach((cellValue: any, cIndex: number) => {
+        const { rowSpan, colSpan, isCovered } = getCellSpan(rIndex, cIndex);
+        
+        // 跳过被合并覆盖的单元格
+        if (isCovered) return;
+
+        const inputKey = `${rIndex}-${cIndex}`;
+        const cellKey = `R${rIndex + 1}C${cIndex + 1}`;
+        const value = String(cellValue || '').trim();
+
+        // 判断是否为标题单元格（合并单元格或非空值）
+        const isTitle = colSpan > 1 || (rowSpan === 1 && colSpan === 1 && value.length > 0 && !value.includes('____'));
+        
+        // 查找对应的 parsedField
+        const parsedField = selectedParsedFields?.find((f: any) => f.cellKey === cellKey);
+
+        cells.push({
+          rowIndex: rIndex,
+          colIndex: cIndex,
+          value,
+          isTitle,
+          rowSpan,
+          colSpan,
+          inputKey,
+          cellKey,
+          parsedField
+        });
+      });
+    });
+
+    return cells;
+  }, [selectedTemplateData, selectedParsedFields]);
 
   // 🟢 当选择模板后，预生成编号
   useEffect(() => {
@@ -167,34 +216,270 @@ export default function AddPermitModal({
     setCurrentSectionCell(null);
   };
 
-  // 🟢 渲染移动端表单
+  // 🟢 渲染移动端表单（从上到下、从左到右展示所有单元格）
   const renderMobileForm = () => {
-    if (!mobileFormConfig) return null;
+    if (!mobileCells.length) return null;
 
     return (
-      <div className="bg-white rounded-lg shadow-lg p-4 space-y-4">
-        {/* 编号预览 */}
-        {previewCode && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-            <div className="text-xs text-blue-600 font-semibold mb-1">作业票编号</div>
-            <div className="text-lg font-bold text-blue-900">{previewCode}</div>
-          </div>
-        )}
+      <div className="bg-white shadow-lg border border-slate-200 rounded-lg p-4 space-y-3">
+        <div className="text-center pb-3 border-b border-slate-200">
+          <h3 className="text-lg font-bold text-slate-800">填写作业单</h3>
+          <p className="text-xs text-slate-400 mt-1">{selectedTemplate?.name}</p>
+          {previewCode && (
+            <p className="text-xs text-blue-600 mt-1 font-mono">{previewCode}</p>
+          )}
+        </div>
+        
+        {mobileCells.map((cell, index) => {
+          // 如果是标题单元格且没有输入框，只显示标题
+          if (cell.isTitle && !cell.value.includes('____')) {
+            return (
+              <div key={`${cell.inputKey}-${index}`} className="bg-slate-50 px-3 py-2 rounded border-l-4 border-blue-500">
+                <div className="text-sm font-bold text-slate-700">{cell.value}</div>
+              </div>
+            );
+          }
 
-        {/* 表单字段 */}
-        {mobileFormConfig.fields
-          .sort((a, b) => a.order - b.order)
-          .map((field) => (
-            <div key={field.id} className="space-y-2">
-              <label className="block text-sm font-semibold text-slate-700">
-                {field.label}
-                {field.required && <span className="text-red-500 ml-1">*</span>}
-              </label>
-              {renderMobileField(field)}
-            </div>
-          ))}
+          // 如果是空单元格或输入单元格，渲染为输入框
+          if (!cell.isTitle || cell.value.includes('____')) {
+            return (
+              <div key={`${cell.inputKey}-${index}`} className="space-y-2">
+                {renderMobileCellInput(cell)}
+              </div>
+            );
+          }
+
+          return null;
+        })}
       </div>
     );
+  };
+
+  // 🟢 渲染移动端单元格输入
+  const renderMobileCellInput = (cell: any) => {
+    const { inputKey, value, parsedField } = cell;
+    const currentValue = permitFormData[inputKey] || '';
+    const isRequired = parsedField?.required === true;
+
+    // 处理内联输入框（包含下划线的单元格）
+    if (value.includes('____')) {
+      const parts = value.split(/(____+)/);
+      let inlineIndex = 0;
+      
+      return (
+        <div className="bg-slate-50 p-3 rounded border border-slate-200">
+          <div className="flex flex-wrap items-center gap-1 text-sm text-slate-700">
+            {parts.map((part, i) => {
+              if (/^____+$/.test(part)) {
+                const currentInlineIndex = inlineIndex++;
+                const inlineKey = `${inputKey}-inline-${currentInlineIndex}`;
+                const inlineValue = permitFormData[inlineKey] || '';
+                
+                return (
+                  <input
+                    key={i}
+                    type="text"
+                    value={inlineValue}
+                    onChange={(e) => {
+                      setPermitFormData(prev => ({
+                        ...prev,
+                        [inlineKey]: e.target.value
+                      }));
+                    }}
+                    className="flex-1 min-w-[80px] px-2 py-1.5 border-b-2 border-blue-400 focus:border-blue-600 outline-none bg-white rounded text-sm"
+                    placeholder="填写"
+                  />
+                );
+              }
+              return <span key={i} className="whitespace-pre-wrap">{part}</span>;
+            })}
+          </div>
+        </div>
+      );
+    }
+    
+    const handleChange = (val: string) => {
+      setPermitFormData(prev => ({
+        ...prev,
+        [inputKey]: val
+      }));
+    };
+
+    // 根据 parsedField 的类型判断输入方式
+    const fieldType = parsedField?.fieldType || 'text';
+
+    // 标签
+    const label = parsedField?.fieldName || value || '请填写';
+
+    switch (fieldType) {
+      case 'select':
+        const options = parsedField?.options || [];
+        if (options.length === 0) {
+          // 如果没有选项，退化为文本输入
+          return (
+            <>
+              <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+                {label}
+                {isRequired && <span className="text-red-500 text-xs">*</span>}
+              </label>
+              <input
+                type="text"
+                value={currentValue}
+                onChange={(e) => handleChange(e.target.value)}
+                placeholder="请填写"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                required={isRequired}
+              />
+            </>
+          );
+        }
+        return (
+          <>
+            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+              {label}
+              {isRequired && <span className="text-red-500 text-xs">*</span>}
+            </label>
+            <div className="relative">
+              <select
+                value={currentValue}
+                onChange={(e) => handleChange(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white appearance-none"
+                required={isRequired}
+              >
+                <option value="">请选择</option>
+                {options.map((opt, idx) => (
+                  <option key={idx} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        );
+
+      case 'textarea':
+        return (
+          <>
+            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+              {label}
+              {isRequired && <span className="text-red-500 text-xs">*</span>}
+            </label>
+            <textarea
+              value={currentValue}
+              onChange={(e) => handleChange(e.target.value)}
+              placeholder="请填写"
+              rows={3}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none"
+              required={isRequired}
+            />
+          </>
+        );
+
+      case 'date':
+        return (
+          <>
+            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+              {label}
+              {isRequired && <span className="text-red-500 text-xs">*</span>}
+            </label>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                type="date"
+                value={currentValue}
+                onChange={(e) => handleChange(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                required={isRequired}
+              />
+            </div>
+          </>
+        );
+
+      case 'number':
+        return (
+          <>
+            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+              {label}
+              {isRequired && <span className="text-red-500 text-xs">*</span>}
+            </label>
+            <input
+              type="number"
+              value={currentValue}
+              onChange={(e) => handleChange(e.target.value)}
+              placeholder="请填写"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+              required={isRequired}
+            />
+          </>
+        );
+
+      case 'department':
+        return (
+          <>
+            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+              {label}
+              {isRequired && <span className="text-red-500 text-xs">*</span>}
+            </label>
+            <div className="relative">
+              <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <select
+                value={currentValue}
+                onChange={(e) => handleChange(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white appearance-none"
+                required={isRequired}
+              >
+                <option value="">请选择部门</option>
+                {renderDepartmentOptions(departments)}
+              </select>
+            </div>
+          </>
+        );
+
+      case 'user':
+        return (
+          <>
+            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+              {label}
+              {isRequired && <span className="text-red-500 text-xs">*</span>}
+            </label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <select
+                value={currentValue}
+                onChange={(e) => handleChange(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white appearance-none"
+                required={isRequired}
+              >
+                <option value="">请选择人员</option>
+                {allUsers.map((u) => (
+                  <option key={u.id} value={u.name}>
+                    {u.name} ({u.department || '未分配'})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        );
+
+      case 'text':
+      default:
+        return (
+          <>
+            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+              {label}
+              {isRequired && <span className="text-red-500 text-xs">*</span>}
+            </label>
+            <input
+              type="text"
+              value={currentValue}
+              onChange={(e) => handleChange(e.target.value)}
+              placeholder="请填写"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+              required={isRequired}
+            />
+          </>
+        );
+    }
   };
 
   // 🟢 渲染移动端表单字段
@@ -674,16 +959,13 @@ export default function AddPermitModal({
                   )}
                 </div>
 
-                {/* Excel 渲染区域 / 移动端表单 */}
-                {mobileFormConfig ? (
-                  // 移动端表单视图（在小于1024px屏幕显示）
-                  <div className="lg:hidden">
-                    {renderMobileForm()}
-                  </div>
-                ) : null}
+                {/* 移动端表单视图（在小于1024px屏幕显示） */}
+                <div className="lg:hidden">
+                  {renderMobileForm()}
+                </div>
                 
-                {/* 桌面端表格视图（在大屏幕或未配置移动端表单时显示） */}
-                <div className={mobileFormConfig ? 'hidden lg:block' : 'block'}>
+                {/* 桌面端表格视图（在大屏幕显示） */}
+                <div className="hidden lg:block">
                   <div 
                     id="print-area"
                     className="bg-white shadow-lg border border-slate-200 p-3 sm:p-6 lg:p-8 overflow-auto print:!p-0 print:!m-0 print:shadow-none print:border-0"
