@@ -128,7 +128,7 @@ export async function DELETE(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-    const { id, isLocked, structureJson, name, type, workflowConfig, userId, userName, parsedFields: clientParsedFields, level, sectionBindings, watermarkSettings, orientation } = body; 
+    const { id, isLocked, structureJson, name, type, workflowConfig, userId, userName, parsedFields: clientParsedFields, level, sectionBindings, watermarkSettings, orientation, mobileFormConfig } = body; 
 
     if (!id) return NextResponse.json({ error: '缺少参数' }, { status: 400 });
 
@@ -184,8 +184,12 @@ export async function PATCH(req: Request) {
     // if (watermarkSettings !== undefined) dataToUpdate.watermarkSettings = watermarkSettings;
     // �🔵 V3.4 更新模板级别和section绑定
     if (level !== undefined) dataToUpdate.level = level;
-    if (sectionBindings !== undefined) dataToUpdate.sectionBindings = sectionBindings;    // 🟢 V3.4 更新纸张方向
+    if (sectionBindings !== undefined) dataToUpdate.sectionBindings = sectionBindings;
+    // 🟢 V3.4 更新纸张方向
     if (orientation !== undefined) dataToUpdate.orientation = orientation;
+    // 🟢 更新移动端表单配置
+    if (mobileFormConfig !== undefined) dataToUpdate.mobileFormConfig = mobileFormConfig;
+    
     const updatedTemplate = await prisma.workPermitTemplate.update({
       where: { id },
       data: dataToUpdate,
