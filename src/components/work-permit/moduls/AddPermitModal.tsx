@@ -1,10 +1,11 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
-import { X, Paperclip, CheckCircle, FileText, Printer } from 'lucide-react';
+import { X, Paperclip, CheckCircle, FileText, Printer, Calendar, User, Building } from 'lucide-react';
 import { Project, Template } from '@/types/work-permit';
 import { PermitService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
 import SectionFormModal from './SectionFormModal';
 import PrintStyle from '../PrintStyle';
+import { MobileFormConfig } from './MobileFormEditor';
 // 🟢 1. 引入工具函数（替换原内联定义）
 import { findDeptRecursive } from '@/utils/departmentUtils';
 
@@ -70,6 +71,17 @@ export default function AddPermitModal({
       return [];
     }
   }, [selectedTemplate?.parsedFields]);
+
+  // 🟢 解析移动端表单配置
+  const mobileFormConfig = useMemo<MobileFormConfig | null>(() => {
+    if (!selectedTemplate?.mobileFormConfig) return null;
+    try {
+      const config = JSON.parse(selectedTemplate.mobileFormConfig);
+      return config.enabled ? config : null;
+    } catch (e) {
+      return null;
+    }
+  }, [selectedTemplate?.mobileFormConfig]);
 
   // 🟢 当选择模板后，预生成编号
   useEffect(() => {
@@ -142,6 +154,171 @@ export default function AddPermitModal({
     
     setSectionModalOpen(false);
     setCurrentSectionCell(null);
+  };
+
+  // 🟢 渲染移动端表单
+  const renderMobileForm = () => {
+    if (!mobileFormConfig) return null;
+
+    return (
+      <div className="bg-white rounded-lg shadow-lg p-4 space-y-4">
+        {/* 编号预览 */}
+        {previewCode && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+            <div className="text-xs text-blue-600 font-semibold mb-1">作业票编号</div>
+            <div className="text-lg font-bold text-blue-900">{previewCode}</div>
+          </div>
+        )}
+
+        {/* 表单字段 */}
+        {mobileFormConfig.fields
+          .sort((a, b) => a.order - b.order)
+          .map((field) => (
+            <div key={field.id} className="space-y-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                {field.label}
+                {field.required && <span className="text-red-500 ml-1">*</span>}
+              </label>
+              {renderMobileField(field)}
+            </div>
+          ))}
+      </div>
+    );
+  };
+
+  // 🟢 渲染移动端表单字段
+  const renderMobileField = (field: MobileFormConfig['fields'][0]) => {
+    const value = permitFormData[field.fieldKey] || '';
+    
+    const handleChange = (newValue: any) => {
+      setPermitFormData(prev => ({
+        ...prev,
+        [field.fieldKey]: newValue
+      }));
+    };
+
+    switch (field.fieldType) {
+      case 'textarea':
+        return (
+          <textarea
+            value={value}
+            onChange={(e) => handleChange(e.target.value)}
+            placeholder={field.placeholder}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none min-h-[80px] text-sm"
+            required={field.required}
+          />
+        );
+
+      case 'select':
+        return (
+          <select
+            value={value}
+            onChange={(e) => handleChange(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white"
+            required={field.required}
+          >
+            <option value="">请选择</option>
+            {field.options?.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        );
+
+      case 'date':
+        return (
+          <div className="relative">
+            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              type="date"
+              value={value}
+              onChange={(e) => handleChange(e.target.value)}
+              className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+              required={field.required}
+            />
+          </div>
+        );
+
+      case 'number':
+        return (
+          <input
+            type="number"
+            value={value}
+            onChange={(e) => handleChange(e.target.value)}
+            placeholder={field.placeholder}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+            required={field.required}
+          />
+        );
+
+      case 'department':
+        return (
+          <div className="relative">
+            <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <select
+              value={value}
+              onChange={(e) => handleChange(e.target.value)}
+              className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white appearance-none"
+              required={field.required}
+            >
+              <option value="">请选择部门</option>
+              {renderDepartmentOptions(departments)}
+            </select>
+          </div>
+        );
+
+      case 'user':
+        return (
+          <div className="relative">
+            <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <select
+              value={value}
+              onChange={(e) => handleChange(e.target.value)}
+              className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white appearance-none"
+              required={field.required}
+            >
+              <option value="">请选择人员</option>
+              {allUsers.map((u) => (
+                <option key={u.id} value={u.name}>
+                  {u.name} ({u.department || '未分配'})
+                </option>
+              ))}
+            </select>
+          </div>
+        );
+
+      case 'text':
+      default:
+        return (
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => handleChange(e.target.value)}
+            placeholder={field.placeholder}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+            required={field.required}
+          />
+        );
+    }
+  };
+
+  // 🟢 渲染部门选项（递归）
+  const renderDepartmentOptions = (depts: any[], level = 0): JSX.Element[] => {
+    if (!Array.isArray(depts)) return [];
+    
+    return depts.flatMap((dept) => {
+      const prefix = '　'.repeat(level);
+      const options = [
+        <option key={dept.id} value={dept.name}>
+          {prefix}{dept.name}
+        </option>
+      ];
+      
+      if (dept.children && dept.children.length > 0) {
+        options.push(...renderDepartmentOptions(dept.children, level + 1));
+      }
+      
+      return options;
+    });
   };
 
   // 🟢 2. 完全替换 preCheckWorkflow 函数（使用外部 findDeptRecursive）
@@ -486,28 +663,38 @@ export default function AddPermitModal({
                   )}
                 </div>
 
-                {/* Excel 渲染区域 */}
-                <div 
-                  id="print-area"
-                  className="bg-white shadow-lg border border-slate-200 p-3 sm:p-6 lg:p-8 overflow-auto print:!p-0 print:!m-0 print:shadow-none print:border-0"
-                  style={{
-                    minHeight: orientation === 'portrait' ? '297mm' : '210mm',
-                  }}
-                >
-                  <ExcelRenderer
-                    key={selectedTemplate.id}
-                    templateData={selectedTemplateData}
-                    workflowConfig={
-                      selectedTemplate.workflowConfig ? JSON.parse(selectedTemplate.workflowConfig) : []
-                    }
-                    parsedFields={selectedParsedFields}
-                    permitCode={previewCode} // 🟢 显示预览编号
-                    orientation={orientation}
-                    mode="edit"
-                    onDataChange={setPermitFormData}
-                    onSectionClick={handleSectionClick}
-                    sectionBindings={selectedTemplate.sectionBindings ? JSON.parse(selectedTemplate.sectionBindings) : {}}
-                  />
+                {/* Excel 渲染区域 / 移动端表单 */}
+                {mobileFormConfig ? (
+                  // 移动端表单视图（仅在小屏幕显示）
+                  <div className="md:hidden">
+                    {renderMobileForm()}
+                  </div>
+                ) : null}
+                
+                {/* 桌面端表格视图（在大屏幕或未配置移动端表单时显示） */}
+                <div className={mobileFormConfig ? 'hidden md:block' : 'block'}>
+                  <div 
+                    id="print-area"
+                    className="bg-white shadow-lg border border-slate-200 p-3 sm:p-6 lg:p-8 overflow-auto print:!p-0 print:!m-0 print:shadow-none print:border-0"
+                    style={{
+                      minHeight: orientation === 'portrait' ? '297mm' : '210mm',
+                    }}
+                  >
+                    <ExcelRenderer
+                      key={selectedTemplate.id}
+                      templateData={selectedTemplateData}
+                      workflowConfig={
+                        selectedTemplate.workflowConfig ? JSON.parse(selectedTemplate.workflowConfig) : []
+                      }
+                      parsedFields={selectedParsedFields}
+                      permitCode={previewCode} // 🟢 显示预览编号
+                      orientation={orientation}
+                      mode="edit"
+                      onDataChange={setPermitFormData}
+                      onSectionClick={handleSectionClick}
+                      sectionBindings={selectedTemplate.sectionBindings ? JSON.parse(selectedTemplate.sectionBindings) : {}}
+                    />
+                  </div>
                 </div>
 
                 {/* 申请人附言与提交 */}
