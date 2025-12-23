@@ -220,41 +220,105 @@ export default function AddPermitModal({
     setCurrentSectionCell(null);
   };
 
-  // 🟢 渲染移动端表单（从上到下、从左到右展示所有单元格）
+  // 🟢 渲染移动端表单（智能分组展示）
   const renderMobileForm = () => {
     if (!mobileCells.length) return null;
 
+    // 智能分组逻辑
+    const groups: Array<{
+      title?: string;
+      cells: typeof mobileCells;
+    }> = [];
+    
+    let currentGroup: typeof mobileCells = [];
+    let currentGroupTitle: string | undefined;
+    let formTitle = '';
+
+    mobileCells.forEach((cell, index) => {
+      const isLargeTitle = cell.colSpan >= 8; // 超大合并单元格，通常是表单主标题
+      const isGroupTitle = cell.colSpan >= 3 && cell.colSpan < 8 && cell.isTitle && !cell.value.includes('____'); // 中等合并单元格，作为分组标题
+      
+      // 识别表单主标题（第一个超大合并单元格）
+      if (isLargeTitle && !formTitle && cell.value) {
+        formTitle = cell.value;
+        return;
+      }
+      
+      // 识别分组标题
+      if (isGroupTitle) {
+        // 保存当前分组
+        if (currentGroup.length > 0) {
+          groups.push({
+            title: currentGroupTitle,
+            cells: currentGroup
+          });
+          currentGroup = [];
+        }
+        currentGroupTitle = cell.value;
+        return;
+      }
+      
+      // 普通单元格加入当前分组
+      currentGroup.push(cell);
+    });
+    
+    // 保存最后一个分组
+    if (currentGroup.length > 0) {
+      groups.push({
+        title: currentGroupTitle,
+        cells: currentGroup
+      });
+    }
+
     return (
-      <div className="bg-white shadow-lg border border-slate-200 rounded-lg p-4 space-y-3">
-        <div className="text-center pb-3 border-b border-slate-200">
-          <h3 className="text-lg font-bold text-slate-800">填写作业单</h3>
-          <p className="text-xs text-slate-400 mt-1">{selectedTemplate?.name}</p>
+      <div className="bg-slate-50 p-4 space-y-4">
+        {/* 表单标题 */}
+        <div className="bg-white rounded-lg p-4 shadow-sm">
+          <h3 className="text-lg font-bold text-slate-800 text-center">{formTitle || selectedTemplate?.name}</h3>
           {previewCode && (
-            <p className="text-xs text-blue-600 mt-1 font-mono">{previewCode}</p>
+            <p className="text-sm text-blue-600 mt-2 text-center font-mono">编号：{previewCode}</p>
           )}
         </div>
         
-        {mobileCells.map((cell, index) => {
-          // 如果是标题单元格且没有输入框，只显示标题
-          if (cell.isTitle && !cell.value.includes('____')) {
-            return (
-              <div key={`${cell.inputKey}-${index}`} className="bg-slate-50 px-3 py-2 rounded border-l-4 border-blue-500">
-                <div className="text-sm font-bold text-slate-700">{cell.value}</div>
+        {/* 分组展示 */}
+        {groups.map((group, groupIndex) => (
+          <div key={groupIndex} className="bg-white rounded-lg shadow-sm overflow-hidden">
+            {/* 分组标题 */}
+            {group.title && (
+              <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2.5 border-l-4 border-blue-700">
+                <h4 className="text-white font-bold text-sm flex items-center gap-2">
+                  <span className="w-1 h-4 bg-white rounded"></span>
+                  {group.title}
+                </h4>
               </div>
-            );
-          }
+            )}
+            
+            {/* 分组内容 */}
+            <div className="p-4 space-y-3">
+              {group.cells.map((cell, cellIndex) => {
+                // 跳过只是标题的单元格（小标题）
+                if (cell.isTitle && !cell.value.includes('____') && cell.colSpan < 3) {
+                  return (
+                    <div key={`${cell.inputKey}-${cellIndex}`} className="text-xs font-semibold text-slate-600 uppercase tracking-wide mt-2 mb-1">
+                      {cell.value}
+                    </div>
+                  );
+                }
 
-          // 如果是空单元格或输入单元格，渲染为输入框
-          if (!cell.isTitle || cell.value.includes('____')) {
-            return (
-              <div key={`${cell.inputKey}-${index}`} className="space-y-2">
-                {renderMobileCellInput(cell)}
-              </div>
-            );
-          }
+                // 渲染输入字段
+                if (!cell.isTitle || cell.value.includes('____')) {
+                  return (
+                    <div key={`${cell.inputKey}-${cellIndex}`}>
+                      {renderMobileCellInput(cell)}
+                    </div>
+                  );
+                }
 
-          return null;
-        })}
+                return null;
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     );
   };
@@ -275,8 +339,8 @@ export default function AddPermitModal({
       const inlinesData = permitFormData[`${inputKey}-inlines`] || {};
       
       return (
-        <div className="bg-slate-50 p-3 rounded border border-slate-200">
-          <div className="flex flex-wrap items-center gap-1 text-sm text-slate-700">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 text-sm text-slate-700">
             {parts.map((part, i) => {
               if (/^____+$/.test(part)) {
                 const currentInlineIndex = inlineIndex++;
@@ -301,12 +365,12 @@ export default function AddPermitModal({
                         };
                       });
                     }}
-                    className="flex-1 min-w-[80px] px-2 py-1.5 border-b-2 border-blue-400 focus:border-blue-600 outline-none bg-white rounded text-sm"
+                    className="flex-1 min-w-[80px] px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white"
                     placeholder="填写"
                   />
                 );
               }
-              return <span key={i} className="whitespace-pre-wrap">{part}</span>;
+              return <span key={i} className="text-sm text-slate-700">{part}</span>;
             })}
           </div>
         </div>
@@ -331,37 +395,37 @@ export default function AddPermitModal({
     if (fieldType === 'section') {
       const sectionData = permitFormData[`SECTION_${cellKey}`];
       return (
-        <>
-          <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+        <div className="space-y-1.5">
+          <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
             {label}
             {isRequired && <span className="text-red-500 text-xs">*</span>}
           </label>
           <button
             type="button"
             onClick={() => handleSectionClick(cellKey, label)}
-            className={`w-full px-4 py-3 rounded-lg border-2 transition text-sm font-semibold ${
+            className={`w-full px-4 py-3 rounded-md border-2 transition text-sm font-semibold shadow-sm ${
               sectionData
                 ? 'bg-green-50 border-green-500 text-green-700'
-                : 'bg-blue-50 border-blue-400 text-blue-700 hover:bg-blue-100'
+                : 'bg-blue-50 border-blue-400 text-blue-700 hover:bg-blue-100 active:scale-[0.98]'
             }`}
           >
             {sectionData ? '✓ 已填写 - 点击查看/编辑' : '📝 点击填写子表单'}
           </button>
-        </>
+        </div>
       );
     }
 
     // 🟠 处理 Signature 类型（签字字段，编辑模式下只读）
     if (fieldType === 'signature') {
       return (
-        <>
-          <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+        <div className="space-y-1.5">
+          <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
             {label}
           </label>
-          <div className="w-full px-3 py-2 bg-amber-50 border border-amber-300 rounded-lg text-amber-700 text-xs italic text-center">
+          <div className="w-full px-3 py-2.5 bg-amber-50 border border-amber-300 rounded-md text-amber-700 text-xs italic text-center">
             ✍️ 此字段将在审批流程中自动填写
           </div>
-        </>
+        </div>
       );
     }
 
@@ -371,8 +435,8 @@ export default function AddPermitModal({
         if (options.length === 0) {
           // 如果没有选项，退化为文本输入
           return (
-            <>
-              <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
                 {label}
                 {isRequired && <span className="text-red-500 text-xs">*</span>}
               </label>
@@ -381,40 +445,38 @@ export default function AddPermitModal({
                 value={currentValue}
                 onChange={(e) => handleChange(e.target.value)}
                 placeholder="请填写"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                className="w-full px-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white transition-all"
                 required={isRequired}
               />
-            </>
+            </div>
           );
         }
         return (
-          <>
-            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
               {label}
               {isRequired && <span className="text-red-500 text-xs">*</span>}
             </label>
-            <div className="relative">
-              <select
-                value={currentValue}
-                onChange={(e) => handleChange(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white appearance-none"
-                required={isRequired}
-              >
-                <option value="">请选择</option>
-                {options.map((opt, idx) => (
-                  <option key={idx} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </>
+            <select
+              value={currentValue}
+              onChange={(e) => handleChange(e.target.value)}
+              className="w-full px-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white appearance-none transition-all"
+              required={isRequired}
+            >
+              <option value="">请选择</option>
+              {options.map((opt, idx) => (
+                <option key={idx} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
         );
 
       case 'textarea':
         return (
-          <>
-            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
               {label}
               {isRequired && <span className="text-red-500 text-xs">*</span>}
             </label>
@@ -423,36 +485,36 @@ export default function AddPermitModal({
               onChange={(e) => handleChange(e.target.value)}
               placeholder="请填写"
               rows={3}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none"
+              className="w-full px-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm resize-none bg-white transition-all"
               required={isRequired}
             />
-          </>
+          </div>
         );
 
       case 'date':
         return (
-          <>
-            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
               {label}
               {isRequired && <span className="text-red-500 text-xs">*</span>}
             </label>
             <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input
                 type="date"
                 value={currentValue}
                 onChange={(e) => handleChange(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white transition-all"
                 required={isRequired}
               />
             </div>
-          </>
+          </div>
         );
 
       case 'number':
         return (
-          <>
-            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
               {label}
               {isRequired && <span className="text-red-500 text-xs">*</span>}
             </label>
@@ -461,47 +523,47 @@ export default function AddPermitModal({
               value={currentValue}
               onChange={(e) => handleChange(e.target.value)}
               placeholder="请填写"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+              className="w-full px-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white transition-all"
               required={isRequired}
             />
-          </>
+          </div>
         );
 
       case 'department':
         return (
-          <>
-            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
               {label}
               {isRequired && <span className="text-red-500 text-xs">*</span>}
             </label>
             <div className="relative">
-              <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <select
                 value={currentValue}
                 onChange={(e) => handleChange(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white appearance-none"
+                className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white appearance-none transition-all"
                 required={isRequired}
               >
                 <option value="">请选择部门</option>
                 {renderDepartmentOptions(departments)}
               </select>
             </div>
-          </>
+          </div>
         );
 
       case 'user':
         return (
-          <>
-            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
               {label}
               {isRequired && <span className="text-red-500 text-xs">*</span>}
             </label>
             <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <select
                 value={currentValue}
                 onChange={(e) => handleChange(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white appearance-none"
+                className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white appearance-none transition-all"
                 required={isRequired}
               >
                 <option value="">请选择人员</option>
@@ -512,14 +574,14 @@ export default function AddPermitModal({
                 ))}
               </select>
             </div>
-          </>
+          </div>
         );
 
       case 'text':
       default:
         return (
-          <>
-            <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
               {label}
               {isRequired && <span className="text-red-500 text-xs">*</span>}
             </label>
@@ -528,10 +590,10 @@ export default function AddPermitModal({
               value={currentValue}
               onChange={(e) => handleChange(e.target.value)}
               placeholder="请填写"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+              className="w-full px-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white transition-all"
               required={isRequired}
             />
-          </>
+          </div>
         );
     }
   };
