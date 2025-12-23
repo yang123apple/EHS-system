@@ -32,6 +32,10 @@ export interface ParsedField {
   options?: string[];     // 🟢 互斥选项列表（如 ["是", "否"]）
   required?: boolean;     // 🟢 是否为必填项（模板设计时指定）
   boundTemplateId?: string; // 🟢 section类型绑定的二级模板ID
+  group?: string;         // 🟢 字段分组（如"基础信息"、"安全措施"）
+  isSafetyMeasure?: boolean; // 🟢 是否为安全措施项
+  rowIndex?: number;      // 🟢 原始行索引
+  colIndex?: number;      // 🟢 原始列索引
 }
 
 // 🟢 审批人策略：新增 'specific_dept_manager'、'template_text_match'、'template_option_match'

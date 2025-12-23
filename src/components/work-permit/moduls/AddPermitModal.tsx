@@ -72,80 +72,57 @@ export default function AddPermitModal({
     }
   }, [selectedTemplate?.parsedFields]);
 
-  // 🟢 自动解析模板单元格用于移动端展示（从上到下、从左到右）
+  // 🟢 移动端字段分组（基于 parsedFields 的结构化信息）
   // 📌 数据格式说明（与 ExcelRenderer 完全一致）：
   // - 普通单元格: permitFormData[`${rowIndex}-${colIndex}`] = value
   // - 内联输入框: permitFormData[`${rowIndex}-${colIndex}-inlines`] = { [`${rowIndex}-${colIndex}-inline-0`]: value, ... }
   // - Section单元格: permitFormData[`SECTION_R${rowIndex+1}C${colIndex+1}`] = { templateId, templateName, code, data }
-  const mobileCells = useMemo(() => {
-    if (!selectedTemplateData?.grid) return [];
+  const mobileFieldGroups = useMemo(() => {
+    if (!selectedParsedFields || selectedParsedFields.length === 0) return [];
     
-    const cells: Array<{
-      rowIndex: number;
-      colIndex: number;
-      value: string;
-      isTitle: boolean;
-      rowSpan: number;
-      colSpan: number;
-      inputKey: string;
-      cellKey: string;
-      parsedField?: any;
-    }> = [];
-
-    const grid = selectedTemplateData.grid;
-    const merges = selectedTemplateData.merges || [];
-
-    // 辅助函数：获取单元格的合并信息
-    const getCellSpan = (r: number, c: number) => {
-      const mergeInfo = merges.find((m: any) => m.s.r === r && m.s.c === c);
-      if (!mergeInfo) {
-        // 检查是否被其他合并单元格覆盖
-        const isCovered = merges.some((m: any) => 
-          r >= m.s.r && r <= m.e.r && c >= m.s.c && c <= m.e.c && !(r === m.s.r && c === m.s.c)
-        );
-        return { rowSpan: 1, colSpan: 1, isCovered };
-      }
-      return {
-        rowSpan: mergeInfo.e.r - mergeInfo.s.r + 1,
-        colSpan: mergeInfo.e.c - mergeInfo.s.c + 1,
-        isCovered: false
-      };
-    };
-
-    // 遍历所有单元格
-    grid.forEach((row: any[], rIndex: number) => {
-      row.forEach((cellValue: any, cIndex: number) => {
-        const { rowSpan, colSpan, isCovered } = getCellSpan(rIndex, cIndex);
-        
-        // 跳过被合并覆盖的单元格
-        if (isCovered) return;
-
-        const inputKey = `${rIndex}-${cIndex}`;
-        const cellKey = `R${rIndex + 1}C${cIndex + 1}`;
-        const value = String(cellValue || '').trim();
-
-        // 判断是否为标题单元格（合并单元格或非空值）
-        const isTitle = colSpan > 1 || (rowSpan === 1 && colSpan === 1 && value.length > 0 && !value.includes('____'));
-        
-        // 查找对应的 parsedField
-        const parsedField = selectedParsedFields?.find((f: any) => f.cellKey === cellKey);
-
-        cells.push({
-          rowIndex: rIndex,
-          colIndex: cIndex,
-          value,
-          isTitle,
-          rowSpan,
-          colSpan,
-          inputKey,
-          cellKey,
-          parsedField
-        });
+    // 如果字段有 group 属性，使用该属性分组
+    const hasGroupInfo = selectedParsedFields.some((f: any) => f.group);
+    
+    if (hasGroupInfo) {
+      const groups = new Map<string, any[]>();
+      selectedParsedFields.forEach((field: any) => {
+        const groupName = field.group || '其他信息';
+        if (!groups.has(groupName)) {
+          groups.set(groupName, []);
+        }
+        groups.get(groupName)!.push(field);
       });
+      return Array.from(groups.entries()).map(([title, fields]) => ({ title, fields }));
+    }
+
+    // 否则，按字段类型自动分组
+    const groups: { title: string; fields: any[] }[] = [];
+    const signatureFields: any[] = [];
+    const regularFields: any[] = [];
+    const safetyFields: any[] = [];
+
+    selectedParsedFields.forEach((field: any) => {
+      if (field.fieldType === 'signature') {
+        signatureFields.push(field);
+      } else if (field.isSafetyMeasure) {
+        safetyFields.push(field);
+      } else {
+        regularFields.push(field);
+      }
     });
 
-    return cells;
-  }, [selectedTemplateData, selectedParsedFields]);
+    if (regularFields.length > 0) {
+      groups.push({ title: '基础信息', fields: regularFields });
+    }
+    if (safetyFields.length > 0) {
+      groups.push({ title: '安全措施', fields: safetyFields });
+    }
+    if (signatureFields.length > 0) {
+      groups.push({ title: '审批意见', fields: signatureFields });
+    }
+
+    return groups;
+  }, [selectedParsedFields]);
 
   // 🟢 当选择模板后，预生成编号
   useEffect(() => {
@@ -220,68 +197,29 @@ export default function AddPermitModal({
     setCurrentSectionCell(null);
   };
 
-  // 🟢 渲染移动端表单（智能分组展示）
+  // 🟢 渲染移动端表单（基于 parsedFields 的结构化分组）
   const renderMobileForm = () => {
-    if (!mobileCells.length) return null;
-
-    // 智能分组逻辑
-    const groups: Array<{
-      title?: string;
-      cells: typeof mobileCells;
-    }> = [];
-    
-    let currentGroup: typeof mobileCells = [];
-    let currentGroupTitle: string | undefined;
-    let formTitle = '';
-
-    mobileCells.forEach((cell, index) => {
-      const isLargeTitle = cell.colSpan >= 8; // 超大合并单元格，通常是表单主标题
-      const isGroupTitle = cell.colSpan >= 3 && cell.colSpan < 8 && cell.isTitle && !cell.value.includes('____'); // 中等合并单元格，作为分组标题
-      
-      // 识别表单主标题（第一个超大合并单元格）
-      if (isLargeTitle && !formTitle && cell.value) {
-        formTitle = cell.value;
-        return;
-      }
-      
-      // 识别分组标题
-      if (isGroupTitle) {
-        // 保存当前分组
-        if (currentGroup.length > 0) {
-          groups.push({
-            title: currentGroupTitle,
-            cells: currentGroup
-          });
-          currentGroup = [];
-        }
-        currentGroupTitle = cell.value;
-        return;
-      }
-      
-      // 普通单元格加入当前分组
-      currentGroup.push(cell);
-    });
-    
-    // 保存最后一个分组
-    if (currentGroup.length > 0) {
-      groups.push({
-        title: currentGroupTitle,
-        cells: currentGroup
-      });
+    if (!mobileFieldGroups || mobileFieldGroups.length === 0) {
+      return (
+        <div className="p-8 text-center text-slate-400">
+          <p>该模板暂无可编辑字段</p>
+          <p className="text-sm mt-2">请在桌面端编辑模板并解析字段</p>
+        </div>
+      );
     }
 
     return (
       <div className="bg-slate-50 p-4 space-y-4">
         {/* 表单标题 */}
         <div className="bg-white rounded-lg p-4 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-800 text-center">{formTitle || selectedTemplate?.name}</h3>
+          <h3 className="text-lg font-bold text-slate-800 text-center">{selectedTemplate?.name}</h3>
           {previewCode && (
             <p className="text-sm text-blue-600 mt-2 text-center font-mono">编号：{previewCode}</p>
           )}
         </div>
         
         {/* 分组展示 */}
-        {groups.map((group, groupIndex) => (
+        {mobileFieldGroups.map((group, groupIndex) => (
           <div key={groupIndex} className="bg-white rounded-lg shadow-sm overflow-hidden">
             {/* 分组标题 */}
             {group.title && (
@@ -295,14 +233,11 @@ export default function AddPermitModal({
             
             {/* 分组内容 */}
             <div className="p-4 space-y-3">
-              {group.cells.map((cell, cellIndex) => {
-                // 所有单元格都尝试渲染（renderMobileCellInput 会处理标签逻辑）
-                return (
-                  <div key={`${cell.inputKey}-${cellIndex}`}>
-                    {renderMobileCellInput(cell)}
-                  </div>
-                );
-              })}
+              {group.fields.map((field, fieldIndex) => (
+                <div key={`${field.cellKey}-${fieldIndex}`}>
+                  {renderMobileFieldInput(field)}
+                </div>
+              ))}
             </div>
           </div>
         ))}
@@ -310,25 +245,25 @@ export default function AddPermitModal({
     );
   };
 
-  // 🟢 渲染移动端单元格输入
-  const renderMobileCellInput = (cell: any) => {
-    const { inputKey, value, parsedField, isTitle, colSpan } = cell;
+  // 🟢 渲染移动端字段输入（基于 parsedField 结构）
+  const renderMobileFieldInput = (field: any) => {
+    // 从 cellKey 解析行列坐标
+    const match = field.cellKey.match(/R(\d+)C(\d+)/);
+    if (!match) return null;
+    
+    const rowIndex = parseInt(match[1]) - 1;
+    const colIndex = parseInt(match[2]) - 1;
+    const inputKey = `${rowIndex}-${colIndex}`;
     const currentValue = permitFormData[inputKey] || '';
-    const isRequired = parsedField?.required === true;
+    const isRequired = field.required === true;
+    const label = field.fieldName || field.label || '请填写';
+    const fieldType = field.fieldType || 'text';
+    const cellKey = field.cellKey;
 
-    // 🔵 如果是纯标签单元格（有值、不是输入框、小于3列宽），显示为只读标签
-    if (isTitle && value && !value.includes('____') && colSpan < 3 && !parsedField) {
-      return (
-        <div className="text-xs font-medium text-slate-600 py-1">
-          {value}
-        </div>
-      );
-    }
-
-    // 处理内联输入框（包含下划线的单元格）
+    // 处理内联输入框（hint 中包含下划线）
     // 注意：与 ExcelRenderer 保持一致的数据格式
-    if (value.includes('____')) {
-      const parts = value.split(/(____+)/);
+    if (field.hint && field.hint.includes('____')) {
+      const parts = field.hint.split(/(____+)/);
       let inlineIndex = 0;
       
       // 从 permitFormData[`${inputKey}-inlines`] 中读取内联数据
@@ -337,7 +272,7 @@ export default function AddPermitModal({
       return (
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-1.5 text-sm text-slate-700">
-            {parts.map((part, i) => {
+            {parts.map((part: string, i: number) => {
               if (/^____+$/.test(part)) {
                 const currentInlineIndex = inlineIndex++;
                 const inlineKey = `${inputKey}-inline-${currentInlineIndex}`;
@@ -380,18 +315,6 @@ export default function AddPermitModal({
       }));
     };
 
-    // 根据 parsedField 的类型判断输入方式
-    const fieldType = parsedField?.fieldType || 'text';
-    const { cellKey } = cell;
-
-    // 标签：优先使用 parsedField.fieldName，如果有值则显示值，否则不显示标签
-    const label = parsedField?.fieldName || (value && !value.includes('____') ? value : '');
-    
-    // 🔵 如果没有 parsedField 且单元格为空，跳过不渲染
-    if (!parsedField && !value) {
-      return null;
-    }
-
     // 🔵 处理 Section 类型（子表单）
     if (fieldType === 'section') {
       const sectionData = permitFormData[`SECTION_${cellKey}`];
@@ -431,9 +354,74 @@ export default function AddPermitModal({
     }
 
     switch (fieldType) {
+      case 'option':
+        // 选项类型字段，渲染为单选按钮组
+        const options = field.options || [];
+        return (
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
+              {label}
+              {isRequired && <span className="text-red-500 text-xs">*</span>}
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {options.map((opt: string, idx: number) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleChange(opt)}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                    currentValue === opt
+                      ? 'bg-blue-500 text-white shadow-md'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+
+      case 'match':
+        // 多选框类型
+        const matchOptions = field.options || [];
+        const selectedOptions = currentValue ? currentValue.split(',').filter(Boolean) : [];
+        
+        const toggleOption = (opt: string) => {
+          const newSelected = selectedOptions.includes(opt)
+            ? selectedOptions.filter((o: string) => o !== opt)
+            : [...selectedOptions, opt];
+          handleChange(newSelected.join(','));
+        };
+
+        return (
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
+              {label}
+              {isRequired && <span className="text-red-500 text-xs">*</span>}
+            </label>
+            <div className="space-y-2">
+              {matchOptions.map((opt: string, idx: number) => (
+                <label
+                  key={idx}
+                  className="flex items-center gap-2 p-3 bg-slate-50 rounded-md cursor-pointer hover:bg-slate-100 transition"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedOptions.includes(opt)}
+                    onChange={() => toggleOption(opt)}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-slate-700">{opt}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+
       case 'select':
-        const options = parsedField?.options || [];
-        if (options.length === 0) {
+        const selectOptions = field.options || [];
+        if (selectOptions.length === 0) {
           // 如果没有选项，退化为文本输入
           return (
             <div className="space-y-1.5">
@@ -465,7 +453,7 @@ export default function AddPermitModal({
               required={isRequired}
             >
               <option value="">请选择</option>
-              {options.map((opt, idx) => (
+              {selectOptions.map((opt: string, idx: number) => (
                 <option key={idx} value={opt}>
                   {opt}
                 </option>
@@ -715,7 +703,7 @@ export default function AddPermitModal({
   };
 
   // 🟢 渲染部门选项（递归）
-  const renderDepartmentOptions = (depts: any[], level = 0): JSX.Element[] => {
+  const renderDepartmentOptions = (depts: any[], level = 0): React.ReactElement[] => {
     if (!Array.isArray(depts)) return [];
     
     return depts.flatMap((dept) => {
