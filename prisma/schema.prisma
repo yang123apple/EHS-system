@@ -65,6 +65,10 @@ model WorkPermitTemplate {
   // 🟢 V3.4 纸张方向设置
   orientation   String   @default("portrait") // portrait=纵向, landscape=横向
 
+  // 🟢 移动端表单配置
+  // 格式: { enabled: boolean, fields: [{ id, label, fieldKey, fieldType, ... }] }
+  mobileFormConfig String?
+
   isLocked      Boolean  @default(false)
   createdAt     DateTime @default(now())
   records       WorkPermitRecord[]

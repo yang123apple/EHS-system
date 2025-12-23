@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Save, X, ShieldCheck, Link2 } from 'lucide-react';
+import { Save, X, ShieldCheck, Link2, Smartphone } from 'lucide-react';
 import { Template, ParsedField } from '@/types/work-permit';
 import { TemplateService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
 import TemplateBindingModal from './TemplateBindingModal';
+import MobileFormEditor, { MobileFormConfig } from './MobileFormEditor';
 
 interface Props {
   isOpen: boolean;
@@ -29,6 +30,10 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
   const [sectionBindings, setSectionBindings] = useState<Record<string, string>>({});
   const [bindingModalOpen, setBindingModalOpen] = useState(false);
   const [bindingCellKey, setBindingCellKey] = useState<string>('');
+  
+  // 🟢 移动端表单配置
+  const [mobileFormConfig, setMobileFormConfig] = useState<MobileFormConfig | undefined>(undefined);
+  const [mobileFormEditorOpen, setMobileFormEditorOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen && template) {
@@ -80,11 +85,23 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
       
       // 🟢 V3.4 初始化纸张方向
       setOrientation((template.orientation as 'portrait' | 'landscape') || 'portrait');
+      
+      // 🟢 初始化移动端表单配置
+      if (template.mobileFormConfig) {
+        try {
+          setMobileFormConfig(JSON.parse(template.mobileFormConfig as string));
+        } catch (e) {
+          setMobileFormConfig(undefined);
+        }
+      } else {
+        setMobileFormConfig(undefined);
+      }
     } else if (!isOpen) {
       // 🔴 关闭时清理状态，避免下次打开时闪现旧数据
       setTemplateData(null);
       setParsedFields([]);
       setSectionBindings({});
+      setMobileFormConfig(undefined);
     }
   }, [isOpen, template?.id]); // 使用template.id确保模板切换时重新初始化
 
@@ -120,7 +137,9 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
         level,
         sectionBindings: JSON.stringify(sectionBindings),
         // 🟢 V3.4 保存纸张方向
-        orientation
+        orientation,
+        // 🟢 保存移动端表单配置
+        mobileFormConfig: mobileFormConfig ? JSON.stringify(mobileFormConfig) : undefined
       });
 
       alert('修改已保存');
@@ -185,6 +204,17 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
                 title="开启后可为单元格新增/编辑解析字段"
               >
                 {parseEditMode ? '关闭解析编辑' : '解析编辑模式'}
+              </button>
+              <button
+                onClick={() => setMobileFormEditorOpen(true)}
+                className={`px-3 py-2 rounded border text-sm font-semibold transition flex items-center gap-1 ${
+                  mobileFormConfig?.enabled
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+                title="配置移动端表单显示"
+              >
+                <Smartphone size={16} /> {mobileFormConfig?.enabled ? '已启用移动端' : '移动端表单'}
               </button>
               <button
                 onClick={handleSave}
@@ -266,6 +296,18 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
         currentTemplateId={sectionBindings[bindingCellKey]}
         templates={allTemplates || []}
         onBind={handleBindConfirm}
+      />
+      
+      {/* 🟢 移动端表单编辑器 */}
+      <MobileFormEditor
+        isOpen={mobileFormEditorOpen}
+        onClose={() => setMobileFormEditorOpen(false)}
+        parsedFields={parsedFields}
+        currentConfig={mobileFormConfig}
+        onSave={(config) => {
+          setMobileFormConfig(config);
+          setMobileFormEditorOpen(false);
+        }}
       />
     </div>
   );

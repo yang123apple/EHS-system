@@ -56,6 +56,8 @@ export type Template = {
   sectionBindings?: string; // JSON字符串，存储section单元格与二级模板的绑定关系
   // 🟢 V3.4 纸张方向
   orientation?: string; // 'portrait' | 'landscape'
+  // 🟢 移动端表单配置
+  mobileFormConfig?: string; // JSON字符串，存储移动端表单配置
 };
 
 // ==========================================
