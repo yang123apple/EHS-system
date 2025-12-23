@@ -523,7 +523,11 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
                 </label>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => { setEditingField(null); setEditingGroupIndex(-1); }}
+                    onClick={() => { 
+                      setEditingField(null); 
+                      setEditingGroupIndex(-1);
+                      setViewMode('edit'); // 自动切换到编辑模式
+                    }}
                     className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition"
                     title="编辑表单标题和分组"
                   >
