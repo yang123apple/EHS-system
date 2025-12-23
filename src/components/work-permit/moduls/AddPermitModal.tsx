@@ -36,6 +36,7 @@ export default function AddPermitModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [previewCode, setPreviewCode] = useState<string>(''); // 🟢 预览编号
+  const [mobileStep, setMobileStep] = useState<'select' | 'fill'>('select'); // 移动端步骤：选择模板 | 填写表单
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 🔵 V3.4 Section表单状态
@@ -315,26 +316,43 @@ export default function AddPermitModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:!block print:!static print:bg-white print:!p-0 print:!m-0">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center lg:p-4 backdrop-blur-sm print:!block print:!static print:bg-white print:!p-0 print:!m-0">
       <PrintStyle orientation={orientation} />
-      <div className="bg-white rounded-xl w-full max-w-[95vw] h-[92vh] flex flex-col shadow-2xl print:!block print:shadow-none print:h-auto print:w-full print:max-w-none print:!p-0 print:!m-0">
-        <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-xl print:hidden">
-          <h3 className="font-bold text-lg text-slate-800">新增作业单 - {project.name}</h3>
-          <div className="flex gap-2">
+      <div className="bg-white lg:rounded-xl w-full h-full lg:max-w-[95vw] lg:h-[92vh] flex flex-col shadow-2xl print:!block print:shadow-none print:h-auto print:w-full print:max-w-none print:!p-0 print:!m-0">
+        <div className="px-3 py-3 sm:p-4 border-b flex justify-between items-center bg-slate-50 lg:rounded-t-xl print:hidden">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            {/* 移动端：步骤2时显示返回按钮 */}
+            {mobileStep === 'fill' && (
+              <button
+                onClick={() => setMobileStep('select')}
+                className="lg:hidden p-2 hover:bg-slate-200 rounded text-slate-600"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
+            )}
+            <h3 className="font-bold text-base sm:text-lg text-slate-800 truncate">
+              {mobileStep === 'select' ? '选择模板' : selectedTemplate?.name || '新增作业单'}
+              <span className="hidden lg:inline"> - {project.name}</span>
+            </h3>
+          </div>
+          <div className="flex gap-1 sm:gap-2 shrink-0">
             {/* 打印空白表单按钮 */}
-            {selectedTemplate && (
+            {selectedTemplate && mobileStep === 'fill' && (
               <button
                 onClick={() => window.print()}
-                className="px-3 py-2 rounded border transition flex items-center gap-2 bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400"
+                className="hidden sm:flex px-3 py-2 rounded border transition items-center gap-2 bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400"
                 title="打印空白表单"
               >
                 <Printer size={18} />
                 <span className="text-sm">打印空白</span>
               </button>
             )}
+            {mobileStep === 'fill' && (
             <button
               onClick={() => setOrientation(o => o === 'portrait' ? 'landscape' : 'portrait')}
-              className="p-2 rounded border transition flex items-center justify-center bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400"
+              className="hidden sm:flex p-2 rounded border transition items-center justify-center bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400"
               title={orientation === 'portrait' ? '当前：竖向纸张，点击切换为横向' : '当前：横向纸张，点击切换为竖向'}
             >
               {orientation === 'portrait' ? (
@@ -347,16 +365,19 @@ export default function AddPermitModal({
                 </svg>
               )}
             </button>
-            <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded text-slate-500">
+            )}
+            <button onClick={onClose} className="p-1.5 sm:p-2 hover:bg-slate-200 rounded text-slate-500">
               <X size={20} />
             </button>
           </div>
         </div>
         <div className="flex-1 overflow-hidden flex print:!block">
-          {/* 左侧模板选择 */}
-          <div className="w-64 border-r p-4 overflow-y-auto bg-slate-50/50 print:hidden">
-            <h4 className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">选择模板</h4>
-            <div className="space-y-2">
+          {/* 左侧模板选择 - 桌面端始终显示，移动端只在step1显示 */}
+          <div className={`${
+            mobileStep === 'select' ? 'flex' : 'hidden'
+          } lg:flex w-full lg:w-64 border-r p-3 sm:p-4 overflow-y-auto bg-slate-50/50 print:hidden flex-col`}>
+            <h4 className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider hidden lg:block">选择模板</h4>
+            <div className="space-y-2 flex-1">
               {templates
                 .filter((t) => !t.isLocked)
                 .map((t) => (
@@ -368,36 +389,58 @@ export default function AddPermitModal({
                       // 🟢 V3.4 应用模板的纸张方向
                       setOrientation((t.orientation as 'portrait' | 'landscape') || 'portrait');
                     }}
-                    className={`p-3 rounded-lg cursor-pointer text-sm transition-all border ${
+                    className={`p-3 sm:p-4 rounded-lg cursor-pointer text-sm transition-all border ${
                       selectedTemplate?.id === t.id
                         ? 'bg-blue-50 font-bold border-blue-200 text-blue-700 shadow-sm'
-                        : 'bg-white border-transparent hover:bg-white hover:shadow-sm text-slate-600'
+                        : 'bg-white border-slate-200 hover:bg-slate-50 hover:shadow-sm text-slate-600 hover:border-blue-200'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <FileText
-                        size={16}
-                        className={selectedTemplate?.id === t.id ? 'text-blue-500' : 'text-slate-400'}
-                      />
-                      {t.name}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <FileText
+                          size={18}
+                          className={selectedTemplate?.id === t.id ? 'text-blue-500' : 'text-slate-400'}
+                        />
+                        <span>{t.name}</span>
+                      </div>
+                      {selectedTemplate?.id === t.id && (
+                        <CheckCircle size={16} className="text-blue-500 shrink-0" />
+                      )}
                     </div>
+                    {selectedTemplate?.id === t.id && t.type && (
+                      <div className="mt-2 text-xs text-slate-500 bg-white px-2 py-1 rounded">
+                        {t.type}
+                      </div>
+                    )}
                   </div>
                 ))}
             </div>
+            
+            {/* 移动端：选中模板后显示创建按钮 */}
+            {selectedTemplate && (
+              <button
+                onClick={() => setMobileStep('fill')}
+                className="lg:hidden mt-4 w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition flex items-center justify-center gap-2 shadow-lg"
+              >
+                <CheckCircle size={20} />
+                开始填写
+              </button>
+            )}
           </div>
 
-          {/* 右侧表单填写 */}
-          <div className="flex-1 p-6 overflow-auto bg-slate-100 print:!p-0 print:!m-0 print:bg-white print:overflow-visible">
+          {/* 右侧表单填写 - 桌面端始终显示，移动端只在step2显示 */}
+          <div className={`${
+            mobileStep === 'fill' ? 'flex' : 'hidden'
+          } lg:flex flex-1 p-3 sm:p-4 lg:p-6 overflow-auto bg-slate-100 print:!p-0 print:!m-0 print:bg-white print:overflow-visible flex-col`}>
             {selectedTemplate ? (
               <div 
-                className="mx-auto flex flex-col gap-4"
+                className="mx-auto flex flex-col gap-3 sm:gap-4 w-full"
                 style={{
-                  width: orientation === 'portrait' ? '210mm' : '297mm',
-                  maxWidth: '100%',
+                  maxWidth: orientation === 'portrait' ? '210mm' : '297mm',
                 }}
               >
                 {/* 附件管理 */}
-                <div className="bg-white border rounded-lg p-3 shadow-sm print:hidden">
+                <div className="bg-white border rounded-lg p-3 sm:p-4 shadow-sm print:hidden">
                   <div className="flex justify-between items-center mb-3">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-slate-700 text-sm">附件材料</span>
@@ -446,7 +489,7 @@ export default function AddPermitModal({
                 {/* Excel 渲染区域 */}
                 <div 
                   id="print-area"
-                  className="bg-white shadow-lg border border-slate-200 p-8 overflow-auto print:!p-0 print:!m-0 print:shadow-none print:border-0"
+                  className="bg-white shadow-lg border border-slate-200 p-3 sm:p-6 lg:p-8 overflow-auto print:!p-0 print:!m-0 print:shadow-none print:border-0"
                   style={{
                     minHeight: orientation === 'portrait' ? '297mm' : '210mm',
                   }}
@@ -468,10 +511,10 @@ export default function AddPermitModal({
                 </div>
 
                 {/* 申请人附言与提交 */}
-                <div className="bg-white border rounded-lg p-4 shadow-sm sticky bottom-0 z-10 mt-4 print:hidden">
-                  <label className="block text-sm font-bold text-slate-700 mb-2">申请人附言 (选填)</label>
+                <div className="bg-white border rounded-lg p-3 sm:p-4 shadow-sm sticky bottom-0 z-10 mt-4 print:hidden">
+                  <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-2">申请人附言 (选填)</label>
                   <textarea
-                    className="w-full border rounded p-2 text-sm h-20 outline-none focus:ring-2 focus:ring-blue-500 mb-4 bg-slate-50 focus:bg-white transition-colors"
+                    className="w-full border rounded p-2 sm:p-3 text-xs sm:text-sm h-16 sm:h-20 outline-none focus:ring-2 focus:ring-blue-500 mb-3 sm:mb-4 bg-slate-50 focus:bg-white transition-colors"
                     placeholder="请在此输入备注、紧急说明或其他需要审批人注意的事项..."
                     value={opinion}
                     onChange={(e) => setOpinion(e.target.value)}
@@ -480,7 +523,7 @@ export default function AddPermitModal({
                     <button
                       onClick={handleSubmit}
                       disabled={isSubmitting}
-                      className="bg-green-600 text-white px-6 py-2.5 rounded shadow-lg shadow-green-200 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-bold transition-all active:scale-95"
+                      className="bg-green-600 text-white px-4 sm:px-6 py-2 sm:py-2.5 rounded shadow-lg shadow-green-200 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-bold transition-all active:scale-95 text-sm sm:text-base"
                     >
                       {isSubmitting ? (
                         <span className="animate-spin">⏳</span>
@@ -493,9 +536,10 @@ export default function AddPermitModal({
                 </div>
               </div>
             ) : (
-              <div className="h-full flex flex-col items-center justify-center text-slate-400">
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 p-4">
                 <FileText size={48} className="mb-4 text-slate-200" />
-                <p>请在左侧选择一个模板开始填写</p>
+                <p className="text-sm sm:text-base text-center">请在左侧选择一个模板开始填写</p>
+                <p className="text-xs text-slate-400 mt-2 lg:hidden">点击“选择模板”按钮开始</p>
               </div>
             )}
           </div>

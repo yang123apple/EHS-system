@@ -217,9 +217,9 @@ export default function ApproverStrategyConfig({
                 {(strategyItem.approvers || []).length === 0 ? (
                   <span className="text-xs text-slate-400">未选择人员</span>
                 ) : (
-                  strategyItem.approvers!.map((approver: WorkflowApprover) => (
+                  strategyItem.approvers!.map((approver: WorkflowApprover, idx: number) => (
                     <span
-                      key={approver.id}
+                      key={idx}
                       className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-200"
                     >
                       {approver.name}
