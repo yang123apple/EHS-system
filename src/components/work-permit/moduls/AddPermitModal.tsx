@@ -80,12 +80,32 @@ export default function AddPermitModal({
   const mobileFieldGroups = useMemo(() => {
     if (!selectedParsedFields || selectedParsedFields.length === 0) return [];
     
+    // 首先按行列坐标排序（先行后列）
+    const sortedFields = [...selectedParsedFields].sort((a: any, b: any) => {
+      // 如果有 rowIndex/colIndex，使用它们排序
+      if (a.rowIndex !== undefined && b.rowIndex !== undefined) {
+        if (a.rowIndex !== b.rowIndex) return a.rowIndex - b.rowIndex;
+        return (a.colIndex || 0) - (b.colIndex || 0);
+      }
+      
+      // 否则从 cellKey 解析坐标排序（兼容旧数据）
+      const matchA = a.cellKey.match(/R(\d+)C(\d+)/);
+      const matchB = b.cellKey.match(/R(\d+)C(\d+)/);
+      if (matchA && matchB) {
+        const rowA = parseInt(matchA[1]);
+        const rowB = parseInt(matchB[1]);
+        if (rowA !== rowB) return rowA - rowB;
+        return parseInt(matchA[2]) - parseInt(matchB[2]);
+      }
+      return 0;
+    });
+    
     // 如果字段有 group 属性，使用该属性分组
-    const hasGroupInfo = selectedParsedFields.some((f: any) => f.group);
+    const hasGroupInfo = sortedFields.some((f: any) => f.group);
     
     if (hasGroupInfo) {
       const groups = new Map<string, any[]>();
-      selectedParsedFields.forEach((field: any) => {
+      sortedFields.forEach((field: any) => {
         const groupName = field.group || '其他信息';
         if (!groups.has(groupName)) {
           groups.set(groupName, []);
@@ -95,13 +115,13 @@ export default function AddPermitModal({
       return Array.from(groups.entries()).map(([title, fields]) => ({ title, fields }));
     }
 
-    // 否则，按字段类型自动分组
+    // 否则，按字段类型自动分组（保持排序）
     const groups: { title: string; fields: any[] }[] = [];
     const signatureFields: any[] = [];
     const regularFields: any[] = [];
     const safetyFields: any[] = [];
 
-    selectedParsedFields.forEach((field: any) => {
+    sortedFields.forEach((field: any) => {
       if (field.fieldType === 'signature') {
         signatureFields.push(field);
       } else if (field.isSafetyMeasure) {
@@ -247,15 +267,24 @@ export default function AddPermitModal({
 
   // 🟢 渲染移动端字段输入（基于 parsedField 结构）
   const renderMobileFieldInput = (field: any) => {
-    // 从 cellKey 解析行列坐标
-    const match = field.cellKey.match(/R(\d+)C(\d+)/);
-    if (!match) return null;
+    // 优先使用字段自带的 rowIndex/colIndex
+    let rowIndex: number, colIndex: number;
     
-    const rowIndex = parseInt(match[1]) - 1;
-    const colIndex = parseInt(match[2]) - 1;
+    if (field.rowIndex !== undefined && field.colIndex !== undefined) {
+      rowIndex = field.rowIndex;
+      colIndex = field.colIndex;
+    } else {
+      // 兼容旧数据：从 cellKey 解析行列坐标
+      const match = field.cellKey.match(/R(\d+)C(\d+)/);
+      if (!match) return null;
+      rowIndex = parseInt(match[1]) - 1;
+      colIndex = parseInt(match[2]) - 1;
+    }
+    
     const inputKey = `${rowIndex}-${colIndex}`;
     const currentValue = permitFormData[inputKey] || '';
     const isRequired = field.required === true;
+    // 🔵 字段名即标签：直接使用 fieldName 作为显示标签
     const label = field.fieldName || field.label || '请填写';
     const fieldType = field.fieldType || 'text';
     const cellKey = field.cellKey;

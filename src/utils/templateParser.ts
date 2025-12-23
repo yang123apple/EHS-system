@@ -282,7 +282,9 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
         label: cleanLabel,
         fieldName,
         fieldType,
-        hint: generateHint(cleanLabel, fieldType)
+        hint: generateHint(cleanLabel, fieldType),
+        rowIndex: r,
+        colIndex: c
       };
     };
 
