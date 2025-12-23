@@ -304,9 +304,29 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
         onClose={() => setMobileFormEditorOpen(false)}
         parsedFields={parsedFields}
         currentConfig={mobileFormConfig}
-        onSave={(config) => {
+        onSave={async (config) => {
           setMobileFormConfig(config);
           setMobileFormEditorOpen(false);
+          
+          // 🟢 自动保存到数据库
+          try {
+            await TemplateService.update(template.id, {
+              name,
+              type,
+              structureJson: JSON.stringify(templateData),
+              parsedFields: JSON.stringify(parsedFields),
+              watermarkSettings: watermark,
+              level,
+              sectionBindings: JSON.stringify(sectionBindings),
+              orientation,
+              mobileFormConfig: JSON.stringify(config)
+            });
+            alert('移动端表单配置已保存');
+            onSuccess(); // 刷新列表
+          } catch (e) {
+            console.error('Save failed', e);
+            alert('保存失败');
+          }
         }}
       />
     </div>

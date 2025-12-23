@@ -177,7 +177,7 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
       order: groups.length
     };
     setGroups([...groups, newGroup]);
-    setEditingGroupIndex(groups.length);
+    // 保持在表单设置模式，不自动进入编辑
   };
 
   const handleDeleteGroup = (index: number) => {
@@ -188,7 +188,7 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
     ));
     setGroups(groups.filter((_, i) => i !== index));
     if (editingGroupIndex === index) {
-      setEditingGroupIndex(null);
+      setEditingGroupIndex(-1); // 返回表单设置模式
     }
   };
 
@@ -615,7 +615,111 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
 
           {/* 右侧：字段属性编辑 / 表单设置 */}
           <div className={`${viewMode === 'edit' && (editingField || editingGroupIndex !== null) ? 'w-1/3' : 'w-0'} border-l flex flex-col transition-all overflow-hidden`}>
-            {editingGroupIndex === -1 ? (
+            {editingField ? (
+              /* 字段属性编辑 */
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-bold text-slate-800">字段属性</h4>
+                  <button
+                    onClick={() => setEditingField(null)}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    关闭
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">字段名称</label>
+                  <input
+                    type="text"
+                    value={editingField.label}
+                    onChange={(e) => handleUpdateField(editingField.id, { label: e.target.value })}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">字段类型</label>
+                  <select
+                    value={editingField.fieldType}
+                    onChange={(e) => handleUpdateField(editingField.id, { fieldType: e.target.value as MobileFormField['fieldType'] })}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                  >
+                    <option value="text">单行文本</option>
+                    <option value="textarea">多行文本</option>
+                    <option value="number">数字</option>
+                    <option value="date">日期</option>
+                    <option value="option">单选（按钮组）</option>
+                    <option value="match">多选（复选框）</option>
+                    <option value="select">下拉选择</option>
+                    <option value="department">部门选择</option>
+                    <option value="user">人员选择</option>
+                    <option value="signature">签名</option>
+                  </select>
+                </div>
+
+                {['option', 'match', 'select'].includes(editingField.fieldType) && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">选项（每行一个）</label>
+                    <textarea
+                      value={editingField.options?.join('\n') || ''}
+                      onChange={(e) => handleUpdateField(editingField.id, { 
+                        options: e.target.value.split('\n').filter(o => o.trim()) 
+                      })}
+                      className="w-full border rounded px-2 py-1 text-sm"
+                      rows={4}
+                      placeholder="选项1&#10;选项2&#10;选项3"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">所属分组</label>
+                  <select
+                    value={editingField.group || ''}
+                    onChange={(e) => handleUpdateField(editingField.id, { group: e.target.value })}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                  >
+                    <option value="">未分组</option>
+                    {groups.map((g, i) => (
+                      <option key={i} value={g.name}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">占位符</label>
+                  <input
+                    type="text"
+                    value={editingField.placeholder || ''}
+                    onChange={(e) => handleUpdateField(editingField.id, { placeholder: e.target.value })}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={editingField.required || false}
+                      onChange={(e) => handleUpdateField(editingField.id, { required: e.target.checked })}
+                    />
+                    必填字段
+                  </label>
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={editingField.hidden || false}
+                      onChange={(e) => handleUpdateField(editingField.id, { hidden: e.target.checked })}
+                    />
+                    隐藏字段
+                  </label>
+                </div>
+              </div>
+            ) : editingGroupIndex !== null ? (
               /* 表单标题和分组管理 */
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 <div className="flex items-center justify-between mb-4">
@@ -673,7 +777,7 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
                               placeholder="分组名称"
                             />
                             <button
-                              onClick={() => setEditingGroupIndex(null)}
+                              onClick={() => setEditingGroupIndex(-1)}
                               className="text-xs text-blue-600 hover:underline"
                             >
                               完成
@@ -723,128 +827,6 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
                       </div>
                     ))}
                   </div>
-                </div>
-              </div>
-            ) : editingField ? (
-              /* 字段属性编辑 */
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="font-bold text-slate-800 flex items-center gap-2">
-                    <Edit2 size={16} /> 字段属性
-                  </h4>
-                  <button
-                    onClick={() => setEditingField(null)}
-                    className="text-xs text-blue-600 hover:underline"
-                  >
-                    完成
-                  </button>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">显示标签 *</label>
-                  <input
-                    type="text"
-                    value={editingField.label}
-                    onChange={(e) => handleUpdateField(editingField.id, { label: e.target.value })}
-                    className="w-full border rounded px-3 py-2 text-sm"
-                    placeholder="字段显示名称"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">关联字段 *</label>
-                  <select
-                    value={editingField.fieldKey}
-                    onChange={(e) => handleUpdateField(editingField.id, { fieldKey: e.target.value })}
-                    className="w-full border rounded px-3 py-2 text-sm bg-white"
-                  >
-                    <option value="">请选择</option>
-                    {parsedFields.map(f => (
-                      <option key={f.fieldName} value={f.fieldName}>
-                        {f.fieldName} ({f.label})
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-slate-500 mt-1">选择要绑定的解析字段</p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">所属分组</label>
-                  <select
-                    value={editingField.group || ''}
-                    onChange={(e) => handleUpdateField(editingField.id, { group: e.target.value })}
-                    className="w-full border rounded px-3 py-2 text-sm bg-white"
-                  >
-                    {groups.map(g => (
-                      <option key={g.name} value={g.name}>{g.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">字段类型</label>
-                  <select
-                    value={editingField.fieldType}
-                    onChange={(e) => handleUpdateField(editingField.id, { fieldType: e.target.value as MobileFormField['fieldType'] })}
-                    className="w-full border rounded px-3 py-2 text-sm bg-white"
-                  >
-                    <option value="text">单行文本</option>
-                    <option value="textarea">多行文本</option>
-                    <option value="number">数字</option>
-                    <option value="date">日期</option>
-                    <option value="option">单选（按钮组）</option>
-                    <option value="match">多选（复选框）</option>
-                    <option value="select">下拉选择</option>
-                    <option value="department">部门选择</option>
-                    <option value="user">人员选择</option>
-                    <option value="signature">签名</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">占位提示</label>
-                  <input
-                    type="text"
-                    value={editingField.placeholder || ''}
-                    onChange={(e) => handleUpdateField(editingField.id, { placeholder: e.target.value })}
-                    className="w-full border rounded px-3 py-2 text-sm"
-                    placeholder="例如：请输入姓名"
-                  />
-                </div>
-
-                {['option', 'match', 'select'].includes(editingField.fieldType) && (
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">选项（每行一个）</label>
-                    <textarea
-                      value={editingField.options?.join('\n') || ''}
-                      onChange={(e) => handleUpdateField(editingField.id, { options: e.target.value.split('\n').filter(Boolean) })}
-                      className="w-full border rounded px-3 py-2 text-sm"
-                      rows={4}
-                      placeholder="选项1&#10;选项2&#10;选项3"
-                    />
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editingField.required}
-                      onChange={(e) => handleUpdateField(editingField.id, { required: e.target.checked })}
-                      className="rounded text-blue-600"
-                    />
-                    <span className="font-medium text-slate-700">必填字段</span>
-                  </label>
-                  
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editingField.hidden || false}
-                      onChange={(e) => handleUpdateField(editingField.id, { hidden: e.target.checked })}
-                      className="rounded text-slate-600"
-                    />
-                    <span className="font-medium text-slate-700">隐藏字段</span>
-                  </label>
                 </div>
               </div>
             ) : null}

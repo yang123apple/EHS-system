@@ -578,50 +578,52 @@ export default function WorkflowEditorModal({
                   </div>
                 )}
 
-                {/* 🟢 V3.6 新版多审批人策略配置 */}
-                <div className="mb-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-bold text-slate-500">审批人配置</label>
-                    <button
-                      onClick={() => {
-                        // 初始化多策略配置
-                        if (!step.approverStrategies || step.approverStrategies.length === 0) {
-                          updateStep(idx, {
-                            approverStrategies: [{
-                              id: `strategy_${Date.now()}`,
-                              strategy: 'fixed',
-                              approvers: [],
-                              condition: { enabled: false, fieldName: '', operator: '=', value: '' },
-                            }]
-                          });
-                        }
-                      }}
-                      className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 border border-blue-200"
-                    >
-                      {!step.approverStrategies || step.approverStrategies.length === 0 ? '使用多策略配置' : '多策略模式'}
-                    </button>
-                  </div>
-
-                  {step.approverStrategies && step.approverStrategies.length > 0 ? (
-                    <ApproverStrategyConfig
-                      strategies={step.approverStrategies}
-                      parsedFields={parsedFields}
-                      stepApprovalMode={step.approvalMode || 'OR'}
-                      onUpdate={(strategies) => updateApproverStrategies(idx, strategies)}
-                      onSelectDepartment={(strategyId) => handleSelectDepartmentForStrategy(idx, strategyId)}
-                      onSelectUser={(strategyId) => handleSelectUserForStrategy(idx, strategyId)}
-                      departments={departments}
-                      allUsers={allUsers}
-                    />
-                  ) : (
-                    <div className="border-2 border-dashed border-slate-200 rounded p-3 text-center">
-                      <p className="text-xs text-slate-400 mb-2">使用传统单策略配置</p>
+                {/* 🟢 V3.6 新版多审批人策略配置（仅条件签使用） */}
+                {step.approvalMode === 'CONDITIONAL' && (
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-bold text-slate-500">审批人配置</label>
+                      <button
+                        onClick={() => {
+                          // 初始化多策略配置
+                          if (!step.approverStrategies || step.approverStrategies.length === 0) {
+                            updateStep(idx, {
+                              approverStrategies: [{
+                                id: `strategy_${Date.now()}`,
+                                strategy: 'fixed',
+                                approvers: [],
+                                condition: { enabled: false, fieldName: '', operator: '=', value: '' },
+                              }]
+                            });
+                          }
+                        }}
+                        className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 border border-blue-200"
+                      >
+                        {!step.approverStrategies || step.approverStrategies.length === 0 ? '使用多策略配置' : '多策略模式'}
+                      </button>
                     </div>
-                  )}
-                </div>
 
-                {/* 旧版单策略配置（仅当未使用多策略时显示） */}
-                {(!step.approverStrategies || step.approverStrategies.length === 0) && (
+                    {step.approverStrategies && step.approverStrategies.length > 0 ? (
+                      <ApproverStrategyConfig
+                        strategies={step.approverStrategies}
+                        parsedFields={parsedFields}
+                        stepApprovalMode={step.approvalMode || 'OR'}
+                        onUpdate={(strategies) => updateApproverStrategies(idx, strategies)}
+                        onSelectDepartment={(strategyId) => handleSelectDepartmentForStrategy(idx, strategyId)}
+                        onSelectUser={(strategyId) => handleSelectUserForStrategy(idx, strategyId)}
+                        departments={departments}
+                        allUsers={allUsers}
+                      />
+                    ) : (
+                      <div className="border-2 border-dashed border-slate-200 rounded p-3 text-center">
+                        <p className="text-xs text-slate-400 mb-2">使用传统单策略配置</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 旧版单策略配置（条件签使用多策略时不显示，或签/会签始终显示） */}
+                {(step.approvalMode !== 'CONDITIONAL' || !step.approverStrategies || step.approverStrategies.length === 0) && (
                   <>
                 <div className="mb-2">
                   <label className="text-xs font-bold text-slate-500 mb-1 block">找人策略</label>

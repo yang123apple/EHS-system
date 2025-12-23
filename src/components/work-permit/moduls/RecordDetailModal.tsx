@@ -9,12 +9,21 @@ import {
   User,
   MessageSquare,
   Send,
+  FileText,
+  Calendar,
+  List,
+  Hash,
+  AlignLeft,
+  CheckSquare,
+  Building2,
+  Users,
 } from 'lucide-react';
 import { PermitRecord } from '@/types/work-permit';
 import { PermitService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
 import SectionFormModal from './SectionFormModal';
 import PrintStyle from '../PrintStyle';
+import { MobileFormConfig } from './MobileFormEditor';
 // 🟢 引入工具函数
 import { findDeptRecursive } from '@/utils/departmentUtils';
 // 🟢 水印组件
@@ -47,6 +56,9 @@ export default function RecordDetailModal({
 }: Props) {
   const [replyText, setReplyText] = useState<{ [key: number]: string }>({});
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [isMobile, setIsMobile] = useState(false);
+  const [fullTemplate, setFullTemplate] = useState<any>(null); // 🟢 完整的模板信息
+  const [showFlowModal, setShowFlowModal] = useState(false); // 🟢 流程进度弹窗状态
   
   // 🔵 V3.4 Section相关state
   const [sectionModalOpen, setSectionModalOpen] = useState(false);
@@ -58,6 +70,45 @@ export default function RecordDetailModal({
       setOrientation(record.template.orientation as 'portrait' | 'landscape');
     }
   }, [record.template?.orientation]);
+
+  // 🟢 获取完整的模板信息（包含mobileFormConfig）
+  useEffect(() => {
+    const fetchFullTemplate = async () => {
+      try {
+        // 从 allTemplates 中查找完整模板信息
+        const template = allTemplates.find(t => t.id === record.template.id);
+        if (template) {
+          console.log('✅ 找到完整模板信息:', {
+            id: template.id,
+            name: template.name,
+            hasMobileFormConfig: !!template.mobileFormConfig,
+            mobileFormConfigLength: template.mobileFormConfig?.length,
+            mobileFormConfigPreview: template.mobileFormConfig ? template.mobileFormConfig.substring(0, 100) : null
+          });
+          setFullTemplate(template);
+        } else {
+          console.warn('⚠️ 在 allTemplates 中未找到模板:', record.template.id);
+          console.log('📋 allTemplates 列表:', allTemplates.map(t => ({ id: t.id, name: t.name })));
+        }
+      } catch (e) {
+        console.error('获取完整模板失败:', e);
+      }
+    };
+    
+    if (record.template?.id) {
+      fetchFullTemplate();
+    }
+  }, [record.template?.id, allTemplates]);
+
+  // 🟢 检测屏幕尺寸
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // 预解析表单数据和模板解析字段，供找人策略使用
   const recordData = useMemo(() => {
@@ -84,6 +135,210 @@ export default function RecordDetailModal({
     console.log('🔵 RecordDetailModal section clicked:', { cellKey, fieldName });
     setCurrentSectionCell({ cellKey, fieldName });
     setSectionModalOpen(true);
+  };
+
+  // 🟢 渲染移动端表单（只读模式）
+  const renderMobileForm = () => {
+    // 使用完整模板信息
+    const templateToUse = fullTemplate || record.template;
+    
+    // 检查模板是否配置了移动端表单
+    let mobileConfig: MobileFormConfig | null = null;
+    try {
+      if (templateToUse?.mobileFormConfig) {
+        mobileConfig = JSON.parse(templateToUse.mobileFormConfig as string);
+      }
+    } catch (e) {
+      console.error('解析移动端表单配置失败:', e);
+    }
+
+    console.log('🔍 移动端表单渲染检查:', {
+      isMobile,
+      usingFullTemplate: !!fullTemplate,
+      hasMobileConfig: !!mobileConfig,
+      fieldsCount: mobileConfig?.fields?.length
+    });
+
+    // 🟢 移动端时，如果有配置就使用，不检查 enabled 字段
+    if (!mobileConfig || !mobileConfig.fields || mobileConfig.fields.length === 0) {
+      return null;
+    }
+
+    // 🟢 辅助函数：根据字段类型获取图标
+    const getFieldIcon = (fieldType: string) => {
+      switch (fieldType) {
+        case 'text':
+          return <FileText size={14} className="text-blue-500" />;
+        case 'textarea':
+          return <AlignLeft size={14} className="text-purple-500" />;
+        case 'date':
+          return <Calendar size={14} className="text-green-500" />;
+        case 'select':
+        case 'option':
+          return <List size={14} className="text-orange-500" />;
+        case 'match':
+          return <CheckSquare size={14} className="text-indigo-500" />;
+        case 'number':
+          return <Hash size={14} className="text-cyan-500" />;
+        case 'department':
+          return <Building2 size={14} className="text-amber-500" />;
+        case 'user':
+          return <Users size={14} className="text-pink-500" />;
+        default:
+          return <FileText size={14} className="text-slate-500" />;
+      }
+    };
+
+    // 🟢 辅助函数：根据fieldKey获取字段值
+    const getFieldValue = (fieldKey: string) => {
+      // 从parsedFields中找到对应的字段
+      const parsedField = parsedFields.find(f => f.fieldName === fieldKey);
+      if (!parsedField) {
+        return recordData[fieldKey] || '';
+      }
+
+      // 优先使用坐标
+      if (parsedField.rowIndex !== undefined && parsedField.colIndex !== undefined) {
+        const coordKey = `${parsedField.rowIndex}-${parsedField.colIndex}`;
+        return recordData[coordKey] || '';
+      }
+
+      // 尝试从cellKey解析
+      if (parsedField.cellKey) {
+        const match = parsedField.cellKey.match(/R(\d+)C(\d+)/);
+        if (match) {
+          const rowIndex = parseInt(match[1]) - 1;
+          const colIndex = parseInt(match[2]) - 1;
+          const coordKey = `${rowIndex}-${colIndex}`;
+          return recordData[coordKey] || '';
+        }
+      }
+
+      // 回退：直接使用fieldKey
+      return recordData[fieldKey] || '';
+    };
+
+    const groupedFields = new Map<string, typeof mobileConfig.fields>();
+    
+    // 按分组整理字段
+    mobileConfig.fields.filter(f => !f.hidden).forEach(field => {
+      const groupName = field.group || '未分组';
+      if (!groupedFields.has(groupName)) {
+        groupedFields.set(groupName, []);
+      }
+      groupedFields.get(groupName)!.push(field);
+    });
+
+    // 按分组配置的顺序排序
+    const sortedGroups = Array.from(groupedFields.entries()).sort((a, b) => {
+      const orderA = mobileConfig!.groups?.find(g => g.name === a[0])?.order ?? 999;
+      const orderB = mobileConfig!.groups?.find(g => g.name === b[0])?.order ?? 999;
+      return orderA - orderB;
+    });
+
+    // 🟢 渲染字段值（支持多种字段类型）
+    const renderFieldValue = (field: typeof mobileConfig.fields[0]) => {
+      const value = getFieldValue(field.fieldKey);
+      
+      if (!value) {
+        return <span className="text-slate-400 text-sm">未填写</span>;
+      }
+
+      // 根据字段类型渲染
+      switch (field.fieldType) {
+        case 'option':
+        case 'select':
+          return <span className="inline-block break-words max-w-full">{value}</span>;
+        
+        case 'match':
+          // 多选值可能是数组或逗号分隔的字符串
+          const values = Array.isArray(value) ? value : value.split(',').filter(Boolean);
+          return (
+            <div className="flex flex-wrap gap-1">
+              {values.map((v: string, i: number) => (
+                <span key={i} className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs inline-block break-words max-w-full">
+                  {v}
+                </span>
+              ))}
+            </div>
+          );
+        
+        case 'date':
+          return <span className="inline-block break-words max-w-full font-mono">{value}</span>;
+        
+        case 'textarea':
+          return <div className="break-words whitespace-pre-wrap max-w-full">{value}</div>;
+        
+        default:
+          return <span className="inline-block break-words max-w-full">{value}</span>;
+      }
+    };
+
+    return (
+      <div className="bg-slate-50 space-y-4">
+        {/* 表单标题 */}
+        {mobileConfig.title && (
+          <div className="bg-white rounded-lg p-4 shadow-sm">
+            <h3 className="text-lg font-bold text-slate-800 text-center">{mobileConfig.title}</h3>
+            {record.code && (
+              <p className="text-sm text-blue-600 mt-2 text-center font-mono">编号：{record.code}</p>
+            )}
+          </div>
+        )}
+        
+        {/* 分组展示 */}
+        {sortedGroups.map(([groupName, fields], groupIndex) => (
+          <div key={groupIndex} className="bg-white rounded-lg shadow-sm overflow-hidden">
+            {/* 分组标题 */}
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2.5">
+              <h4 className="text-white font-bold text-sm">{groupName}</h4>
+            </div>
+            
+            {/* 分组内容 */}
+            <div className="p-4 space-y-3">
+              {fields.map((field) => {
+                // 🟢 大多数类型使用行内布局，仅 textarea 和 match 使用块级布局
+                const isInlineField = !['textarea', 'match', 'signature'].includes(field.fieldType);
+                
+                return (
+                  <div key={field.id} className="border-b border-slate-100 pb-3 last:border-0">
+                    {isInlineField ? (
+                      // 行内布局：label 和 value 在同一行，自动换行
+                      <div className="flex items-start gap-3 flex-wrap">
+                        <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5 shrink-0 pt-1 min-w-fit">
+                          {getFieldIcon(field.fieldType)}
+                          <span className="whitespace-nowrap">{field.label}</span>
+                          {field.required && <span className="text-red-500 ml-0.5">*</span>}
+                        </label>
+                        <div className="bg-slate-50 rounded px-3 py-1.5 flex-1 min-w-0 overflow-visible">
+                          <div className="text-sm text-slate-800 break-words overflow-wrap-anywhere">
+                            {renderFieldValue(field)}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      // 块级布局：label 和 value 分两行
+                      <>
+                        <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
+                          {getFieldIcon(field.fieldType)}
+                          <span>{field.label}</span>
+                          {field.required && <span className="text-red-500 ml-0.5">*</span>}
+                        </label>
+                        <div className="bg-slate-50 rounded px-3 py-2 min-h-[40px]">
+                          <div className="text-sm text-slate-800 break-words whitespace-pre-wrap">
+                            {renderFieldValue(field)}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   // 2. 解析动态审批人
@@ -369,6 +624,87 @@ export default function RecordDetailModal({
     const isApproved = record.status === 'approved';
     const logs = approvalLogs;
 
+    // 🟢 移动端使用垂直布局
+    if (isMobile) {
+      return (
+        <div className="space-y-3">
+          {/* 发起节点 */}
+          <div className="flex items-start gap-3">
+            <div className="flex flex-col items-center">
+              <div className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center ring-2 ring-white shadow-sm">
+                <User size={16} />
+              </div>
+              <div className="w-0.5 h-8 bg-green-300 my-1"></div>
+            </div>
+            <div className="flex-1 pt-1">
+              <div className="text-sm font-medium text-slate-800">发起</div>
+              <div className="text-xs text-slate-500">{logs[0]?.approver || '申请人'}</div>
+            </div>
+          </div>
+
+          {config.map((step: any, idx: number) => {
+            let statusColor = 'bg-slate-100 text-slate-400';
+            let icon = <span className="font-bold text-xs">{idx + 1}</span>;
+
+            const stepNum = Number(step.step ?? step.stepIndex ?? -1);
+
+            if (stepNum < currentStep || isApproved) {
+              statusColor = 'bg-green-100 text-green-600';
+              icon = <CheckCircle size={16} />;
+            } else if (stepNum === currentStep && !isRejected && !isApproved) {
+              statusColor = 'bg-blue-100 text-blue-600 border border-blue-200 animate-pulse';
+              icon = <Clock size={16} />;
+            } else if (stepNum === currentStep && isRejected) {
+              statusColor = 'bg-red-100 text-red-600';
+              icon = <XCircle size={16} />;
+            }
+
+            let approverName = '待定';
+            const completedLog = logs.find(
+              (log: any) =>
+                (log.stepIndex === stepNum || log.step === stepNum) &&
+                (log.action === 'pass' || log.action === 'reject')
+            );
+            if (completedLog) {
+              approverName = completedLog.approver || '未知';
+            } else {
+              const potentialApprovers = resolveDynamicApprovers(step);
+              if (potentialApprovers.length > 0) {
+                approverName = potentialApprovers.map((u: any) => u.userName).join(', ');
+              }
+            }
+
+            return (
+              <div key={idx} className="flex items-start gap-3">
+                <div className="flex flex-col items-center">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${statusColor} ring-2 ring-white shadow-sm`}>
+                    {icon}
+                  </div>
+                  {idx < config.length - 1 && <div className="w-0.5 h-8 bg-slate-200 my-1"></div>}
+                </div>
+                <div className="flex-1 pt-1">
+                  <div className="text-sm font-medium text-slate-800">{step.name}</div>
+                  <div className="text-xs text-slate-500">{approverName}</div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* 结束节点 */}
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center ring-2 ring-white shadow-sm">
+              {isApproved ? <CheckCircle size={16} className="text-green-600" /> : <span className="text-slate-400 text-xs">完</span>}
+            </div>
+            <div className="flex-1 pt-1">
+              <div className="text-sm font-medium text-slate-800">完成</div>
+              <div className="text-xs text-slate-500">{isApproved ? '已归档' : '待完成'}</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // 桌面端使用水平布局
     return (
       <div className="flex items-center overflow-x-auto py-4 mb-4 px-2 border-b border-slate-200">
         {/* 发起节点 */}
@@ -470,7 +806,14 @@ export default function RecordDetailModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:!block print:!static print:bg-white print:!p-0 print:!m-0">
+    <div className={`fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm print:!block print:!static print:bg-white print:!p-0 print:!m-0 ${isMobile ? 'p-0' : 'p-4'}`}>
+       {/* 🟢 水印层 - 移到最外层 */}
+       {wmSettings.enabled && (
+         <div className="absolute inset-0 pointer-events-none watermark-layer overflow-hidden z-[100]">
+           <Watermark text={wmSettings.text} />
+         </div>
+       )}
+       
        {/* 🟢 新增：打印专用样式 */}
        <PrintStyle orientation={orientation} />
        <style jsx global>{`
@@ -506,52 +849,87 @@ export default function RecordDetailModal({
         }
       `}</style>
 
-      <div className="bg-white rounded-xl w-full max-w-5xl h-[95vh] flex flex-col shadow-2xl print:!block print:shadow-none print:h-auto print:w-full print:max-w-none print:!p-0 print:!m-0">
+      <div className={`bg-white w-full max-w-5xl flex flex-col shadow-2xl print:!block print:shadow-none print:h-auto print:w-full print:max-w-none print:!p-0 print:!m-0 ${isMobile ? 'h-full rounded-none' : 'h-[95vh] rounded-xl'}`}>
         {/* 头部操作栏 */}
-        <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-xl print:hidden">
-          <div>
-            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-              {record.template.name}
-              <span
-                className={`text-xs px-2 py-0.5 rounded border ${
-                  record.status === 'approved'
-                    ? 'bg-green-50 text-green-700 border-green-200'
-                    : record.status === 'rejected'
-                    ? 'bg-red-50 text-red-700 border-red-200'
-                    : 'bg-blue-50 text-blue-700 border-blue-200'
-                }`}
-              >
-                {record.status === 'approved'
-                  ? '已归档'
-                  : record.status === 'rejected'
-                  ? '已驳回'
-                  : '审批中'}
-              </span>
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              单号: {record.id} · 提交于: {new Date(record.createdAt).toLocaleString()}
-            </p>
+        <div className={`border-b bg-slate-50 print:hidden ${isMobile ? 'p-3 flex flex-col gap-3' : 'p-4 rounded-t-xl flex justify-between items-center'}`}>
+          <div className={isMobile ? 'w-full' : ''}>
+            {isMobile ? (
+              // 移动端：标题、状态、单号、提交时间在一行
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-bold text-slate-800 text-base">{record.template.name}</span>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded border shrink-0 ${
+                        record.status === 'approved'
+                          ? 'bg-green-50 text-green-700 border-green-200'
+                          : record.status === 'rejected'
+                          ? 'bg-red-50 text-red-700 border-red-200'
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}
+                    >
+                      {record.status === 'approved'
+                        ? '已归档'
+                        : record.status === 'rejected'
+                        ? '已驳回'
+                        : '审批中'}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500 text-right shrink-0">
+                  <div>单号: {record.id}</div>
+                  <div className="mt-0.5">{new Date(record.createdAt).toLocaleString()}</div>
+                </div>
+              </div>
+            ) : (
+              // 桌面端：保持原样
+              <>
+                <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg">
+                  <span>{record.template.name}</span>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded border ${
+                      record.status === 'approved'
+                        ? 'bg-green-50 text-green-700 border-green-200'
+                        : record.status === 'rejected'
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                    }`}
+                  >
+                    {record.status === 'approved'
+                      ? '已归档'
+                      : record.status === 'rejected'
+                      ? '已驳回'
+                      : '审批中'}
+                  </span>
+                </h3>
+                <p className="text-slate-500 mt-1 text-xs">
+                  单号: {record.id} · 提交于: {new Date(record.createdAt).toLocaleString()}
+                </p>
+              </>
+            )}
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setOrientation(o => o === 'portrait' ? 'landscape' : 'portrait')}
-              className="p-2 rounded border transition flex items-center justify-center bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400"
-              title={orientation === 'portrait' ? '当前：竖向纸张，点击切换为横向' : '当前：横向纸张，点击切换为竖向'}
-            >
-              {orientation === 'portrait' ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="7" y="2" width="10" height="20" rx="1" />
-                </svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="2" y="7" width="20" height="10" rx="1" />
-                </svg>
-              )}
-            </button>
+          <div className={`flex gap-2 ${isMobile ? 'w-full' : ''}`}>
+            {!isMobile && (
+              <button
+                onClick={() => setOrientation(o => o === 'portrait' ? 'landscape' : 'portrait')}
+                className="p-2 rounded border transition flex items-center justify-center bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400"
+                title={orientation === 'portrait' ? '当前：竖向纸张，点击切换为横向' : '当前：横向纸张，点击切换为竖向'}
+              >
+                {orientation === 'portrait' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="7" y="2" width="10" height="20" rx="1" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="2" y="7" width="20" height="10" rx="1" />
+                  </svg>
+                )}
+              </button>
+            )}
             {canApprove && (
               <button
                 onClick={onOpenApproval}
-                className="bg-blue-600 text-white px-4 py-1.5 rounded font-bold shadow hover:bg-blue-700 flex items-center gap-1"
+                className={`bg-blue-600 text-white px-4 py-1.5 rounded font-bold shadow hover:bg-blue-700 flex items-center gap-1 ${isMobile ? 'flex-1 justify-center' : ''}`}
               >
                 <CheckCircle size={16} /> 审批
               </button>
@@ -559,21 +937,24 @@ export default function RecordDetailModal({
             {attachments.length > 0 && (
               <button
                 onClick={() => onViewAttachments(attachments)}
-                className="p-2 hover:bg-slate-200 rounded-full text-slate-600"
+                className={`hover:bg-slate-200 rounded text-slate-600 ${isMobile ? 'flex-1 py-2 border border-slate-300' : 'p-2 rounded-full'}`}
                 title="附件"
               >
-                <Paperclip size={20} />
+                <Paperclip size={20} className={isMobile ? 'inline' : ''} />
+                {isMobile && <span className="ml-1 text-sm">附件</span>}
+              </button>
+            )}
+            {!isMobile && (
+              <button
+                onClick={() => window.print()}
+                className="p-2 hover:bg-slate-200 rounded-full text-slate-600"
+              >
+                <Printer size={20} />
               </button>
             )}
             <button
-              onClick={() => window.print()}
-              className="p-2 hover:bg-slate-200 rounded-full text-slate-600"
-            >
-              <Printer size={20} />
-            </button>
-            <button
               onClick={onClose}
-              className="p-2 hover:bg-slate-200 rounded-full text-slate-600"
+              className={`hover:bg-slate-200 rounded text-slate-600 ${isMobile ? 'p-2 border border-slate-300' : 'p-2 rounded-full'}`}
             >
               <X size={20} />
             </button>
@@ -581,42 +962,79 @@ export default function RecordDetailModal({
         </div>
 
         {/* 主内容区 */}
-        <div className="flex-1 overflow-auto p-6 bg-slate-100 print:!block print:!p-0 print:!m-0 print:bg-white print:overflow-visible custom-scrollbar">
+        <div className={`flex-1 overflow-auto bg-slate-100 print:!block print:!p-0 print:!m-0 print:bg-white print:overflow-visible custom-scrollbar ${isMobile ? 'p-3' : 'p-6'}`}>
           {/* 流程进度条（仅屏幕显示） */}
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-4 print:hidden">
-            <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase">流程进度</h4>
-            {renderFlowTimeline()}
-          </div>
+          {isMobile ? (
+            // 移动端：进度按钮
+            <button
+              onClick={() => setShowFlowModal(true)}
+              className="w-full bg-white rounded-lg shadow-sm border border-slate-200 p-3 mb-3 print:hidden hover:bg-slate-50 transition flex items-center justify-between"
+            >
+              <span className="text-sm font-medium text-slate-800">查看流程进度</span>
+              <span className="text-xs text-slate-500">当前步骤: {record.currentStep}</span>
+            </button>
+          ) : (
+            // 桌面端：直接显示进度条
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-4 print:hidden">
+              <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase">流程进度</h4>
+              {renderFlowTimeline()}
+            </div>
+          )}
 
-          {/* 表单主体（含水印） */}
+          {/* 表单主体 */}
           <div
             id="print-area"
-            className="mx-auto bg-white shadow-lg p-8 print:shadow-none print:!w-full print:!p-0 print:!m-0 relative print-container"
+            className={`mx-auto bg-white shadow-lg print:shadow-none print:!w-full print:!p-0 print:!m-0 relative print-container ${isMobile ? 'p-4 rounded-lg' : 'p-8'}`}
             style={{
               width: orientation === 'portrait' ? '210mm' : '297mm',
               minHeight: orientation === 'portrait' ? '297mm' : '210mm',
               maxWidth: '100%',
             }}
           >
-            {wmSettings.enabled && (
-                <div className="absolute inset-0 pointer-events-none watermark-layer overflow-hidden">
-                    <Watermark text={wmSettings.text} />
-                </div>
-            )}
-            <ExcelRenderer
-              key={record.id + '_' + (approvalLogs.length || 0)}
-              templateData={templateData}
-              initialData={recordData}
-              approvalLogs={approvalLogs}
-              workflowConfig={
-                record.template.workflowConfig ? JSON.parse(record.template.workflowConfig) : []
+            
+            {/* 根据屏幕尺寸和配置决定渲染哪个视图 */}
+            {(() => {
+              // 使用完整模板信息
+              const templateToUse = fullTemplate || record.template;
+              
+              // 检查是否应该显示移动端视图（打印时强制使用桌面端样式）
+              const shouldShowMobile = isMobile && templateToUse?.mobileFormConfig && !window.matchMedia('print').matches;
+              
+              console.log('📱 视图渲染决策:', {
+                isMobile,
+                hasFullTemplate: !!fullTemplate,
+                hasMobileFormConfig: !!templateToUse?.mobileFormConfig,
+                shouldShowMobile,
+                windowWidth: window.innerWidth
+              });
+              
+              if (shouldShowMobile) {
+                const mobileFormView = renderMobileForm();
+                if (mobileFormView) {
+                  console.log('✅ 渲染移动端表单视图');
+                  return <div className="relative z-10">{mobileFormView}</div>;
+                }
               }
-              parsedFields={parsedFields}
-              permitCode={record.status === 'rejected' ? undefined : record.code} // 🟢 驳回时不显示编号
-              orientation={orientation}
-              mode="view"
-              onSectionClick={handleSectionClick}
-            />
+              
+              // 否则显示桌面端视图
+              console.log('✅ 渲染桌面端表格视图');
+              return (
+                <ExcelRenderer
+                  key={record.id + '_' + (approvalLogs.length || 0)}
+                  templateData={templateData}
+                  initialData={recordData}
+                  approvalLogs={approvalLogs}
+                  workflowConfig={
+                    record.template.workflowConfig ? JSON.parse(record.template.workflowConfig) : []
+                  }
+                  parsedFields={parsedFields}
+                  permitCode={record.status === 'rejected' ? undefined : record.code} // 🟢 驳回时不显示编号
+                  orientation={orientation}
+                  mode="view"
+                  onSectionClick={handleSectionClick}
+                />
+              );
+            })()}
           </div>
 
           {/* 底部留言板 UI */}
@@ -750,7 +1168,7 @@ export default function RecordDetailModal({
             cellKey={currentSectionCell.cellKey}
             fieldName={currentSectionCell.fieldName}
             boundTemplate={boundTemplate}
-            parentCode={record.status === 'rejected' ? undefined : record.code} // 🟢 驳回时不传递编号
+            parentCode={record.status === 'rejected' ? '' : (record.code || '')} // 🟢 驳回时不传递编号
             parentFormData={recordData}
             parentParsedFields={parsedFields}
             parentApprovalLogs={approvalLogs}
@@ -765,6 +1183,28 @@ export default function RecordDetailModal({
           />
         );
       })()}
+
+      {/* 🟢 移动端流程进度弹窗 */}
+      {isMobile && showFlowModal && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-end" onClick={() => setShowFlowModal(false)}>
+          <div className="bg-white w-full rounded-t-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white z-10">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                流程进度
+                <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                  步骤 {record.currentStep}
+                </span>
+              </h3>
+              <button onClick={() => setShowFlowModal(false)} className="p-1 hover:bg-slate-100 rounded-full">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {renderFlowTimeline()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
