@@ -73,6 +73,10 @@ export default function AddPermitModal({
   }, [selectedTemplate?.parsedFields]);
 
   // 🟢 自动解析模板单元格用于移动端展示（从上到下、从左到右）
+  // 📌 数据格式说明（与 ExcelRenderer 完全一致）：
+  // - 普通单元格: permitFormData[`${rowIndex}-${colIndex}`] = value
+  // - 内联输入框: permitFormData[`${rowIndex}-${colIndex}-inlines`] = { [`${rowIndex}-${colIndex}-inline-0`]: value, ... }
+  // - Section单元格: permitFormData[`SECTION_R${rowIndex+1}C${colIndex+1}`] = { templateId, templateName, code, data }
   const mobileCells = useMemo(() => {
     if (!selectedTemplateData?.grid) return [];
     
@@ -262,9 +266,13 @@ export default function AddPermitModal({
     const isRequired = parsedField?.required === true;
 
     // 处理内联输入框（包含下划线的单元格）
+    // 注意：与 ExcelRenderer 保持一致的数据格式
     if (value.includes('____')) {
       const parts = value.split(/(____+)/);
       let inlineIndex = 0;
+      
+      // 从 permitFormData[`${inputKey}-inlines`] 中读取内联数据
+      const inlinesData = permitFormData[`${inputKey}-inlines`] || {};
       
       return (
         <div className="bg-slate-50 p-3 rounded border border-slate-200">
@@ -273,7 +281,7 @@ export default function AddPermitModal({
               if (/^____+$/.test(part)) {
                 const currentInlineIndex = inlineIndex++;
                 const inlineKey = `${inputKey}-inline-${currentInlineIndex}`;
-                const inlineValue = permitFormData[inlineKey] || '';
+                const inlineValue = inlinesData[inlineKey] || '';
                 
                 return (
                   <input
@@ -281,10 +289,17 @@ export default function AddPermitModal({
                     type="text"
                     value={inlineValue}
                     onChange={(e) => {
-                      setPermitFormData(prev => ({
-                        ...prev,
-                        [inlineKey]: e.target.value
-                      }));
+                      // 更新内联数据对象，保持与 ExcelRenderer 一致的格式
+                      setPermitFormData(prev => {
+                        const currentInlines = prev[`${inputKey}-inlines`] || {};
+                        return {
+                          ...prev,
+                          [`${inputKey}-inlines`]: {
+                            ...currentInlines,
+                            [inlineKey]: e.target.value
+                          }
+                        };
+                      });
                     }}
                     className="flex-1 min-w-[80px] px-2 py-1.5 border-b-2 border-blue-400 focus:border-blue-600 outline-none bg-white rounded text-sm"
                     placeholder="填写"
@@ -307,9 +322,48 @@ export default function AddPermitModal({
 
     // 根据 parsedField 的类型判断输入方式
     const fieldType = parsedField?.fieldType || 'text';
+    const { cellKey } = cell;
 
     // 标签
     const label = parsedField?.fieldName || value || '请填写';
+
+    // 🔵 处理 Section 类型（子表单）
+    if (fieldType === 'section') {
+      const sectionData = permitFormData[`SECTION_${cellKey}`];
+      return (
+        <>
+          <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+            {label}
+            {isRequired && <span className="text-red-500 text-xs">*</span>}
+          </label>
+          <button
+            type="button"
+            onClick={() => handleSectionClick(cellKey, label)}
+            className={`w-full px-4 py-3 rounded-lg border-2 transition text-sm font-semibold ${
+              sectionData
+                ? 'bg-green-50 border-green-500 text-green-700'
+                : 'bg-blue-50 border-blue-400 text-blue-700 hover:bg-blue-100'
+            }`}
+          >
+            {sectionData ? '✓ 已填写 - 点击查看/编辑' : '📝 点击填写子表单'}
+          </button>
+        </>
+      );
+    }
+
+    // 🟠 处理 Signature 类型（签字字段，编辑模式下只读）
+    if (fieldType === 'signature') {
+      return (
+        <>
+          <label className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+            {label}
+          </label>
+          <div className="w-full px-3 py-2 bg-amber-50 border border-amber-300 rounded-lg text-amber-700 text-xs italic text-center">
+            ✍️ 此字段将在审批流程中自动填写
+          </div>
+        </>
+      );
+    }
 
     switch (fieldType) {
       case 'select':
