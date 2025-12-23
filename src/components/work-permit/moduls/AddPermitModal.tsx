@@ -74,11 +74,22 @@ export default function AddPermitModal({
 
   // 🟢 解析移动端表单配置
   const mobileFormConfig = useMemo<MobileFormConfig | null>(() => {
-    if (!selectedTemplate?.mobileFormConfig) return null;
+    if (!selectedTemplate?.mobileFormConfig) {
+      console.log('📱 没有移动端表单配置');
+      return null;
+    }
     try {
       const config = JSON.parse(selectedTemplate.mobileFormConfig);
-      return config.enabled ? config : null;
+      console.log('📱 移动端表单配置:', config);
+      if (config.enabled) {
+        console.log('✅ 移动端表单已启用，字段数:', config.fields?.length);
+        return config;
+      } else {
+        console.log('❌ 移动端表单未启用');
+        return null;
+      }
     } catch (e) {
+      console.error('❌ 解析移动端表单配置失败:', e);
       return null;
     }
   }, [selectedTemplate?.mobileFormConfig]);
@@ -665,14 +676,14 @@ export default function AddPermitModal({
 
                 {/* Excel 渲染区域 / 移动端表单 */}
                 {mobileFormConfig ? (
-                  // 移动端表单视图（仅在小屏幕显示）
-                  <div className="md:hidden">
+                  // 移动端表单视图（在小于1024px屏幕显示）
+                  <div className="lg:hidden">
                     {renderMobileForm()}
                   </div>
                 ) : null}
                 
                 {/* 桌面端表格视图（在大屏幕或未配置移动端表单时显示） */}
-                <div className={mobileFormConfig ? 'hidden md:block' : 'block'}>
+                <div className={mobileFormConfig ? 'hidden lg:block' : 'block'}>
                   <div 
                     id="print-area"
                     className="bg-white shadow-lg border border-slate-200 p-3 sm:p-6 lg:p-8 overflow-auto print:!p-0 print:!m-0 print:shadow-none print:border-0"
