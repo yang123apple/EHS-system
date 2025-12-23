@@ -296,25 +296,12 @@ export default function AddPermitModal({
             {/* 分组内容 */}
             <div className="p-4 space-y-3">
               {group.cells.map((cell, cellIndex) => {
-                // 跳过只是标题的单元格（小标题）
-                if (cell.isTitle && !cell.value.includes('____') && cell.colSpan < 3) {
-                  return (
-                    <div key={`${cell.inputKey}-${cellIndex}`} className="text-xs font-semibold text-slate-600 uppercase tracking-wide mt-2 mb-1">
-                      {cell.value}
-                    </div>
-                  );
-                }
-
-                // 渲染输入字段
-                if (!cell.isTitle || cell.value.includes('____')) {
-                  return (
-                    <div key={`${cell.inputKey}-${cellIndex}`}>
-                      {renderMobileCellInput(cell)}
-                    </div>
-                  );
-                }
-
-                return null;
+                // 所有单元格都尝试渲染（renderMobileCellInput 会处理标签逻辑）
+                return (
+                  <div key={`${cell.inputKey}-${cellIndex}`}>
+                    {renderMobileCellInput(cell)}
+                  </div>
+                );
               })}
             </div>
           </div>
@@ -325,9 +312,18 @@ export default function AddPermitModal({
 
   // 🟢 渲染移动端单元格输入
   const renderMobileCellInput = (cell: any) => {
-    const { inputKey, value, parsedField } = cell;
+    const { inputKey, value, parsedField, isTitle, colSpan } = cell;
     const currentValue = permitFormData[inputKey] || '';
     const isRequired = parsedField?.required === true;
+
+    // 🔵 如果是纯标签单元格（有值、不是输入框、小于3列宽），显示为只读标签
+    if (isTitle && value && !value.includes('____') && colSpan < 3 && !parsedField) {
+      return (
+        <div className="text-xs font-medium text-slate-600 py-1">
+          {value}
+        </div>
+      );
+    }
 
     // 处理内联输入框（包含下划线的单元格）
     // 注意：与 ExcelRenderer 保持一致的数据格式
@@ -388,8 +384,13 @@ export default function AddPermitModal({
     const fieldType = parsedField?.fieldType || 'text';
     const { cellKey } = cell;
 
-    // 标签
-    const label = parsedField?.fieldName || value || '请填写';
+    // 标签：优先使用 parsedField.fieldName，如果有值则显示值，否则不显示标签
+    const label = parsedField?.fieldName || (value && !value.includes('____') ? value : '');
+    
+    // 🔵 如果没有 parsedField 且单元格为空，跳过不渲染
+    if (!parsedField && !value) {
+      return null;
+    }
 
     // 🔵 处理 Section 类型（子表单）
     if (fieldType === 'section') {

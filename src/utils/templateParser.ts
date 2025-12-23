@@ -506,76 +506,15 @@ function extractFieldInfo(
 }
 
 /**
- * 推断字段的规范化名称
- * 首先尝试通过已知的标签-名称映射匹配，不匹配则将标签转换为camelCase
+ * 从标签推断字段名
+ * 直接使用单元格的原始值作为字段名，不做任何英文转换
  * 
  * @param label - 原始标签文本
- * @returns 规范化的字段名称（如projectName、deptOpinion等）
+ * @returns 清理后的字段名称（保持中文原样）
  */
 function inferFieldName(label: string): string {
-  // 先移除选项符号
-  let cleanLabel = stripOptionMarkers(label);
-  const normalized = cleanLabel.trim().toLowerCase();
-
-  // 常见标签到字段名的映射表（保持中文key便于查询）
-  const nameMap: Record<string, string> = {
-    // 精确匹配（优先级最高）
-    '需求部门意见': 'deptOpinion',
-    '部门意见': 'deptOpinion',
-    '已开展作业危害分析': 'hazardAnalysis',
-    '交叉作业': 'crossWorkCoordination',
-    '开始日期': 'startDate',
-    '开始时间': 'startTime',
-    '结束日期': 'endDate',
-    '结束时间': 'endTime',
-    '工程名称': 'projectName',
-    '项目名称': 'projectName',
-    '钻孔': '钻孔',
-    '其他': '其他',
-    '焊接': '焊接',
-    '切割': '切割',
-    '打磨': '打磨',
-    '持证': '持证',
-    
-    // 次级匹配（包含关系）
-    '工程': 'projectName',
-    '项目': 'projectName',
-    '需求部门': 'requestDept',
-    '申请部门': 'requestDept',
-    '部门': 'department',
-    '意见': 'opinion',
-    '作业人员': 'operator',
-    '操作人员': 'operator',
-    '人员': 'personnel',
-    '日期': 'date',
-    '时间': 'time',
-    '签名': 'signature',
-    '签字': 'signature',
-    '备注': 'remarks',
-    '说明': 'description',
-    '位置': 'location',
-    '地点': 'location',
-    '场所': 'location',
-    '分析': 'analysis',
-    '措施': 'measures',
-    '协调': 'coordination',
-    '风险': 'risk'
-  };
-
-  // 逐一检查已知映射（优先精确匹配）
-  if (nameMap[normalized]) {
-    return nameMap[normalized];
-  }
-  
-  // 然后检查包含关系（长的key优先检查，避免"需求部门"被"部门"匹配）
-  const sortedEntries = Object.entries(nameMap).sort((a, b) => b[0].length - a[0].length);
-  for (const [key, value] of sortedEntries) {
-    if (normalized.includes(key.toLowerCase())) {
-      return value;
-    }
-  }
-
-  // 若无匹配，直接返回清理后的中文标签（不转换为下划线英文）
+  // 移除选项符号后直接返回
+  const cleanLabel = stripOptionMarkers(label);
   return cleanLabel.trim();
 }
 
