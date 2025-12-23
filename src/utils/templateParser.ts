@@ -336,6 +336,9 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
         const cellStr = String(cell).trim();
         const cellKey = `R${r + 1}C${c + 1}`;
         
+        // 🟢 跳过已处理的单元格（避免重复处理被聚合的option单元格）
+        if (processedCells.has(cellKey)) continue;
+        
         // 检测是否为选项字段（包含£符号）
         const isOptionField = hasOptionMarker(cellStr);
         
