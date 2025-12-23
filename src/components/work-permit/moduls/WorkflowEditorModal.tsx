@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Plus, Save, X, Trash2, RefreshCw, Users, User, GitBranch, Briefcase, UserCog, Filter } from 'lucide-react';
-import { Template, WorkflowStep, ParsedField, WorkflowPart } from '@/types/work-permit';
+import { Template, WorkflowStep, ParsedField, WorkflowPart, ApproverStrategyItem } from '@/types/work-permit';
 import { TemplateService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
 import DepartmentSelectModal from './DepartmentSelectModal';
+import ApproverStrategyConfig from './ApproverStrategyConfig';
 import { flattenDepartments } from '@/utils/departmentUtils';
 
 interface Props {
@@ -36,9 +37,17 @@ export default function WorkflowEditorModal({
 
   // 部门选择器状态
   const [selectorTarget, setSelectorTarget] = useState<{
-    type: 'approver' | 'strategy';
+    type: 'approver' | 'strategy' | 'strategy_item';
     stepIdx: number;
     approverIdx?: number;
+    strategyId?: string; // 🟢 V3.6 新增：用于多策略配置
+  } | null>(null);
+
+  // 🟢 V3.6 新增：用户选择器状态
+  const [userSelectorOpen, setUserSelectorOpen] = useState(false);
+  const [userSelectorTarget, setUserSelectorTarget] = useState<{
+    stepIdx: number;
+    strategyId: string;
   } | null>(null);
 
   // 🔵 判断是否为二级模板
@@ -98,6 +107,28 @@ export default function WorkflowEditorModal({
     setWorkflowSteps(newSteps);
   };
 
+  // 🟢 V3.6 新增：更新审批人策略列表
+  const updateApproverStrategies = (idx: number, strategies: ApproverStrategyItem[]) => {
+    const newSteps = [...workflowSteps];
+    newSteps[idx].approverStrategies = strategies;
+    setWorkflowSteps(newSteps);
+  };
+
+  // 🟢 V3.6 新增：处理部门选择（针对多策略）
+  const handleSelectDepartmentForStrategy = (stepIdx: number, strategyId: string) => {
+    setSelectorTarget({
+      type: 'strategy_item',
+      stepIdx,
+      strategyId,
+    });
+  };
+
+  // 🟢 V3.6 新增：处理用户选择（针对多策略）
+  const handleSelectUserForStrategy = (stepIdx: number, strategyId: string) => {
+    setUserSelectorTarget({ stepIdx, strategyId });
+    setUserSelectorOpen(true);
+  };
+
   const updateStrategyConfig = (idx: number, field: string, value: string) => {
     const newSteps = [...workflowSteps];
     if (!newSteps[idx].strategyConfig) newSteps[idx].strategyConfig = {};
@@ -111,7 +142,7 @@ export default function WorkflowEditorModal({
 
   const handleDeptSelect = (deptId: string, deptName: string) => {
     if (!selectorTarget) return;
-    const { type, stepIdx, approverIdx } = selectorTarget;
+    const { type, stepIdx, approverIdx, strategyId } = selectorTarget;
     const newSteps = [...workflowSteps];
 
     if (type === 'approver' && typeof approverIdx === 'number') {
@@ -119,8 +150,18 @@ export default function WorkflowEditorModal({
       approver.deptId = deptId;
       approver.userId = '';
       approver.userName = '';
+    } else if (type === 'strategy_item' && strategyId) {
+      // 🟢 V3.6 新增：处理多策略配置的部门选择
+      const strategies = newSteps[stepIdx].approverStrategies || [];
+      const strategy = strategies.find(s => s.id === strategyId);
+      if (strategy) {
+        if (!strategy.strategyConfig) strategy.strategyConfig = {};
+        strategy.strategyConfig.targetDeptId = deptId;
+        strategy.strategyConfig.targetDeptName = deptName;
+        newSteps[stepIdx].approverStrategies = strategies;
+      }
     } else if (type === 'strategy') {
-      // 🟢 处理文本匹配策略的部门选择
+      // 🟢 处理文本匹配策略的部门选择（旧版向后兼容）
       const textMatchIdx = (newSteps[stepIdx] as any)._editingTextMatchIdx;
       if (textMatchIdx !== undefined && newSteps[stepIdx].strategyConfig?.textMatches) {
         newSteps[stepIdx].strategyConfig!.textMatches![textMatchIdx].targetDeptId = deptId;
@@ -537,6 +578,51 @@ export default function WorkflowEditorModal({
                   </div>
                 )}
 
+                {/* 🟢 V3.6 新版多审批人策略配置 */}
+                <div className="mb-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold text-slate-500">审批人配置</label>
+                    <button
+                      onClick={() => {
+                        // 初始化多策略配置
+                        if (!step.approverStrategies || step.approverStrategies.length === 0) {
+                          updateStep(idx, {
+                            approverStrategies: [{
+                              id: `strategy_${Date.now()}`,
+                              strategy: 'fixed',
+                              approvers: [],
+                              condition: { enabled: false, fieldName: '', operator: '=', value: '' },
+                            }]
+                          });
+                        }
+                      }}
+                      className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 border border-blue-200"
+                    >
+                      {!step.approverStrategies || step.approverStrategies.length === 0 ? '使用多策略配置' : '多策略模式'}
+                    </button>
+                  </div>
+
+                  {step.approverStrategies && step.approverStrategies.length > 0 ? (
+                    <ApproverStrategyConfig
+                      strategies={step.approverStrategies}
+                      parsedFields={parsedFields}
+                      stepApprovalMode={step.approvalMode || 'OR'}
+                      onUpdate={(strategies) => updateApproverStrategies(idx, strategies)}
+                      onSelectDepartment={(strategyId) => handleSelectDepartmentForStrategy(idx, strategyId)}
+                      onSelectUser={(strategyId) => handleSelectUserForStrategy(idx, strategyId)}
+                      departments={departments}
+                      allUsers={allUsers}
+                    />
+                  ) : (
+                    <div className="border-2 border-dashed border-slate-200 rounded p-3 text-center">
+                      <p className="text-xs text-slate-400 mb-2">使用传统单策略配置</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* 旧版单策略配置（仅当未使用多策略时显示） */}
+                {(!step.approverStrategies || step.approverStrategies.length === 0) && (
+                  <>
                 <div className="mb-2">
                   <label className="text-xs font-bold text-slate-500 mb-1 block">找人策略</label>
                   <select
@@ -1099,6 +1185,9 @@ export default function WorkflowEditorModal({
                     拾取
                   </button>
                 </div>
+                  </>
+                )}
+                {/* 🟢 旧版单策略配置结束 */}
               </div>
             ))}
           </div>

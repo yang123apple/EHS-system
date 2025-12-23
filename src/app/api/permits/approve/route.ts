@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createLog } from '@/lib/logger';
+import { resolveApprovers } from '@/lib/workflowUtils';
+import { db } from '@/lib/mockDb';
 export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { recordId, opinion, action, userName, userId, operatorId } = body;
+    const { recordId, opinion, action, userName, userId, operatorId, nextStepApprovers } = body;
     
-    console.log('🔍 [调试-后端] 收到的审批请求参数:', { recordId, userName, userId, operatorId });
+    console.log('🔍 [调试-后端] 收到的审批请求参数:', { recordId, userName, userId, operatorId, nextStepApprovers });
 
     // 1. 获取记录
     const record = await prisma.workPermitRecord.findUnique({
@@ -146,15 +148,23 @@ export async function POST(req: Request) {
         }
     }
 
-    // 5. 更新数据库
+    // 5. 更新数据库（驳回时清空编号）
+    const updateData: any = {
+      approvalLogs: JSON.stringify(updatedLogs),
+      currentStep: nextStep,
+      status: nextStatus,
+      dataJson: updatedDataJson // ✅ 保存 Excel 数据
+    };
+    
+    // 🟢 如果是驳回，清空编号（回收编号）
+    if (action === 'reject') {
+      updateData.code = null;
+      console.log('🔄 [编号回收] 作业票被驳回，编号已清空');
+    }
+    
     const updatedRecord = await prisma.workPermitRecord.update({
       where: { id: recordId },
-      data: {
-        approvalLogs: JSON.stringify(updatedLogs),
-        currentStep: nextStep,
-        status: nextStatus,
-        dataJson: updatedDataJson // ✅ 保存 Excel 数据
-      },
+      data: updateData,
       include: { project: true, template: true } // 包含项目和模板信息，用于通知
     });
 
@@ -170,45 +180,146 @@ export async function POST(req: Request) {
 
     // 🟢 创建通知
     try {
+      console.log('🔔 [通知调试] 开始检查是否需要创建通知');
+      console.log('🔔 [通知调试] action:', action, 'nextStep:', nextStep, 'workflow.length:', workflow.length);
+      
       // 如果是通过，且还有下一步，通知下一个审批人
       if (action === 'pass' && nextStep < workflow.length) {
+        console.log('🔔 [通知调试] 需要创建通知，查找下一步配置...');
+        
         const nextStepConfig = workflow.find((w: any) => {
           const stepNum = w.step ?? w.stepIndex;
           return String(stepNum) === String(nextStep);
         });
 
-        if (nextStepConfig && nextStepConfig.approvers && nextStepConfig.approvers.length > 0) {
-          // 为每个审批人创建通知
-          const approverIds = nextStepConfig.approvers.map((a: any) => a.id || a.userId).filter(Boolean);
+        console.log('🔔 [通知调试] 下一步配置:', JSON.stringify(nextStepConfig));
+
+        if (nextStepConfig) {
+          // 🟢 在服务器端解析动态审批人
+          let approversToNotify = [];
           
-          const notificationPromises = approverIds.map((approverId: string) => 
-            prisma.notification.create({
+          // 🟢 获取发起人部门
+          // 如果当前是第一步(step=0)，发起人就是本次提交者
+          // 如果已经在后续步骤，从第一条日志获取
+          let applicantDept = '';
+          let applicantUserId = '';
+          
+          const logs = updatedRecord.approvalLogs ? JSON.parse(updatedRecord.approvalLogs) : [];
+          console.log('🔍 [调试] 审批日志数量:', logs.length);
+          console.log('🔍 [调试] 当前步骤:', currentStepIndex, '下一步:', nextStep);
+          
+          if (currentStepIndex === 0) {
+            // 第一步：发起人就是当前提交者
+            applicantUserId = userId || operatorId || '';
+            console.log('🔍 [调试] 第一步提交，发起人ID:', applicantUserId);
+          } else if (logs.length > 0) {
+            // 后续步骤：从第一条日志获取发起人
+            const firstLog = logs[0];
+            applicantUserId = firstLog.operatorId || firstLog.userId || '';
+            console.log('🔍 [调试] 从日志获取发起人ID:', applicantUserId);
+          }
+          
+          if (applicantUserId) {
+            const applicantUser = await db.getUserById(applicantUserId);
+            console.log('🔍 [调试] 发起人用户信息:', JSON.stringify(applicantUser));
+            applicantDept = applicantUser?.departmentId || applicantUser?.department || '';
+          }
+          
+          if (!applicantDept) {
+            applicantDept = updatedRecord.project?.requestDept || '';
+            console.log('🔍 [调试] 使用项目申请部门:', applicantDept);
+          }
+          
+          console.log('🔔 [后端] 最终确定的发起人部门:', applicantDept);
+          
+          // 解析表单数据和模板字段
+          const formData = updatedRecord.dataJson ? JSON.parse(updatedRecord.dataJson) : {};
+          const parsedFields = updatedRecord.template.parsedFields 
+            ? JSON.parse(updatedRecord.template.parsedFields) 
+            : [];
+          
+          // 调用 resolveApprovers 解析审批人
+          const resolvedUsers = await resolveApprovers(
+            applicantDept,
+            nextStepConfig,
+            formData,
+            parsedFields
+          );
+          
+          approversToNotify = resolvedUsers.map((u: any) => ({ id: u.id, name: u.name }));
+          
+          console.log('🔔 [后端] 解析出的审批人:', JSON.stringify(approversToNotify));
+          
+          if (approversToNotify.length > 0) {
+            const approverIds = approversToNotify.map((a: any) => a.id).filter(Boolean);
+            
+            console.log('🔔 [通知调试] 提取的审批人ID列表:', approverIds);
+            
+            const notificationPromises = approverIds.map((approverId: string) => 
+              prisma.notification.create({
+                data: {
+                  userId: approverId,
+                  type: 'approval_pending',
+                  title: '待审批作业票',
+                  content: `【${updatedRecord.template.name}】 ${updatedRecord.project.name} - 等待您审批（第${nextStep + 1}步：${nextStepConfig.name}）`,
+                  relatedType: 'permit',
+                  relatedId: recordId,
+                  isRead: false,
+                }
+              })
+            );
+
+            await Promise.all(notificationPromises);
+            console.log(`✅ [通知] 已为 ${approverIds.length} 位下一步审批人创建通知`);
+          } else {
+            console.log('⚠️ [通知调试] 解析审批人结果为空');
+          }
+        } else {
+          console.log('⚠️ [通知调试] 未找到下一步配置');
+        }
+      } else {
+        console.log('🔔 [通知调试] 不需要创建下一步审批通知（可能是最后一步或被驳回）');
+      }
+      
+      // 🟢 给发起人发送审批结果通知（每次审批都发送）
+      const logs = updatedRecord.approvalLogs ? JSON.parse(updatedRecord.approvalLogs) : [];
+      if (logs.length > 0) {
+        const firstLog = logs[0];
+        const creatorId = firstLog.operatorId || firstLog.userId;
+        
+        if (creatorId) {
+          console.log('🔔 [通知] 给发起人发送审批结果通知, 发起人ID:', creatorId);
+          
+          // 构建通知内容
+          const actionText = action === 'pass' ? '通过' : '驳回';
+          const statusText = nextStatus === 'approved' ? '【已完成】' : 
+                           nextStatus === 'rejected' ? '【已驳回】' : 
+                           `【进行中】`;
+          
+          const notificationTitle = action === 'pass' ? '作业票审批通过' : '作业票被驳回';
+          const notificationContent = `${statusText}【${updatedRecord.template.name}】 ${updatedRecord.project.name} - ${userName}${actionText}了您的申请`;
+          
+          try {
+            await prisma.notification.create({
               data: {
-                userId: approverId,
-                type: 'approval_pending',
-                title: '待审批作业票',
-                content: `【${updatedRecord.template.name}】 ${updatedRecord.project.name} - 等待您审批（第${nextStep + 1}步：${nextStepConfig.name}）`,
+                userId: creatorId,
+                type: action === 'pass' ? 'approval_passed' : 'approval_rejected',
+                title: notificationTitle,
+                content: notificationContent,
                 relatedType: 'permit',
                 relatedId: recordId,
                 isRead: false,
               }
-            })
-          );
-
-          await Promise.all(notificationPromises);
-          console.log(`✅ 已为 ${approverIds.length} 位下一步审批人创建通知`);
+            });
+            console.log(`✅ [通知] 已通知发起人: ${notificationTitle}`);
+          } catch (err) {
+            console.error('❌ [通知] 通知发起人失败:', err);
+          }
         }
       }
       
-      // 如果是驳回，通知创建人
-      if (action === 'reject') {
-        // TODO: 需要在WorkPermitRecord中添加creatorId字段来通知创建人
-        console.log('⚠️ 作业票已驳回，需要通知创建人');
-      }
-
-      // 如果全部通过，通知相关人员
+      // 如果全部通过，额外通知相关人员
       if (nextStatus === 'approved') {
-        // TODO: 通知创建人和相关部门负责人
         console.log('✅ 作业票已全部审批通过');
       }
     } catch (notificationError) {
@@ -219,7 +330,12 @@ export async function POST(req: Request) {
     return NextResponse.json(updatedRecord);
 
   } catch (error) {
-    console.error("Approval Error:", error);
-    return NextResponse.json({ error: '审批失败' }, { status: 500 });
+    console.error("❌ [审批失败] 详细错误:", error);
+    console.error("❌ [审批失败] 错误堆栈:", error instanceof Error ? error.stack : '无堆栈信息');
+    console.error("❌ [审批失败] 错误消息:", error instanceof Error ? error.message : String(error));
+    return NextResponse.json({ 
+      error: '审批失败', 
+      details: error instanceof Error ? error.message : String(error) 
+    }, { status: 500 });
   }
 }

@@ -76,52 +76,93 @@ export interface WorkflowApprover {
   }>;
 }
 
+// 🟢 V3.6 新增：审批人策略项（支持条件判断）
+export type ApproverStrategyItem = {
+  id: string; // 唯一标识
+  strategy: ApproverStrategy; // 找人策略
+  strategyConfig?: {
+    targetDeptId?: string;
+    targetDeptName?: string;
+    roleName?: string;
+    fieldName?: string;
+    expectedType?: 'department' | 'personnel' | 'text';
+    textMatches?: Array<{
+      fieldName: string;
+      containsText: string;
+      targetDeptId: string;
+      targetDeptName: string;
+    }>;
+    optionMatches?: Array<{
+      fieldName: string;
+      checkedValue: string;
+      approverType: 'person' | 'dept_manager';
+      approverUserId?: string;
+      approverUserName?: string;
+      targetDeptId?: string;
+      targetDeptName?: string;
+    }>;
+  };
+  
+  // 🟢 条件判断配置（条件签）
+  condition?: {
+    enabled: boolean;      // 是否启用条件判断
+    fieldName: string;     // 判断字段名
+    operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'contains' | 'not_contains' | 'in' | 'not_in'; // 判断符号
+    value: string;         // 判断值
+  };
+  
+  // 固定审批人（当strategy为fixed时）
+  approvers?: WorkflowApprover[];
+};
+
 export type WorkflowStep = {
   step: number; // 步骤序号 (0, 1, 2...)
   stepIndex?: number; // 新标准字段（可选，用于新引擎）
   name: string; // 步骤名称 (e.g., "安全员审批")
   type: WorkflowType;
 
-  // 🟢 支持会签/或签
+  // 🟢 支持会签/或签/条件签
   approvalMode?: ApprovalMode;
 
-  // 🟢 审批人策略
+  // 🟢 V3.6 新版：多策略配置（每个步骤可以有多个审批人策略）
+  approverStrategies?: ApproverStrategyItem[];
+
+  // === 以下为向后兼容的旧字段 ===
+  // 🟢 审批人策略（旧版，保留向后兼容）
   approverStrategy?: ApproverStrategy;
 
-  // 🟢 新增：策略配置参数（用于 non-fixed 策略）
+  // 🟢 策略配置参数（旧版，保留向后兼容）
   strategyConfig?: {
-    targetDeptId?: string;   // 指定目标部门 ID（用于 specific_dept_manager 或 role）
-    targetDeptName?: string; // 部门名称（用于前端回显，非必需）
-    roleName?: string;       // 角色名称，如 "EHS经理"、"车间主任"
-    fieldName?: string;      // 从模板解析字段中取值的字段名（如：需求部门）
-    expectedType?: 'department' | 'personnel' | 'text'; // 期望的字段类型，用于过滤匹配
-    // 🟢 文本匹配策略配置
+    targetDeptId?: string;
+    targetDeptName?: string;
+    roleName?: string;
+    fieldName?: string;
+    expectedType?: 'department' | 'personnel' | 'text';
     textMatches?: Array<{
-      fieldName: string;     // 匹配的字段名（text 类型）
-      containsText: string;  // 当该字段包含此文本时
-      targetDeptId: string;  // 路由到此部门负责人
-      targetDeptName: string; // 部门名称
+      fieldName: string;
+      containsText: string;
+      targetDeptId: string;
+      targetDeptName: string;
     }>;
-    // 🟢 选项匹配策略配置
     optionMatches?: Array<{
-      fieldName: string;     // 选项字段名（option 类型）
-      checkedValue: string;  // 当勾选了此选项时
-      approverType: 'person' | 'dept_manager'; // 直接指定人员或部门负责人
-      approverUserId?: string; // 直接指定的人员 ID
-      approverUserName?: string; // 直接指定的人员名字
-      targetDeptId?: string;  // 部门负责人的部门 ID
-      targetDeptName?: string; // 部门名称
+      fieldName: string;
+      checkedValue: string;
+      approverType: 'person' | 'dept_manager';
+      approverUserId?: string;
+      approverUserName?: string;
+      targetDeptId?: string;
+      targetDeptName?: string;
     }>;
   };
 
-  // 固定审批人列表（仅当 approverStrategy === 'fixed' 时使用）
+  // 固定审批人列表（旧版，仅当 approverStrategy === 'fixed' 时使用）
   approvers: WorkflowApprover[];
 
-  // 🟢 条件触发器（可选）
+  // 🟢 条件触发器（可选，旧版）
   triggerConditions?: Array<{
-    field: string;     // 字段名，如 'location', 'requestDept', 'supplierName'
-    operator: string;  // 操作符，如 '包含', '等于', '不等于'
-    value: string;     // 匹配值
+    field: string;
+    operator: string;
+    value: string;
   }>;
 
   // 绑定的 Excel 单元格坐标 (用于签字回填)

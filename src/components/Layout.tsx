@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 // 1. 引入需要的图标：Network (组织架构), Users (账户), LayoutDashboard (工作台)
 import { LogOut, User as UserIcon, ChevronDown, LayoutDashboard, Users, Network } from 'lucide-react';
 import { usePathname } from 'next/navigation';
+import NotificationPanel from '@/components/common/NotificationPanel';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -84,60 +85,66 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </nav>
           </div>
 
-          {/* 右侧用户信息 */}
-          <div className="relative">
-            <button 
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="flex items-center gap-3 hover:bg-slate-800 px-3 py-2 rounded-lg transition-colors cursor-pointer"
-            >
-              <div className="text-right hidden md:block">
-                <p className="text-sm font-medium">{user.name}</p>
-                <p className="text-xs text-slate-400">ID: {user.id}</p>
-              </div>
-              <div className="h-10 w-10 rounded-full bg-hytzer-blue flex items-center justify-center overflow-hidden border-2 border-slate-600">
-                {user.avatar ? (
-                   <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" />
-                ) : (
-                   <span className="text-lg font-bold">{user.name?.[0]}</span>
-                )}
-              </div>
-              <ChevronDown size={16} className="text-slate-400" />
-            </button>
-
-            {/* 下拉菜单 */}
-            {isMenuOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 text-slate-800 border border-slate-200 z-50">
-                <div className="px-4 py-2 border-b border-slate-100 md:hidden">
-                    <p className="font-bold text-sm">{user.name}</p>
-                    <p className="text-xs text-slate-500">{user.role === 'admin' ? '管理员' : '普通用户'}</p>
+          {/* 右侧：通知 + 用户菜单 */}
+          <div className="flex items-center gap-4">
+            {/* 通知图标 */}
+            <NotificationPanel />
+            
+            {/* 用户下拉菜单 */}
+            <div className="relative">
+              <button 
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className="flex items-center gap-3 hover:bg-slate-800 px-3 py-2 rounded-lg transition-colors cursor-pointer"
+              >
+                <div className="text-right hidden md:block">
+                  <p className="text-sm font-medium">{user.name}</p>
+                  <p className="text-xs text-slate-400">ID: {user.id}</p>
                 </div>
-                
-                {/* 移动端菜单补充 (如果屏幕小，上面导航隐藏了，这里可以显示) */}
-                <div className="md:hidden border-b border-slate-100 mb-1">
-                    <Link href="/dashboard" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">工作台</Link>
-                    {user.role === 'admin' && (
-                        <>
-                            <Link href="/admin/account" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">账户管理</Link>
-                            <Link href="/admin/org" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">组织架构</Link>
-                        </>
-                    )}
+                <div className="h-10 w-10 rounded-full bg-hytzer-blue flex items-center justify-center overflow-hidden border-2 border-slate-600">
+                  {user.avatar ? (
+                     <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                     <span className="text-lg font-bold">{user.name?.[0]}</span>
+                  )}
                 </div>
+                <ChevronDown size={16} className="text-slate-400" />
+              </button>
 
-                <Link 
-                  href="/profile" 
-                  className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <UserIcon size={16} className="mr-2" /> 个人中心
-                </Link>
-                <button 
-                  onClick={logout}
-                  className="w-full flex items-center px-4 py-2 hover:bg-red-50 text-red-600 text-sm"
-                >
-                  <LogOut size={16} className="mr-2" /> 退出登录
-                </button>
-              </div>
-            )}
+              {/* 下拉菜单 */}
+              {isMenuOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 text-slate-800 border border-slate-200 z-50">
+                  <div className="px-4 py-2 border-b border-slate-100 md:hidden">
+                      <p className="font-bold text-sm">{user.name}</p>
+                      <p className="text-xs text-slate-500">{user.role === 'admin' ? '管理员' : '普通用户'}</p>
+                  </div>
+                  
+                  {/* 移动端菜单补充 (如果屏幕小，上面导航隐藏了，这里可以显示) */}
+                  <div className="md:hidden border-b border-slate-100 mb-1">
+                      <Link href="/dashboard" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">工作台</Link>
+                      {user.role === 'admin' && (
+                          <>
+                              <Link href="/admin/account" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">账户管理</Link>
+                              <Link href="/admin/org" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">组织架构</Link>
+                          </>
+                      )}
+                  </div>
+
+                  <Link 
+                    href="/profile" 
+                    className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    <UserIcon size={16} className="mr-2" /> 个人中心
+                  </Link>
+                  <button 
+                    onClick={logout}
+                    className="w-full flex items-center px-4 py-2 hover:bg-red-50 text-red-600 text-sm"
+                  >
+                    <LogOut size={16} className="mr-2" /> 退出登录
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>

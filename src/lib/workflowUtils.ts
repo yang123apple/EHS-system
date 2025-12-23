@@ -26,13 +26,24 @@ export async function resolveApprovers(
 
   // 2. 当前部门负责人
   if (approverStrategy === 'current_dept_manager') {
-    const users = await db.getUsers();
-    // 假设applicantDept是用户所在部门ID
-    const deptUser = users.find(u => u.department === applicantDept || u.departmentId === applicantDept);
-    if (deptUser?.id) {
-      const manager = await findSupervisor(deptUser.id);
+    console.log('🔍 [resolveApprovers] 策略: current_dept_manager');
+    console.log('🔍 [resolveApprovers] applicantDept:', applicantDept);
+    
+    // 🟢 直接从组织架构数据中查找该部门的 managerId
+    const departments = await db.getDepartments();
+    console.log('🔍 [resolveApprovers] 部门总数:', departments.length);
+    
+    const targetDept = departments.find(d => d.id === applicantDept || d.name === applicantDept);
+    console.log('🔍 [resolveApprovers] 找到的部门:', targetDept ? `${targetDept.name} (${targetDept.id})` : '未找到');
+    
+    if (targetDept?.managerId) {
+      console.log('🔍 [resolveApprovers] 部门经理ID:', targetDept.managerId);
+      const manager = await db.getUserById(targetDept.managerId);
+      console.log('🔍 [resolveApprovers] 查找到的部门经理:', manager ? `${manager.name} (${manager.id})` : '未找到');
       return manager ? [manager] : [];
     }
+    
+    console.log('⚠️ [resolveApprovers] 未找到部门或部门没有设置经理');
     return [];
   }
 

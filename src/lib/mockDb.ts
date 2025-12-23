@@ -1,5 +1,7 @@
 // src/lib/mockDb.ts
 // 🟢 纯内存 Mock DB - 适用于 Next.js（无 fs/path）
+import * as userDb from './userDb';
+import * as orgDb from './orgDb';
 
 // ==========================================
 // 1. 系统模块与权限定义
@@ -191,21 +193,24 @@ let hazardConfig: HazardConfig = {
 
 export const db = {
   // === 用户相关 ===
-  getUsers: async () => [...users],
-  getUserByUsername: async (username: string) => users.find((u) => u.username === username),
-  getUserById: async (id: string) => users.find((u) => u.id === id),
+  getUsers: async () => userDb.getUsers(), // 🟢 从 userDb 加载实际数据
+  getUserByUsername: async (username: string) => userDb.getUsers().find((u) => u.username === username),
+  getUserById: async (id: string) => userDb.getUsers().find((u) => u.id === id),
 
   updateUser: async (id: string, data: Partial<User>) => {
-    const idx = users.findIndex((u) => u.id === id);
+    const allUsers = userDb.getUsers();
+    const idx = allUsers.findIndex((u) => u.id === id);
     if (idx !== -1) {
-      users[idx] = { ...users[idx], ...data };
-      return users[idx];
+      allUsers[idx] = { ...allUsers[idx], ...data };
+      userDb.saveUsers(allUsers);
+      return allUsers[idx];
     }
     return null;
   },
 
   createUser: async (data: Omit<User, 'id' | 'permissions' | 'avatar'>) => {
-    if (users.some((u) => u.username === data.username)) {
+    const allUsers = userDb.getUsers();
+    if (allUsers.some((u) => u.username === data.username)) {
       throw new Error('登录账号已存在');
     }
     const newUser: User = {
@@ -215,7 +220,8 @@ export const db = {
       permissions: {},
       directManagerId: data.directManagerId || '',
     };
-    users.push(newUser);
+    allUsers.push(newUser);
+    userDb.saveUsers(allUsers);
     return newUser;
   },
 
@@ -225,10 +231,10 @@ export const db = {
   },
 
   // === 组织架构相关 ===
-  getDepartments: async () => [...departments],
+  getDepartments: async () => orgDb.getDepartments(), // 🟢 从 orgDb 加载实际数据
 
   getOrgTree: async () => {
-    const list = JSON.parse(JSON.stringify(departments));
+    const list = orgDb.getDepartments();
     const map: Record<string, DepartmentNode> = {};
     const tree: DepartmentNode[] = [];
     list.forEach((node: DepartmentNode) => {

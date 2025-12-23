@@ -82,11 +82,11 @@ export default function NotificationPanel() {
       markAsRead([notification.id]);
     }
 
-    // 跳转到相关页面
+    // 跳转到相关页面，并带上记录ID参数
     if (notification.relatedType === 'permit' && notification.relatedId) {
-      window.location.href = `/work-permit`;
+      window.location.href = `/work-permit?recordId=${notification.relatedId}`;
     } else if (notification.relatedType === 'hazard' && notification.relatedId) {
-      window.location.href = `/hidden-danger`;
+      window.location.href = `/hidden-danger?recordId=${notification.relatedId}`;
     }
   };
 

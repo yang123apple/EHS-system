@@ -11,3 +11,18 @@
 body {
   @apply bg-slate-50 text-slate-900;
 }
+
+/* 打印样式重置 */
+@media print {
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+  
+  /* 隐藏导航栏和布局组件 */
+  header, nav, .layout-wrapper {
+    display: none !important;
+  }
+}

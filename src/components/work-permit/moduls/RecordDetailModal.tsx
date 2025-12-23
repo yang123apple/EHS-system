@@ -470,18 +470,35 @@ export default function RecordDetailModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:static print:bg-white print:p-0">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:!block print:!static print:bg-white print:!p-0 print:!m-0">
        {/* 🟢 新增：打印专用样式 */}
        <PrintStyle orientation={orientation} />
        <style jsx global>{`
         @media print {
-          body {
+          /* 强制重置 html 和 body */
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            overflow: visible !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          body > *:not(.print-container) {
-            display: none;
+          
+          /* 隐藏所有非打印元素 */
+          body > *:not(:has(#print-area)) {
+            display: none !important;
           }
+          
+          /* 强制重置所有父容器 */
+          body > div {
+            margin: 0 !important;
+            padding: 0 !important;
+            position: static !important;
+            display: block !important;
+          }
+          
           .watermark-layer {
             z-index: 9999 !important;
             opacity: 0.15 !important; 
@@ -489,7 +506,7 @@ export default function RecordDetailModal({
         }
       `}</style>
 
-      <div className="bg-white rounded-xl w-full max-w-5xl h-[95vh] flex flex-col shadow-2xl print:shadow-none print:h-auto print:w-full">
+      <div className="bg-white rounded-xl w-full max-w-5xl h-[95vh] flex flex-col shadow-2xl print:!block print:shadow-none print:h-auto print:w-full print:max-w-none print:!p-0 print:!m-0">
         {/* 头部操作栏 */}
         <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-xl print:hidden">
           <div>
@@ -564,7 +581,7 @@ export default function RecordDetailModal({
         </div>
 
         {/* 主内容区 */}
-        <div className="flex-1 overflow-auto p-6 bg-slate-100 print:p-0 print:bg-white custom-scrollbar">
+        <div className="flex-1 overflow-auto p-6 bg-slate-100 print:!block print:!p-0 print:!m-0 print:bg-white print:overflow-visible custom-scrollbar">
           {/* 流程进度条（仅屏幕显示） */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-4 print:hidden">
             <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase">流程进度</h4>
@@ -574,7 +591,7 @@ export default function RecordDetailModal({
           {/* 表单主体（含水印） */}
           <div
             id="print-area"
-            className="mx-auto bg-white shadow-lg p-8 print:shadow-none print:w-full relative print-container"
+            className="mx-auto bg-white shadow-lg p-8 print:shadow-none print:!w-full print:!p-0 print:!m-0 relative print-container"
             style={{
               width: orientation === 'portrait' ? '210mm' : '297mm',
               minHeight: orientation === 'portrait' ? '297mm' : '210mm',
@@ -595,7 +612,7 @@ export default function RecordDetailModal({
                 record.template.workflowConfig ? JSON.parse(record.template.workflowConfig) : []
               }
               parsedFields={parsedFields}
-              permitCode={record.code} // 🟢 新增：传递作业单编号
+              permitCode={record.status === 'rejected' ? undefined : record.code} // 🟢 驳回时不显示编号
               orientation={orientation}
               mode="view"
               onSectionClick={handleSectionClick}
@@ -733,7 +750,7 @@ export default function RecordDetailModal({
             cellKey={currentSectionCell.cellKey}
             fieldName={currentSectionCell.fieldName}
             boundTemplate={boundTemplate}
-            parentCode={record.code}
+            parentCode={record.status === 'rejected' ? undefined : record.code} // 🟢 驳回时不传递编号
             parentFormData={recordData}
             parentParsedFields={parsedFields}
             parentApprovalLogs={approvalLogs}

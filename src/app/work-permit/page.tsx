@@ -161,6 +161,23 @@ export default function WorkPermitPage() {
     fetchAllUsers(); // 🟢 初始化时加载人员
   }, []);
 
+  // 🟢 检测 URL 参数，自动打开记录详情
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const recordId = params.get('recordId');
+    
+    if (recordId && allRecords.length > 0) {
+      const record = allRecords.find(r => r.id === recordId);
+      if (record) {
+        console.log('📧 从通知跳转，自动打开记录:', record.code);
+        setSelectedRecord(record);
+        toggleModal('viewRecord', true);
+        // 清除 URL 参数，避免刷新时重复打开
+        window.history.replaceState({}, '', '/work-permit');
+      }
+    }
+  }, [allRecords]);
+
   // 防御性代码：检测外部脚本注入
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -191,7 +208,7 @@ export default function WorkPermitPage() {
   const handleDeleteRecord = async (id: string) => {
     if(!confirm("确定要删除?")) return;
     try {
-      await fetch(`/api/permits?id=${id}`, { method: 'DELETE' });
+      await fetch(`/api/permits?id=${id}&userId=${user?.id || ''}&userName=${user?.name || ''}`, { method: 'DELETE' });
       if(modals.projectDetail && selectedProject) fetchProjectRecords(selectedProject.id);
       fetchAllRecords();
       // 如果正在查看该记录，关闭详情弹窗

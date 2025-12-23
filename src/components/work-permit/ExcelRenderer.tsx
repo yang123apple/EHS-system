@@ -854,19 +854,16 @@ export default function ExcelRenderer({
     if (valStr.match(/年.*月.*日/)) {
       const key = inputKey;
       return (
-        <div className="flex flex-col h-full justify-center" style={styleObj}>
-          <span className="text-[10px] text-slate-400 mb-0.5 leading-none">{valStr}</span>
+        <div className="flex items-center justify-center h-full" style={styleObj}>
           {mode === 'edit' ? (
-            <div className="flex items-center gap-2">
-              <CustomDatePicker
-                value={filledValue || ''}
-                onChange={(v) => {
-                  handleInputChange(rIndex, cIndex, v);
-                }}
-              />
-            </div>
+            <CustomDatePicker
+              value={filledValue || ''}
+              onChange={(v) => {
+                handleInputChange(rIndex, cIndex, v);
+              }}
+            />
           ) : (
-            <span className="text-sm font-bold text-blue-900 border-b border-dashed border-slate-300 min-h-[1.5em] block">
+            <span className="text-sm font-bold text-blue-900 text-center">
               {filledValue ? new Date(filledValue).toLocaleString() : ''}
             </span>
           )}
@@ -876,7 +873,7 @@ export default function ExcelRenderer({
 
     if (!valStr || valStr === "点击填写") {
       // 查看模式或非解析字段
-      if (mode === 'view') return filledValue ? <span className="text-blue-900 font-bold text-sm block text-center whitespace-pre-wrap" style={styleObj}>{filledValue}</span> : <span className="text-slate-200 block text-center select-none">/</span>;
+      if (mode === 'view') return filledValue ? <span className="text-blue-900 font-bold text-sm block text-center whitespace-nowrap" style={styleObj}>{filledValue}</span> : <span className="text-slate-200 block text-center select-none">/</span>;
       
       // 编辑模式或普通输入 - 必填字段在无内容时显示红色星号
       return (

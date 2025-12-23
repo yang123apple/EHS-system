@@ -1,7 +1,6 @@
 "use client";
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import NotificationPanel from '@/components/common/NotificationPanel';
 import { 
   FileSignature, 
   AlertTriangle, 
@@ -78,12 +77,8 @@ export default function Dashboard() {
           </h1>
           <p className="text-slate-500 mt-1">欢迎回来，{user?.name || '用户'}，请选择您要处理的业务模块</p>
         </div>
-        <div className="flex items-center gap-4">
-          {/* 通知面板 */}
-          <NotificationPanel />
-          <div className="text-sm text-slate-400 font-mono">
-             {new Date().toLocaleDateString()}
-          </div>
+        <div className="text-sm text-slate-400 font-mono">
+           {new Date().toLocaleDateString()}
         </div>
       </div>
 

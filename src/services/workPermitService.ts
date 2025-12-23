@@ -160,6 +160,7 @@ export const PermitService = {
     action: 'pass' | 'reject';
     userName: string;
     userId?: string; // 🟢 添加 userId 用于识别发起人
+    nextStepApprovers?: any[]; // 🟢 下一步审批人列表（用于创建通知）
   }): Promise<void> => {
     return request<void>('/permits/approve', {
       method: 'POST',

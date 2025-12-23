@@ -28,7 +28,7 @@ export default function ProjectDetailModal({ isOpen, onClose, project, records, 
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:hidden">
             <div className="bg-white rounded-xl w-full max-w-6xl h-[90vh] flex flex-col shadow-2xl">
                 <div className="p-6 border-b flex justify-between bg-white rounded-t-xl">
                     <div>

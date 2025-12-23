@@ -1,9 +1,10 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
-import { X, Paperclip, CheckCircle, FileText } from 'lucide-react';
+import { X, Paperclip, CheckCircle, FileText, Printer } from 'lucide-react';
 import { Project, Template } from '@/types/work-permit';
 import { PermitService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
 import SectionFormModal from './SectionFormModal';
+import PrintStyle from '../PrintStyle';
 // 🟢 1. 引入工具函数（替换原内联定义）
 import { findDeptRecursive } from '@/utils/departmentUtils';
 
@@ -290,15 +291,12 @@ export default function AddPermitModal({
       });
 
       // ✅ 修改点：发起申请自动设为通过第一步
-      console.log('🔍 [调试] 提交审批前的 user 对象:', user);
-      console.log('🔍 [调试] user.id =', user?.id);
-      
       await PermitService.approve({
         recordId: newRecord.id,
         opinion: opinion.trim() || '发起申请',
         action: 'pass',
         userName: user?.name || '用户',
-        userId: user?.id, // 🟢 传递发起人 ID，用于部门负责人策略
+        userId: user?.id,
       });
 
       alert('✅ 申请已提交！');
@@ -317,11 +315,23 @@ export default function AddPermitModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-xl w-full max-w-[95vw] h-[92vh] flex flex-col shadow-2xl">
-        <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-xl">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:!block print:!static print:bg-white print:!p-0 print:!m-0">
+      <PrintStyle orientation={orientation} />
+      <div className="bg-white rounded-xl w-full max-w-[95vw] h-[92vh] flex flex-col shadow-2xl print:!block print:shadow-none print:h-auto print:w-full print:max-w-none print:!p-0 print:!m-0">
+        <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-xl print:hidden">
           <h3 className="font-bold text-lg text-slate-800">新增作业单 - {project.name}</h3>
           <div className="flex gap-2">
+            {/* 打印空白表单按钮 */}
+            {selectedTemplate && (
+              <button
+                onClick={() => window.print()}
+                className="px-3 py-2 rounded border transition flex items-center gap-2 bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400"
+                title="打印空白表单"
+              >
+                <Printer size={18} />
+                <span className="text-sm">打印空白</span>
+              </button>
+            )}
             <button
               onClick={() => setOrientation(o => o === 'portrait' ? 'landscape' : 'portrait')}
               className="p-2 rounded border transition flex items-center justify-center bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400"
@@ -342,9 +352,9 @@ export default function AddPermitModal({
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-hidden flex">
+        <div className="flex-1 overflow-hidden flex print:!block">
           {/* 左侧模板选择 */}
-          <div className="w-64 border-r p-4 overflow-y-auto bg-slate-50/50">
+          <div className="w-64 border-r p-4 overflow-y-auto bg-slate-50/50 print:hidden">
             <h4 className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">选择模板</h4>
             <div className="space-y-2">
               {templates
@@ -377,7 +387,7 @@ export default function AddPermitModal({
           </div>
 
           {/* 右侧表单填写 */}
-          <div className="flex-1 p-6 overflow-auto bg-slate-100">
+          <div className="flex-1 p-6 overflow-auto bg-slate-100 print:!p-0 print:!m-0 print:bg-white print:overflow-visible">
             {selectedTemplate ? (
               <div 
                 className="mx-auto flex flex-col gap-4"
@@ -387,7 +397,7 @@ export default function AddPermitModal({
                 }}
               >
                 {/* 附件管理 */}
-                <div className="bg-white border rounded-lg p-3 shadow-sm">
+                <div className="bg-white border rounded-lg p-3 shadow-sm print:hidden">
                   <div className="flex justify-between items-center mb-3">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-slate-700 text-sm">附件材料</span>
@@ -435,7 +445,8 @@ export default function AddPermitModal({
 
                 {/* Excel 渲染区域 */}
                 <div 
-                  className="bg-white shadow-lg border border-slate-200 p-8 overflow-auto"
+                  id="print-area"
+                  className="bg-white shadow-lg border border-slate-200 p-8 overflow-auto print:!p-0 print:!m-0 print:shadow-none print:border-0"
                   style={{
                     minHeight: orientation === 'portrait' ? '297mm' : '210mm',
                   }}
@@ -457,7 +468,7 @@ export default function AddPermitModal({
                 </div>
 
                 {/* 申请人附言与提交 */}
-                <div className="bg-white border rounded-lg p-4 shadow-sm sticky bottom-0 z-10 mt-4">
+                <div className="bg-white border rounded-lg p-4 shadow-sm sticky bottom-0 z-10 mt-4 print:hidden">
                   <label className="block text-sm font-bold text-slate-700 mb-2">申请人附言 (选填)</label>
                   <textarea
                     className="w-full border rounded p-2 text-sm h-20 outline-none focus:ring-2 focus:ring-blue-500 mb-4 bg-slate-50 focus:bg-white transition-colors"

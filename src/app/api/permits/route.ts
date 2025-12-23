@@ -3,9 +3,9 @@ import { prisma } from '@/lib/prisma';
 import { createLog } from '@/lib/logger';
 export const dynamic = 'force-dynamic';
 
-// 🟢 生成作业单编号（支持检查重复并自动顺延）
+// 🟢 生成作业单编号（格式：项目日期-项目序号-类型-作业日期-顺序号）
 async function generatePermitCode(projectId: string, templateType: string, proposedCode?: string): Promise<string> {
-  // 1. 获取项目编号
+  // 1. 获取项目编号（已经包含日期和序号）
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: { code: true }
@@ -33,12 +33,12 @@ async function generatePermitCode(projectId: string, templateType: string, propo
     }
   }
   
-  // 3. 生成日期部分 YYMMDD
+  // 3. 生成作业日期部分 YYMMDD
   const now = new Date();
   const year = String(now.getFullYear()).slice(-2);
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
-  const dateStr = `${year}${month}${day}`;
+  const workDateStr = `${year}${month}${day}`;
   
   // 4. 如果提供了建议编号，先检查是否已存在
   if (proposedCode) {
@@ -57,14 +57,15 @@ async function generatePermitCode(projectId: string, templateType: string, propo
     console.log('⚠️ [编号生成] 建议编号已存在，开始顺延...');
     // 如果存在冲突，从建议编号中提取序号并开始顺延
     const parts = proposedCode.split('-');
-    if (parts.length >= 4) {
-      const baseSeq = parseInt(parts[3], 10);
+    // 标准格式：项目日期-项目序号-类型-作业日期-顺序号 (5部分)
+    if (parts.length === 5) {
+      const baseSeq = parseInt(parts[4], 10);
       if (!isNaN(baseSeq)) {
-        // 从建议序号开始查找下一个可用编号
+        // 从建议序号+1开始查找下一个可用编号
         let seq = baseSeq;
         while (seq < 999) {
           seq++;
-          const testCode = `${projectCode}-${typeCode}-${dateStr}-${String(seq).padStart(3, '0')}`;
+          const testCode = `${parts[0]}-${parts[1]}-${parts[2]}-${parts[3]}-${String(seq).padStart(3, '0')}`;
           const testExisting = await prisma.workPermitRecord.findUnique({
             where: { code: testCode }
           });
@@ -74,6 +75,9 @@ async function generatePermitCode(projectId: string, templateType: string, propo
           }
         }
       }
+    } else {
+      console.log('⚠️ [编号生成] 建议编号格式不正确(期望5部分)，将使用标准逻辑重新生成');
+      // 格式不对，继续执行标准生成逻辑
     }
   }
   
@@ -85,7 +89,7 @@ async function generatePermitCode(projectId: string, templateType: string, propo
   const existingRecords = await prisma.workPermitRecord.findMany({
     where: {
       code: {
-        contains: `${typeCode}-${dateStr}`
+        contains: `${typeCode}-${workDateStr}`
       },
       createdAt: {
         gte: todayStart,
@@ -101,9 +105,9 @@ async function generatePermitCode(projectId: string, templateType: string, propo
   for (const record of existingRecords) {
     if (record.code) {
       const parts = record.code.split('-');
-      // 编号格式：projectCode-typeCode-dateStr-seq (4部分)
-      if (parts.length >= 4) {
-        const seq = parseInt(parts[3], 10);
+      // 编号格式：项目日期-项目序号-类型-作业日期-顺序号 (5部分)
+      if (parts.length === 5) {
+        const seq = parseInt(parts[4], 10);
         if (!isNaN(seq) && seq > maxSeq) {
           maxSeq = seq;
         }
@@ -113,8 +117,8 @@ async function generatePermitCode(projectId: string, templateType: string, propo
   
   const newSeq = String(maxSeq + 1).padStart(3, '0');
   
-  // 7. 组装编号
-  return `${projectCode}-${typeCode}-${dateStr}-${newSeq}`;
+  // 7. 组装编号：项目编号-类型-作业日期-顺序号
+  return `${projectCode}-${typeCode}-${workDateStr}-${newSeq}`;
 }
 
 // ✅ 新增：PATCH 方法，用于更新部分字段（如追加评论回复、更新附件等）
