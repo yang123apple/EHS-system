@@ -22,6 +22,7 @@ import { PermitRecord } from '@/types/work-permit';
 import { PermitService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
 import SectionFormModal from './SectionFormModal';
+import MobileFormRenderer from '../views/MobileFormRenderer';
 import PrintStyle from '../PrintStyle';
 import { MobileFormConfig } from './MobileFormEditor';
 // 🟢 引入工具函数
@@ -132,214 +133,62 @@ export default function RecordDetailModal({
 
   // 🔵 V3.4 Section点击处理
   const handleSectionClick = (cellKey: string, fieldName: string) => {
-    console.log('🔵 RecordDetailModal section clicked:', { cellKey, fieldName });
     setCurrentSectionCell({ cellKey, fieldName });
     setSectionModalOpen(true);
   };
 
-  // 🟢 渲染移动端表单（只读模式）
-  const renderMobileForm = () => {
-    // 使用完整模板信息
+  // 🟢 准备移动端配置（V3.6 统一逻辑）
+  const mobileFormConfigForRenderer = useMemo(() => {
     const templateToUse = fullTemplate || record.template;
     
-    // 检查模板是否配置了移动端表单
-    let mobileConfig: MobileFormConfig | null = null;
-    try {
-      if (templateToUse?.mobileFormConfig) {
-        mobileConfig = JSON.parse(templateToUse.mobileFormConfig as string);
-      }
-    } catch (e) {
-      console.error('解析移动端表单配置失败:', e);
-    }
-
-    console.log('🔍 移动端表单渲染检查:', {
-      isMobile,
-      usingFullTemplate: !!fullTemplate,
-      hasMobileConfig: !!mobileConfig,
-      fieldsCount: mobileConfig?.fields?.length
-    });
-
-    // 🟢 移动端时，如果有配置就使用，不检查 enabled 字段
-    if (!mobileConfig || !mobileConfig.fields || mobileConfig.fields.length === 0) {
+    if (!templateToUse?.mobileFormConfig) {
       return null;
     }
-
-    // 🟢 辅助函数：根据字段类型获取图标
-    const getFieldIcon = (fieldType: string) => {
-      switch (fieldType) {
-        case 'text':
-          return <FileText size={14} className="text-blue-500" />;
-        case 'textarea':
-          return <AlignLeft size={14} className="text-purple-500" />;
-        case 'date':
-          return <Calendar size={14} className="text-green-500" />;
-        case 'select':
-        case 'option':
-          return <List size={14} className="text-orange-500" />;
-        case 'match':
-          return <CheckSquare size={14} className="text-indigo-500" />;
-        case 'number':
-          return <Hash size={14} className="text-cyan-500" />;
-        case 'department':
-          return <Building2 size={14} className="text-amber-500" />;
-        case 'user':
-          return <Users size={14} className="text-pink-500" />;
-        default:
-          return <FileText size={14} className="text-slate-500" />;
-      }
-    };
-
-    // 🟢 辅助函数：根据fieldKey获取字段值
-    const getFieldValue = (fieldKey: string) => {
-      // 从parsedFields中找到对应的字段
-      const parsedField = parsedFields.find(f => f.fieldName === fieldKey);
-      if (!parsedField) {
-        return recordData[fieldKey] || '';
-      }
-
-      // 优先使用坐标
-      if (parsedField.rowIndex !== undefined && parsedField.colIndex !== undefined) {
-        const coordKey = `${parsedField.rowIndex}-${parsedField.colIndex}`;
-        return recordData[coordKey] || '';
-      }
-
-      // 尝试从cellKey解析
-      if (parsedField.cellKey) {
-        const match = parsedField.cellKey.match(/R(\d+)C(\d+)/);
-        if (match) {
-          const rowIndex = parseInt(match[1]) - 1;
-          const colIndex = parseInt(match[2]) - 1;
-          const coordKey = `${rowIndex}-${colIndex}`;
-          return recordData[coordKey] || '';
+    
+    try {
+      const config = JSON.parse(templateToUse.mobileFormConfig as string);
+      
+      // 🟢 兼容旧格式转换
+      if (config.groups && Array.isArray(config.groups)) {
+        const isOldFormat = config.groups.length > 0 && 
+          config.groups[0].name !== undefined && 
+          config.groups[0].title === undefined;
+        
+        if (isOldFormat) {
+          console.log('⚠️ 检测到旧格式的 mobileFormConfig，正在转换...');
+          const newGroups = config.groups.map((g: any) => {
+            const fieldsInGroup = (config.fields || []).filter((f: any) => f.group === g.name && !f.hidden);
+            const fieldKeys = fieldsInGroup.map((f: any) => f.id || f.cellKey || f.fieldKey);
+            return {
+              title: g.name,
+              fieldKeys: fieldKeys
+            };
+          });
+          
+          return {
+            groups: newGroups,
+            fields: config.fields || [],
+            title: config.title
+          };
+        }
+        
+        // 新格式，直接使用
+        if (config.groups.length > 0 && config.groups[0].fieldKeys !== undefined) {
+          return {
+            groups: config.groups,
+            fields: config.fields,
+            title: config.title
+          };
         }
       }
-
-      // 回退：直接使用fieldKey
-      return recordData[fieldKey] || '';
-    };
-
-    const groupedFields = new Map<string, typeof mobileConfig.fields>();
-    
-    // 按分组整理字段
-    mobileConfig.fields.filter(f => !f.hidden).forEach(field => {
-      const groupName = field.group || '未分组';
-      if (!groupedFields.has(groupName)) {
-        groupedFields.set(groupName, []);
-      }
-      groupedFields.get(groupName)!.push(field);
-    });
-
-    // 按分组配置的顺序排序
-    const sortedGroups = Array.from(groupedFields.entries()).sort((a, b) => {
-      const orderA = mobileConfig!.groups?.find(g => g.name === a[0])?.order ?? 999;
-      const orderB = mobileConfig!.groups?.find(g => g.name === b[0])?.order ?? 999;
-      return orderA - orderB;
-    });
-
-    // 🟢 渲染字段值（支持多种字段类型）
-    const renderFieldValue = (field: typeof mobileConfig.fields[0]) => {
-      const value = getFieldValue(field.fieldKey);
       
-      if (!value) {
-        return <span className="text-slate-400 text-sm">未填写</span>;
-      }
-
-      // 根据字段类型渲染
-      switch (field.fieldType) {
-        case 'option':
-        case 'select':
-          return <span className="inline-block break-words max-w-full">{value}</span>;
-        
-        case 'match':
-          // 多选值可能是数组或逗号分隔的字符串
-          const values = Array.isArray(value) ? value : value.split(',').filter(Boolean);
-          return (
-            <div className="flex flex-wrap gap-1">
-              {values.map((v: string, i: number) => (
-                <span key={i} className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs inline-block break-words max-w-full">
-                  {v}
-                </span>
-              ))}
-            </div>
-          );
-        
-        case 'date':
-          return <span className="inline-block break-words max-w-full font-mono">{value}</span>;
-        
-        case 'textarea':
-          return <div className="break-words whitespace-pre-wrap max-w-full">{value}</div>;
-        
-        default:
-          return <span className="inline-block break-words max-w-full">{value}</span>;
-      }
-    };
-
-    return (
-      <div className="bg-slate-50 space-y-4">
-        {/* 表单标题 */}
-        {mobileConfig.title && (
-          <div className="bg-white rounded-lg p-4 shadow-sm">
-            <h3 className="text-lg font-bold text-slate-800 text-center">{mobileConfig.title}</h3>
-            {record.code && (
-              <p className="text-sm text-blue-600 mt-2 text-center font-mono">编号：{record.code}</p>
-            )}
-          </div>
-        )}
-        
-        {/* 分组展示 */}
-        {sortedGroups.map(([groupName, fields], groupIndex) => (
-          <div key={groupIndex} className="bg-white rounded-lg shadow-sm overflow-hidden">
-            {/* 分组标题 */}
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2.5">
-              <h4 className="text-white font-bold text-sm">{groupName}</h4>
-            </div>
-            
-            {/* 分组内容 */}
-            <div className="p-4 space-y-3">
-              {fields.map((field) => {
-                // 🟢 大多数类型使用行内布局，仅 textarea 和 match 使用块级布局
-                const isInlineField = !['textarea', 'match', 'signature'].includes(field.fieldType);
-                
-                return (
-                  <div key={field.id} className="border-b border-slate-100 pb-3 last:border-0">
-                    {isInlineField ? (
-                      // 行内布局：label 和 value 在同一行，自动换行
-                      <div className="flex items-start gap-3 flex-wrap">
-                        <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5 shrink-0 pt-1 min-w-fit">
-                          {getFieldIcon(field.fieldType)}
-                          <span className="whitespace-nowrap">{field.label}</span>
-                          {field.required && <span className="text-red-500 ml-0.5">*</span>}
-                        </label>
-                        <div className="bg-slate-50 rounded px-3 py-1.5 flex-1 min-w-0 overflow-visible">
-                          <div className="text-sm text-slate-800 break-words overflow-wrap-anywhere">
-                            {renderFieldValue(field)}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      // 块级布局：label 和 value 分两行
-                      <>
-                        <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
-                          {getFieldIcon(field.fieldType)}
-                          <span>{field.label}</span>
-                          {field.required && <span className="text-red-500 ml-0.5">*</span>}
-                        </label>
-                        <div className="bg-slate-50 rounded px-3 py-2 min-h-[40px]">
-                          <div className="text-sm text-slate-800 break-words whitespace-pre-wrap">
-                            {renderFieldValue(field)}
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  };
+      console.warn('⚠️ mobileFormConfig 格式无效:', config);
+      return null;
+    } catch (e) {
+      console.error('❌ 解析 mobileFormConfig 失败:', e);
+      return null;
+    }
+  }, [fullTemplate, record.template]);
 
   // 2. 解析动态审批人
   const resolveDynamicApprovers = (stepConfig: any) => {
@@ -1000,24 +849,46 @@ export default function RecordDetailModal({
               // 检查是否应该显示移动端视图（打印时强制使用桌面端样式）
               const shouldShowMobile = isMobile && templateToUse?.mobileFormConfig && !window.matchMedia('print').matches;
               
-              console.log('📱 视图渲染决策:', {
-                isMobile,
-                hasFullTemplate: !!fullTemplate,
-                hasMobileFormConfig: !!templateToUse?.mobileFormConfig,
-                shouldShowMobile,
-                windowWidth: window.innerWidth
-              });
-              
               if (shouldShowMobile) {
-                const mobileFormView = renderMobileForm();
-                if (mobileFormView) {
-                  console.log('✅ 渲染移动端表单视图');
-                  return <div className="relative z-10">{mobileFormView}</div>;
+                let mobileConfig: any = null;
+                try {
+                  mobileConfig = templateToUse.mobileFormConfig 
+                    ? JSON.parse(templateToUse.mobileFormConfig as string)
+                    : null;
+                  
+                  console.log('📱 解析 mobileFormConfig:', {
+                    raw: templateToUse.mobileFormConfig?.substring(0, 200),
+                    parsed: mobileConfig,
+                    hasGroups: !!mobileConfig?.groups,
+                    groupsIsArray: Array.isArray(mobileConfig?.groups),
+                    groupsLength: mobileConfig?.groups?.length
+                  });
+                } catch (e) {
+                  console.error('❌ 解析 mobileFormConfig 失败:', e);
+                }
+                
+              // 🟢 使用统一的 MobileFormRenderer 渲染（V3.6）
+                if (mobileFormConfigForRenderer) {
+                  console.log('✅ 使用 MobileFormRenderer 渲染移动端表单');
+                  return (
+                    <div className="relative z-10">
+                      <MobileFormRenderer
+                        config={mobileFormConfigForRenderer}
+                        parsedFields={parsedFields}
+                        title={mobileFormConfigForRenderer.title}
+                        code={record.code}
+                        formData={recordData}
+                        mode="readonly"
+                      />
+                    </div>
+                  );
+                } else {
+                  console.log('⚠️ 无有效的移动端配置，降级到桌面端视图');
                 }
               }
               
               // 否则显示桌面端视图
-              console.log('✅ 渲染桌面端表格视图');
+              console.log('📊 渲染桌面端表格视图');
               return (
                 <ExcelRenderer
                   key={record.id + '_' + (approvalLogs.length || 0)}
@@ -1150,8 +1021,6 @@ export default function RecordDetailModal({
         if (!sectionData) {
           return null;
         }
-        
-        console.log('🔵 Rendering section view modal:', { sectionData });
         
         // 从allTemplates中查找完整的template信息
         const boundTemplate = allTemplates.find(t => t.id === sectionData.templateId) || null;

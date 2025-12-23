@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Smartphone, Plus, Trash2, GripVertical, Edit2, X, Check, Eye, Settings, Calendar } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { 
+  Smartphone, Plus, Trash2, GripVertical, Edit2, X, Check, Eye, Settings
+} from 'lucide-react';
 import { ParsedField } from '@/types/work-permit';
+import MobileFormRenderer, { MobileFormConfigForRenderer } from '../views/MobileFormRenderer';
 
 export interface MobileFormField {
   id: string;
@@ -163,7 +166,7 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
   const handleSave = () => {
     onSave({
       enabled,
-      fields: fields.map((f, i) => ({ ...f, order: i })),
+      fields,
       groups,
       title,
     });
@@ -188,7 +191,7 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
     ));
     setGroups(groups.filter((_, i) => i !== index));
     if (editingGroupIndex === index) {
-      setEditingGroupIndex(-1); // 返回表单设置模式
+      setEditingGroupIndex(null); // 返回表单设置模式
     }
   };
 
@@ -219,250 +222,52 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
     setGroups(newGroups);
   };
 
-  // 渲染移动端预览
-  const renderMobilePreview = () => {
-    const groupedFields = new Map<string, MobileFormField[]>();
+  // 🟢 构建预览用的 Config 配置
+  const previewConfig: MobileFormConfigForRenderer = useMemo(() => {
+    // 1. 按分组整理字段ID
+    const groupedFields = new Map<string, string[]>();
     
-    // 按分组整理字段
     fields.filter(f => !f.hidden).forEach(field => {
       const groupName = field.group || '未分组';
       if (!groupedFields.has(groupName)) {
         groupedFields.set(groupName, []);
       }
-      groupedFields.get(groupName)!.push(field);
+      groupedFields.get(groupName)!.push(field.id);
     });
 
-    // 按照 groups 的顺序排列
-    const sortedGroups = groups
-      .map(g => ({
-        name: g.name,
-        fields: groupedFields.get(g.name) || []
-      }))
-      .filter(g => g.fields.length > 0);
-
-    // 添加未在 groups 中定义的分组
-    groupedFields.forEach((fields, groupName) => {
+    // 2. 按照 groups 的顺序生成 renderer 需要的 groups 结构
+    const rendererGroups = groups.map(g => ({
+      title: g.name,
+      fieldKeys: groupedFields.get(g.name) || []
+    })).filter(g => g.fieldKeys.length > 0);
+    
+    // 3. 添加未在 groups 中定义的分组（如果有的话）
+    groupedFields.forEach((keys, groupName) => {
       if (!groups.some(g => g.name === groupName)) {
-        sortedGroups.push({ name: groupName, fields });
+        rendererGroups.push({
+          title: groupName,
+          fieldKeys: keys
+        });
       }
     });
 
-    return (
-      <div className="h-full overflow-auto bg-slate-100">
-        {/* 模拟手机屏幕 */}
-        <div className="max-w-md mx-auto bg-white min-h-full shadow-2xl">
-          {/* 手机顶部状态栏 */}
-          <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between text-xs">
-            <span>9:41</span>
-            <div className="flex items-center gap-1">
-              <span>📶</span>
-              <span>📡</span>
-              <span>🔋</span>
-            </div>
-          </div>
+    // 4. 将编辑器字段转换为 renderer 可用的字段对象
+    const rendererFields = fields.map(f => ({
+      ...f,
+      // 关键：renderer 通过 cellKey/fieldKey 查找字段，这里统一用 id
+      cellKey: f.id, 
+      fieldKey: f.id,
+      fieldName: f.label, // renderer 使用 fieldName 或 label
+      fieldType: f.fieldType,
+      hint: f.placeholder, // placeholder 映射到 hint
+    }));
 
-          {/* 表单内容 */}
-          <div className="p-4 space-y-4">
-            {/* 表单标题 */}
-            <div className="bg-white rounded-lg p-4 shadow-sm border">
-              <h3 className="text-lg font-bold text-slate-800 text-center">{title}</h3>
-              <p className="text-sm text-blue-600 mt-2 text-center font-mono">编号：预览模式</p>
-            </div>
-
-            {/* 分组卡片 */}
-            {sortedGroups.map((group, groupIndex) => (
-              <div key={groupIndex} className="bg-white rounded-lg shadow-sm overflow-hidden border">
-                {/* 分组标题 */}
-                <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2.5 border-l-4 border-blue-700">
-                  <h4 className="text-white font-bold text-sm flex items-center gap-2">
-                    <span className="w-1 h-4 bg-white rounded"></span>
-                    {group.name}
-                  </h4>
-                </div>
-
-                {/* 字段列表 */}
-                <div className="p-4 space-y-3">
-                  {group.fields.map((field, fieldIndex) => (
-                    <div 
-                      key={field.id}
-                      className={`transition-all ${
-                        editingField?.id === field.id ? 'ring-2 ring-purple-500 rounded-lg p-2 -m-2' : ''
-                      }`}
-                      onClick={() => {
-                        setEditingField(field);
-                        setViewMode('edit');
-                      }}
-                    >
-                      {renderFieldPreview(field)}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-
-            {fields.filter(f => !f.hidden).length === 0 && (
-              <div className="text-center py-12 text-slate-400">
-                <Smartphone size={48} className="mx-auto mb-4 opacity-30" />
-                <p className="text-sm">暂无字段</p>
-                <p className="text-xs mt-1">点击"添加字段"开始配置</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // 渲染单个字段预览
-  const renderFieldPreview = (field: MobileFormField) => {
-    const label = (
-      <label className="flex items-center gap-1 text-xs font-medium text-slate-600 mb-1">
-        {field.label}
-        {field.required && <span className="text-red-500 text-xs">*</span>}
-      </label>
-    );
-
-    switch (field.fieldType) {
-      case 'option':
-        return (
-          <div className="space-y-1.5">
-            {label}
-            <div className="flex flex-wrap gap-2">
-              {(field.options || ['选项1', '选项2', '选项3']).map((opt, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  className="px-4 py-2 rounded-md text-sm font-medium transition-all bg-slate-100 text-slate-700"
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-
-      case 'match':
-        return (
-          <div className="space-y-1.5">
-            {label}
-            <div className="space-y-2">
-              {(field.options || ['选项1', '选项2', '选项3']).map((opt, idx) => (
-                <label
-                  key={idx}
-                  className="flex items-center gap-2 p-3 bg-slate-50 rounded-md"
-                >
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 text-blue-600 rounded"
-                    disabled
-                  />
-                  <span className="text-sm text-slate-700">{opt}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        );
-
-      case 'select':
-        return (
-          <div className="space-y-1.5">
-            {label}
-            <select
-              className="w-full px-3 py-2.5 border border-slate-300 rounded-md text-sm bg-white"
-              disabled
-            >
-              <option>{field.placeholder || '请选择'}</option>
-              {(field.options || []).map((opt, idx) => (
-                <option key={idx}>{opt}</option>
-              ))}
-            </select>
-          </div>
-        );
-
-      case 'textarea':
-      case 'signature':
-        return (
-          <div className="space-y-1.5">
-            {label}
-            <textarea
-              placeholder={field.placeholder || `请输入${field.label}`}
-              rows={3}
-              className="w-full px-3 py-2.5 border border-slate-300 rounded-md text-sm resize-none bg-white"
-              disabled
-            />
-          </div>
-        );
-
-      case 'date':
-        return (
-          <div className="space-y-1.5">
-            {label}
-            <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="date"
-                className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-md text-sm bg-white"
-                disabled
-              />
-            </div>
-          </div>
-        );
-
-      case 'number':
-        return (
-          <div className="space-y-1.5">
-            {label}
-            <input
-              type="number"
-              placeholder={field.placeholder || `请输入${field.label}`}
-              className="w-full px-3 py-2.5 border border-slate-300 rounded-md text-sm bg-white"
-              disabled
-            />
-          </div>
-        );
-
-      case 'department':
-        return (
-          <div className="space-y-1.5">
-            {label}
-            <button
-              type="button"
-              className="w-full px-3 py-2.5 border border-slate-300 rounded-md text-sm bg-white text-left text-slate-400"
-              disabled
-            >
-              {field.placeholder || '选择部门'}
-            </button>
-          </div>
-        );
-
-      case 'user':
-        return (
-          <div className="space-y-1.5">
-            {label}
-            <button
-              type="button"
-              className="w-full px-3 py-2.5 border border-slate-300 rounded-md text-sm bg-white text-left text-slate-400"
-              disabled
-            >
-              {field.placeholder || '选择人员'}
-            </button>
-          </div>
-        );
-
-      default:
-        return (
-          <div className="space-y-1.5">
-            {label}
-            <input
-              type="text"
-              placeholder={field.placeholder || `请输入${field.label}`}
-              className="w-full px-3 py-2.5 border border-slate-300 rounded-md text-sm bg-white"
-              disabled
-            />
-          </div>
-        );
-    }
-  };
+    return {
+      groups: rendererGroups,
+      fields: rendererFields,
+      title: title
+    };
+  }, [fields, groups, title]);
 
   if (!isOpen) return null;
 
@@ -609,12 +414,49 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
           </div>
 
           {/* 中间：预览区 */}
-          <div className={`${viewMode === 'edit' ? 'w-1/3' : 'w-2/3'} flex flex-col transition-all`}>
-            {renderMobilePreview()}
+          <div className={`${viewMode === 'edit' ? 'w-1/3' : 'w-2/3'} flex flex-col transition-all bg-slate-100 overflow-hidden`}>
+            <div className="h-full overflow-auto p-4 flex justify-center">
+              {/* 模拟手机屏幕 */}
+              <div className="w-[375px] bg-white min-h-[667px] shadow-2xl rounded-xl overflow-hidden flex flex-col border-8 border-slate-900">
+                {/* 手机顶部状态栏 */}
+                <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between text-xs shrink-0">
+                  <span>9:41</span>
+                  <div className="flex items-center gap-1">
+                    <span>📶</span>
+                    <span>📡</span>
+                    <span>🔋</span>
+                  </div>
+                </div>
+
+                {/* 表单内容 - 使用 MobileFormRenderer */}
+                <div className="flex-1 overflow-y-auto bg-slate-50">
+                  <MobileFormRenderer 
+                    config={previewConfig}
+                    mode="preview" // 使用预览模式
+                    onFieldClick={(field) => {
+                      // 查找对应的 MobileFormField 并设置为编辑中
+                      const targetField = fields.find(f => f.id === field.id);
+                      if (targetField) {
+                        setEditingField(targetField);
+                        setViewMode('edit');
+                      }
+                    }}
+                  />
+                  
+                  {fields.filter(f => !f.hidden).length === 0 && (
+                    <div className="text-center py-12 text-slate-400">
+                      <Smartphone size={48} className="mx-auto mb-4 opacity-30" />
+                      <p className="text-sm">暂无字段</p>
+                      <p className="text-xs mt-1">点击"添加字段"开始配置</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* 右侧：字段属性编辑 / 表单设置 */}
-          <div className={`${viewMode === 'edit' && (editingField || editingGroupIndex !== null) ? 'w-1/3' : 'w-0'} border-l flex flex-col transition-all overflow-hidden`}>
+          <div className={`${viewMode === 'edit' && (editingField || editingGroupIndex !== null) ? 'w-1/3' : 'w-0'} border-l flex flex-col transition-all overflow-hidden bg-white`}>
             {editingField ? (
               /* 字段属性编辑 */
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -777,7 +619,7 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
                               placeholder="分组名称"
                             />
                             <button
-                              onClick={() => setEditingGroupIndex(-1)}
+                              onClick={() => setEditingGroupIndex(null)}
                               className="text-xs text-blue-600 hover:underline"
                             >
                               完成

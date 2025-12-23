@@ -1,9 +1,11 @@
-import { useState, useRef, useMemo, useEffect } from 'react';
-import { X, Paperclip, CheckCircle, FileText, Printer, Calendar, User, Building } from 'lucide-react';
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import { X, Paperclip, CheckCircle, FileText, Printer } from 'lucide-react';
 import { Project, Template } from '@/types/work-permit';
 import { PermitService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
 import SectionFormModal from './SectionFormModal';
+import DepartmentSelectModal from './DepartmentSelectModal';
+import MobileFormRenderer from '../views/MobileFormRenderer';
 import PrintStyle from '../PrintStyle';
 import { MobileFormConfig } from './MobileFormEditor';
 // 🟢 1. 引入工具函数（替换原内联定义）
@@ -44,6 +46,10 @@ export default function AddPermitModal({
   const [sectionModalOpen, setSectionModalOpen] = useState(false);
   const [currentSectionCell, setCurrentSectionCell] = useState<{ cellKey: string; fieldName: string } | null>(null);
   const [allTemplates, setAllTemplates] = useState<Template[]>([]);
+  
+  // 🟢 部门选择弹窗状态
+  const [deptModalOpen, setDeptModalOpen] = useState(false);
+  const [currentDeptField, setCurrentDeptField] = useState<{ inputKey: string; label: string } | null>(null);
 
   // 🔵 加载所有模板（用于section绑定）
   useEffect(() => {
@@ -72,13 +78,73 @@ export default function AddPermitModal({
     }
   }, [selectedTemplate?.parsedFields]);
 
-  // 🟢 移动端字段分组（基于 parsedFields 的结构化信息）
+  // 🟢 移动端字段分组（优先使用 mobileFormConfig，否则基于 parsedFields 自动分组）
   // 📌 数据格式说明（与 ExcelRenderer 完全一致）：
   // - 普通单元格: permitFormData[`${rowIndex}-${colIndex}`] = value
   // - 内联输入框: permitFormData[`${rowIndex}-${colIndex}-inlines`] = { [`${rowIndex}-${colIndex}-inline-0`]: value, ... }
   // - Section单元格: permitFormData[`SECTION_R${rowIndex+1}C${colIndex+1}`] = { templateId, templateName, code, data }
   const mobileFieldGroups = useMemo(() => {
     if (!selectedParsedFields || selectedParsedFields.length === 0) return [];
+    
+    // 🟢 优先使用保存的 mobileFormConfig（移动端编辑器保存的完整配置，包括字段名称、类型、选项等）
+    if (selectedTemplate?.mobileFormConfig) {
+      try {
+        const config = JSON.parse(selectedTemplate.mobileFormConfig);
+        if (config.groups && config.fields && Array.isArray(config.groups) && config.groups.length > 0) {
+          console.log('✅ 使用已保存的移动端配置:', config);
+          
+          // ⚙️ 检测并转换旧格式 {name, order} -> {title, fieldKeys}
+          const isOldFormat = config.groups[0].name !== undefined && config.groups[0].title === undefined;
+          let groupsToUse = config.groups;
+          
+          if (isOldFormat) {
+            console.log('🔄 检测到旧格式数据 (mobileFieldGroups)，正在转换...');
+            groupsToUse = config.groups.map((g: any) => {
+              // 兼容 title/name 两种分组名
+              const groupTitle = g.title || g.name;
+              // 获取该分组下所有字段
+              const fieldsInGroup = (config.fields || []).filter(
+                (f: any) => f.group === groupTitle && !f.hidden
+              );
+              // 保证 fieldKeys 为 cellKey 字符串数组
+              const fieldKeys = fieldsInGroup.map((f: any) => f.cellKey || f.fieldKey).filter(Boolean);
+              return { title: groupTitle, fieldKeys };
+            });
+          }
+          
+          // 创建字段配置映射表（cellKey -> 完整的字段配置）
+          const fieldsMap = new Map<string, any>();
+          config.fields.forEach((field: any) => {
+            fieldsMap.set(field.cellKey, field);
+          });
+          
+          // 将 config.groups 转换为 mobileFieldGroups 格式
+          return groupsToUse.map((group: any) => ({
+            title: group.title,
+            fields: group.fieldKeys.map((fieldKey: string) => {
+              // ✅ 优先使用保存的字段配置（包含用户修改的名称、类型、选项等）
+              const savedField = fieldsMap.get(fieldKey);
+              if (savedField) {
+                return savedField;
+              }
+              
+              // 兼容：如果在 config.fields 中找不到，降级到 parsedFields
+              const parsedField = selectedParsedFields.find((f: any) => f.cellKey === fieldKey);
+              if (parsedField) {
+                console.warn(`⚠️ 字段 ${fieldKey} 在 mobileFormConfig.fields 中未找到，使用 parsedFields`);
+                return parsedField;
+              }
+              
+              return null;
+            }).filter(Boolean) // 过滤掉找不到的字段
+          }));
+        }
+      } catch (e) {
+        console.warn('解析 mobileFormConfig 失败，使用自动分组:', e);
+      }
+    }
+    
+    console.log('⚠️ 未找到保存的移动端配置，使用自动分组');
     
     // 首先按行列坐标排序（先行后列）
     const sortedFields = [...selectedParsedFields].sort((a: any, b: any) => {
@@ -142,7 +208,7 @@ export default function AddPermitModal({
     }
 
     return groups;
-  }, [selectedParsedFields]);
+  }, [selectedParsedFields, selectedTemplate?.mobileFormConfig]);
 
   // 🟢 当选择模板后，预生成编号
   useEffect(() => {
@@ -217,519 +283,120 @@ export default function AddPermitModal({
     setCurrentSectionCell(null);
   };
 
-  // 🟢 渲染移动端表单（基于 parsedFields 的结构化分组）
-  const renderMobileForm = () => {
-    if (!mobileFieldGroups || mobileFieldGroups.length === 0) {
-      return (
-        <div className="p-8 text-center text-slate-400">
-          <p>该模板暂无可编辑字段</p>
-          <p className="text-sm mt-2">请在桌面端编辑模板并解析字段</p>
-        </div>
-      );
-    }
+  // 🆕 使用 useCallback 优化表单数据变更处理，避免每次渲染都创建新函数
+  const handleMobileFormDataChange = useCallback((key: string, value: any) => {
+    setPermitFormData(prev => ({ ...prev, [key]: value }));
+  }, []);
 
-    return (
-      <div className="bg-slate-50 p-4 space-y-4">
-        {/* 表单标题 */}
-        <div className="bg-white rounded-lg p-4 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-800 text-center">{selectedTemplate?.name}</h3>
-          {previewCode && (
-            <p className="text-sm text-blue-600 mt-2 text-center font-mono">编号：{previewCode}</p>
-          )}
-        </div>
-        
-        {/* 分组展示 */}
-        {mobileFieldGroups.map((group, groupIndex) => (
-          <div key={groupIndex} className="bg-white rounded-lg shadow-sm overflow-hidden">
-            {/* 分组标题 */}
-            {group.title && (
-              <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2.5 border-l-4 border-blue-700">
-                <h4 className="text-white font-bold text-sm flex items-center gap-2">
-                  <span className="w-1 h-4 bg-white rounded"></span>
-                  {group.title}
-                </h4>
-              </div>
-            )}
-            
-            {/* 分组内容 */}
-            <div className="p-4 space-y-3">
-              {group.fields.map((field, fieldIndex) => (
-                <div key={`${field.cellKey}-${fieldIndex}`}>
-                  {renderMobileFieldInput(field)}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  };
+  // 🆕 使用 useCallback 优化部门选择处理
+  const handleDepartmentSelect = useCallback((inputKey: string, label: string) => {
+    setCurrentDeptField({ inputKey, label });
+    setDeptModalOpen(true);
+  }, []);
 
-  // 🟢 渲染移动端字段输入（基于 parsedField 结构）
-  const renderMobileFieldInput = (field: any) => {
-    // 优先使用字段自带的 rowIndex/colIndex
-    let rowIndex: number, colIndex: number;
-    
-    if (field.rowIndex !== undefined && field.colIndex !== undefined) {
-      rowIndex = field.rowIndex;
-      colIndex = field.colIndex;
-    } else {
-      // 兼容旧数据：从 cellKey 解析行列坐标
-      const match = field.cellKey.match(/R(\d+)C(\d+)/);
-      if (!match) return null;
-      rowIndex = parseInt(match[1]) - 1;
-      colIndex = parseInt(match[2]) - 1;
-    }
-    
-    const inputKey = `${rowIndex}-${colIndex}`;
-    const currentValue = permitFormData[inputKey] || '';
-    const isRequired = field.required === true;
-    // 🔵 字段名即标签：直接使用 fieldName 作为显示标签
-    const label = field.fieldName || field.label || '请填写';
-    const fieldType = field.fieldType || 'text';
-    const cellKey = field.cellKey;
-
-    // 处理内联输入框（hint 中包含下划线）
-    // 注意：与 ExcelRenderer 保持一致的数据格式
-    if (field.hint && field.hint.includes('____')) {
-      const parts = field.hint.split(/(____+)/);
-      let inlineIndex = 0;
+  // 🟢 准备移动端表单配置 - 增强版（V3.6）
+  const mobileFormConfig = useMemo(() => {
+    // 1. 优先使用保存的配置
+    if (selectedTemplate?.mobileFormConfig) {
+      try {
+        const config = JSON.parse(selectedTemplate.mobileFormConfig);
       
-      // 从 permitFormData[`${inputKey}-inlines`] 中读取内联数据
-      const inlinesData = permitFormData[`${inputKey}-inlines`] || {};
-      
-      return (
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-1.5 text-sm text-slate-700">
-            {parts.map((part: string, i: number) => {
-              if (/^____+$/.test(part)) {
-                const currentInlineIndex = inlineIndex++;
-                const inlineKey = `${inputKey}-inline-${currentInlineIndex}`;
-                const inlineValue = inlinesData[inlineKey] || '';
-                
-                return (
-                  <input
-                    key={i}
-                    type="text"
-                    value={inlineValue}
-                    onChange={(e) => {
-                      // 更新内联数据对象，保持与 ExcelRenderer 一致的格式
-                      setPermitFormData(prev => {
-                        const currentInlines = prev[`${inputKey}-inlines`] || {};
-                        return {
-                          ...prev,
-                          [`${inputKey}-inlines`]: {
-                            ...currentInlines,
-                            [inlineKey]: e.target.value
-                          }
-                        };
-                      });
-                    }}
-                    className="flex-1 min-w-[80px] px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white"
-                    placeholder="填写"
-                  />
-                );
-              }
-              return <span key={i} className="text-sm text-slate-700">{part}</span>;
-            })}
-          </div>
-        </div>
-      );
-    }
-    
-    const handleChange = (val: string) => {
-      setPermitFormData(prev => ({
-        ...prev,
-        [inputKey]: val
-      }));
-    };
-
-    // 🔵 处理 Section 类型（子表单）
-    if (fieldType === 'section') {
-      const sectionData = permitFormData[`SECTION_${cellKey}`];
-      return (
-        <div className="space-y-1.5">
-          <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-            {label}
-            {isRequired && <span className="text-red-500 text-xs">*</span>}
-          </label>
-          <button
-            type="button"
-            onClick={() => handleSectionClick(cellKey, label)}
-            className={`w-full px-4 py-3 rounded-md border-2 transition text-sm font-semibold shadow-sm ${
-              sectionData
-                ? 'bg-green-50 border-green-500 text-green-700'
-                : 'bg-blue-50 border-blue-400 text-blue-700 hover:bg-blue-100 active:scale-[0.98]'
-            }`}
-          >
-            {sectionData ? '✓ 已填写 - 点击查看/编辑' : '📝 点击填写子表单'}
-          </button>
-        </div>
-      );
-    }
-
-    // 🟠 处理 Signature 类型（签字字段，编辑模式下只读）
-    if (fieldType === 'signature') {
-      return (
-        <div className="space-y-1.5">
-          <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-            {label}
-          </label>
-          <div className="w-full px-3 py-2.5 bg-amber-50 border border-amber-300 rounded-md text-amber-700 text-xs italic text-center">
-            ✍️ 此字段将在审批流程中自动填写
-          </div>
-        </div>
-      );
-    }
-
-    switch (fieldType) {
-      case 'option':
-        // 选项类型字段，渲染为单选按钮组
-        const options = field.options || [];
-        return (
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-              {label}
-              {isRequired && <span className="text-red-500 text-xs">*</span>}
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {options.map((opt: string, idx: number) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleChange(opt)}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                    currentValue === opt
-                      ? 'bg-blue-500 text-white shadow-md'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-
-      case 'match':
-        // 多选框类型
-        const matchOptions = field.options || [];
-        const selectedOptions = currentValue ? currentValue.split(',').filter(Boolean) : [];
+      // 🟢 兼容旧格式：如果 groups 使用的是 {name, order} 格式，需要转换
+      if (config.groups && Array.isArray(config.groups)) {
+        // 检查是否是旧格式（有 name 但没有 title）
+        const isOldFormat = config.groups.length > 0 && 
+          config.groups[0].name !== undefined && 
+          config.groups[0].title === undefined;
         
-        const toggleOption = (opt: string) => {
-          const newSelected = selectedOptions.includes(opt)
-            ? selectedOptions.filter((o: string) => o !== opt)
-            : [...selectedOptions, opt];
-          handleChange(newSelected.join(','));
-        };
-
-        return (
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-              {label}
-              {isRequired && <span className="text-red-500 text-xs">*</span>}
-            </label>
-            <div className="space-y-2">
-              {matchOptions.map((opt: string, idx: number) => (
-                <label
-                  key={idx}
-                  className="flex items-center gap-2 p-3 bg-slate-50 rounded-md cursor-pointer hover:bg-slate-100 transition"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedOptions.includes(opt)}
-                    onChange={() => toggleOption(opt)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-slate-700">{opt}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        );
-
-      case 'select':
-        const selectOptions = field.options || [];
-        if (selectOptions.length === 0) {
-          // 如果没有选项，退化为文本输入
-          return (
-            <div className="space-y-1.5">
-              <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-                {label}
-                {isRequired && <span className="text-red-500 text-xs">*</span>}
-              </label>
-              <input
-                type="text"
-                value={currentValue}
-                onChange={(e) => handleChange(e.target.value)}
-                placeholder="请填写"
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white transition-all"
-                required={isRequired}
-              />
-            </div>
-          );
+        if (isOldFormat) {
+          console.log('⚠️ 检测到旧格式的 mobileFormConfig，正在转换...');
+          // 转换为新格式
+          const newGroups = config.groups.map((g: any) => {
+            const fieldsInGroup = (config.fields || []).filter((f: any) => f.group === g.name && !f.hidden);
+            const fieldKeys = fieldsInGroup.map((f: any) => f.id || f.cellKey || f.fieldKey);
+            return {
+              title: g.name,
+              fieldKeys: fieldKeys
+            };
+          });
+          
+          return {
+            groups: newGroups,
+            fields: config.fields || [],
+            title: config.title
+          };
         }
-        return (
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-              {label}
-              {isRequired && <span className="text-red-500 text-xs">*</span>}
-            </label>
-            <select
-              value={currentValue}
-              onChange={(e) => handleChange(e.target.value)}
-              className="w-full px-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white appearance-none transition-all"
-              required={isRequired}
-            >
-              <option value="">请选择</option>
-              {selectOptions.map((opt: string, idx: number) => (
-                <option key={idx} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </div>
-        );
-
-      case 'textarea':
-        return (
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-              {label}
-              {isRequired && <span className="text-red-500 text-xs">*</span>}
-            </label>
-            <textarea
-              value={currentValue}
-              onChange={(e) => handleChange(e.target.value)}
-              placeholder="请填写"
-              rows={3}
-              className="w-full px-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm resize-none bg-white transition-all"
-              required={isRequired}
-            />
-          </div>
-        );
-
-      case 'date':
-        return (
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-              {label}
-              {isRequired && <span className="text-red-500 text-xs">*</span>}
-            </label>
-            <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="date"
-                value={currentValue}
-                onChange={(e) => handleChange(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white transition-all"
-                required={isRequired}
-              />
-            </div>
-          </div>
-        );
-
-      case 'number':
-        return (
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-              {label}
-              {isRequired && <span className="text-red-500 text-xs">*</span>}
-            </label>
-            <input
-              type="number"
-              value={currentValue}
-              onChange={(e) => handleChange(e.target.value)}
-              placeholder="请填写"
-              className="w-full px-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white transition-all"
-              required={isRequired}
-            />
-          </div>
-        );
-
-      case 'department':
-        return (
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-              {label}
-              {isRequired && <span className="text-red-500 text-xs">*</span>}
-            </label>
-            <div className="relative">
-              <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <select
-                value={currentValue}
-                onChange={(e) => handleChange(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white appearance-none transition-all"
-                required={isRequired}
-              >
-                <option value="">请选择部门</option>
-                {renderDepartmentOptions(departments)}
-              </select>
-            </div>
-          </div>
-        );
-
-      case 'user':
-        return (
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-              {label}
-              {isRequired && <span className="text-red-500 text-xs">*</span>}
-            </label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <select
-                value={currentValue}
-                onChange={(e) => handleChange(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white appearance-none transition-all"
-                required={isRequired}
-              >
-                <option value="">请选择人员</option>
-                {allUsers.map((u) => (
-                  <option key={u.id} value={u.name}>
-                    {u.name} ({u.department || '未分配'})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        );
-
-      case 'text':
-      default:
-        return (
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
-              {label}
-              {isRequired && <span className="text-red-500 text-xs">*</span>}
-            </label>
-            <input
-              type="text"
-              value={currentValue}
-              onChange={(e) => handleChange(e.target.value)}
-              placeholder="请填写"
-              className="w-full px-3 py-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white transition-all"
-              required={isRequired}
-            />
-          </div>
-        );
+        
+        // 新格式，直接使用
+        if (config.groups.length > 0 && config.groups[0].fieldKeys !== undefined) {
+          return {
+            groups: config.groups,
+            fields: config.fields,
+            title: config.title
+          };
+        }
+      }
+      
+        console.warn('⚠️ mobileFormConfig 格式无效:', config);
+      } catch (e) {
+        console.warn('⚠️ 解析 mobileFormConfig 失败:', e);
+      }
     }
-  };
-
-  // 🟢 渲染移动端表单字段
-  const renderMobileField = (field: MobileFormConfig['fields'][0]) => {
-    const value = permitFormData[field.fieldKey] || '';
     
-    const handleChange = (newValue: any) => {
-      setPermitFormData(prev => ({
-        ...prev,
-        [field.fieldKey]: newValue
-      }));
-    };
-
-    switch (field.fieldType) {
-      case 'textarea':
-        return (
-          <textarea
-            value={value}
-            onChange={(e) => handleChange(e.target.value)}
-            placeholder={field.placeholder}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none min-h-[80px] text-sm"
-            required={field.required}
-          />
-        );
-
-      case 'select':
-        return (
-          <select
-            value={value}
-            onChange={(e) => handleChange(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white"
-            required={field.required}
-          >
-            <option value="">请选择</option>
-            {field.options?.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-        );
-
-      case 'date':
-        return (
-          <div className="relative">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input
-              type="date"
-              value={value}
-              onChange={(e) => handleChange(e.target.value)}
-              className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
-              required={field.required}
-            />
-          </div>
-        );
-
-      case 'number':
-        return (
-          <input
-            type="number"
-            value={value}
-            onChange={(e) => handleChange(e.target.value)}
-            placeholder={field.placeholder}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
-            required={field.required}
-          />
-        );
-
-      case 'department':
-        return (
-          <div className="relative">
-            <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <select
-              value={value}
-              onChange={(e) => handleChange(e.target.value)}
-              className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white appearance-none"
-              required={field.required}
-            >
-              <option value="">请选择部门</option>
-              {renderDepartmentOptions(departments)}
-            </select>
-          </div>
-        );
-
-      case 'user':
-        return (
-          <div className="relative">
-            <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <select
-              value={value}
-              onChange={(e) => handleChange(e.target.value)}
-              className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white appearance-none"
-              required={field.required}
-            >
-              <option value="">请选择人员</option>
-              {allUsers.map((u) => (
-                <option key={u.id} value={u.name}>
-                  {u.name} ({u.department || '未分配'})
-                </option>
-              ))}
-            </select>
-          </div>
-        );
-
-      case 'text':
-      default:
-        return (
-          <input
-            type="text"
-            value={value}
-            onChange={(e) => handleChange(e.target.value)}
-            placeholder={field.placeholder}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
-            required={field.required}
-          />
-        );
+    // 2. 保底：基于 parsedFields 自动生成配置
+    if (!selectedParsedFields || selectedParsedFields.length === 0) {
+      return null;
     }
-  };
+    
+    console.log('📋 未找到保存的移动端配置，自动生成临时配置...');
+    
+    // 按坐标排序
+    const sortedFields = [...selectedParsedFields].sort((a: any, b: any) => {
+      if (a.rowIndex !== undefined && b.rowIndex !== undefined) {
+        if (a.rowIndex !== b.rowIndex) return a.rowIndex - b.rowIndex;
+        return (a.colIndex || 0) - (b.colIndex || 0);
+      }
+      const matchA = a.cellKey.match(/R(\d+)C(\d+)/);
+      const matchB = b.cellKey.match(/R(\d+)C(\d+)/);
+      if (matchA && matchB) {
+        const rowA = parseInt(matchA[1]);
+        const rowB = parseInt(matchB[1]);
+        if (rowA !== rowB) return rowA - rowB;
+        return parseInt(matchA[2]) - parseInt(matchB[2]);
+      }
+      return 0;
+    });
+    
+    // 自动分组
+    const autoGroups = new Map<string, any[]>();
+    sortedFields.forEach((field: any) => {
+      let groupName = '基础信息';
+      if (field.fieldType === 'signature') {
+        groupName = '审批意见';
+      } else if (field.isSafetyMeasure) {
+        groupName = '安全措施';
+      } else if (field.group) {
+        groupName = field.group;
+      }
+      
+      if (!autoGroups.has(groupName)) {
+        autoGroups.set(groupName, []);
+      }
+      autoGroups.get(groupName)!.push(field);
+    });
+    
+    // 转换为配置格式
+    const groups = Array.from(autoGroups.entries()).map(([title, fields]) => ({
+      title,
+      fieldKeys: fields.map(f => f.cellKey || f.fieldKey)
+    }));
+    
+    return {
+      groups,
+      fields: sortedFields,
+      title: selectedTemplate?.name || '作业许可申请'
+    };
+  }, [selectedTemplate?.mobileFormConfig, selectedParsedFields, selectedTemplate?.name]);
 
   // 🟢 渲染部门选项（递归）
   const renderDepartmentOptions = (depts: any[], level = 0): React.ReactElement[] => {
@@ -1095,7 +762,19 @@ export default function AddPermitModal({
 
                 {/* 移动端表单视图（在小于1024px屏幕显示） */}
                 <div className="lg:hidden">
-                  {renderMobileForm()}
+                  <MobileFormRenderer
+                    config={mobileFormConfig}
+                    parsedFields={selectedParsedFields}
+                    title={selectedTemplate?.name}
+                    code={previewCode}
+                    formData={permitFormData}
+                    onDataChange={handleMobileFormDataChange}
+                    mode="edit"
+                    onSectionClick={handleSectionClick}
+                    onDepartmentClick={handleDepartmentSelect}
+                    departments={departments}
+                    allUsers={allUsers}
+                  />
                 </div>
                 
                 {/* 桌面端表格视图（在大屏幕显示） */}
@@ -1160,7 +839,26 @@ export default function AddPermitModal({
         </div>
       </div>
 
-      {/* 🔵 V3.4 Section表单弹窗 */}
+      {/* � 部门选择弹窗 */}
+      {deptModalOpen && currentDeptField && (
+        <DepartmentSelectModal
+          isOpen={true}
+          onClose={() => {
+            setDeptModalOpen(false);
+            setCurrentDeptField(null);
+          }}
+          onSelect={(deptId, deptName) => {
+            console.log('✅ 选中部门:', { deptId, deptName, targetKey: currentDeptField.inputKey });
+            // 使用回调方式确保状态更新正确
+            handleMobileFormDataChange(currentDeptField.inputKey, deptName);
+            setDeptModalOpen(false);
+            setCurrentDeptField(null);
+          }}
+          selectedDeptId={undefined}
+        />
+      )}
+
+      {/* �🔵 V3.4 Section表单弹窗 */}
       {(() => {
         console.log('🔵 SectionFormModal render check:', {
           sectionModalOpen,
