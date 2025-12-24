@@ -6,9 +6,10 @@ import * as XLSX from 'xlsx';
 import { 
   Search, FileText, FolderOpen, Download, Trash2, Edit, Upload, 
   Eye, ArrowLeft, Filter, ChevronRight, CornerDownRight, MoreHorizontal,
-  File as FileIcon, Sheet, RefreshCw, History, Clock, Calendar, Layers
+  File as FileIcon, Sheet, RefreshCw, History, Clock, Calendar, Layers, Droplet
 } from 'lucide-react';
 import Link from 'next/link';
+import Watermark from '@/components/common/Watermark';
 
 interface HistoryRecord {
   id: string; type: 'docx' | 'xlsx' | 'pdf'; name: string; path: string; uploadTime: number; uploader: string;
@@ -32,6 +33,7 @@ export default function DocSystemPage() {
   const [levelFilter, setLevelFilter] = useState(''); // 新增：级别筛选
   const [startDate, setStartDate] = useState('');     // 新增：开始时间
   const [endDate, setEndDate] = useState('');         // 新增：结束时间
+  const [isFilterOpen, setIsFilterOpen] = useState(false); // 🔴 新增：筛选抽屉状态
   
   const [allDepts, setAllDepts] = useState<string[]>([]);
 
@@ -39,12 +41,17 @@ export default function DocSystemPage() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showUpdateModal, setShowUpdateModal] = useState(false); 
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showWatermarkModal, setShowWatermarkModal] = useState(false); // 🔴 水印编辑弹窗
   
   const [uploadLevel, setUploadLevel] = useState(1);
   const [editLevel, setEditLevel] = useState(1);
   const [currentFile, setCurrentFile] = useState<DocFile | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string>('');
+  
+  // 🔴 水印配置状态
+  const [watermarkText, setWatermarkText] = useState<string>('');
+  const [tempWatermarkText, setTempWatermarkText] = useState<string>('');
   
   const isAdmin = user?.role === 'admin';
 
@@ -189,28 +196,76 @@ export default function DocSystemPage() {
 
   const renderFileItem = (file: DocFile, depth: number, recursive: boolean, highlightContent?: string | null) => (
     <div key={file.id}>
-        <div className={`flex flex-col bg-white p-3 rounded-lg border border-slate-200 hover:shadow-sm hover:border-blue-300 transition-all group ${depth > 0 && !highlightContent ? 'ml-8 relative' : ''}`}>
-            {depth > 0 && !highlightContent && <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-4 h-px bg-slate-300"></div>}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 flex-1 overflow-hidden cursor-pointer" onClick={() => handlePreview(file)}>
-                    <div className={`p-2 rounded-lg shrink-0 ${file.level === 1 ? 'bg-blue-100 text-blue-600' : file.level === 4 ? ((file.type || 'docx') === 'xlsx' ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600') : 'bg-slate-100 text-slate-600'}`}>
-                        {file.level === 1 ? <FolderOpen size={20} /> : (file.type || 'docx') === 'xlsx' ? <Sheet size={20} /> : file.level === 4 ? <FileIcon size={20} /> : <FileText size={20} />}
+        <div className={`flex flex-col bg-white p-3 md:p-3 rounded-lg border border-slate-200 hover:shadow-sm hover:border-blue-300 transition-all group ${depth > 0 && !highlightContent ? 'ml-3 md:ml-8 relative' : ''}`}>
+            {depth > 0 && !highlightContent && <div className="absolute -left-2 md:-left-6 top-1/2 -translate-y-1/2 w-2 md:w-4 h-px bg-slate-300"></div>}
+            <div className="flex items-start justify-between gap-2">
+                {/* 左侧：图标 + 文件信息 */}
+                <div className="flex items-start gap-2 flex-1 min-w-0 cursor-pointer" onClick={() => handlePreview(file)}>
+                    {/* 文件图标 */}
+                    <div className={`p-1.5 md:p-2 rounded-lg shrink-0 ${file.level === 1 ? 'bg-blue-100 text-blue-600' : file.level === 4 ? ((file.type || 'docx') === 'xlsx' ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600') : 'bg-slate-100 text-slate-600'}`}>
+                        {file.level === 1 ? <FolderOpen size={16} className="md:w-5 md:h-5" /> : (file.type || 'docx') === 'xlsx' ? <Sheet size={16} className="md:w-5 md:h-5" /> : file.level === 4 ? <FileIcon size={16} className="md:w-5 md:h-5" /> : <FileText size={16} className="md:w-5 md:h-5" />}
                     </div>
-                    <div className="min-w-0">
-                        <div className="font-medium text-slate-800 flex items-center gap-2">
-                            <span className="text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-mono shrink-0">{file.fullNum}</span>
-                            <span className="truncate group-hover:text-hytzer-blue">{file.name}</span>
-                            {file.type === 'xlsx' && <span className="text-[10px] bg-green-50 text-green-600 border border-green-100 px-1 rounded">XLSX</span>}
-                            {file.pdfPath && <span className="text-[10px] bg-red-50 text-red-600 border border-red-100 px-1 rounded">PDF</span>}
+                    
+                    {/* 文件信息 */}
+                    <div className="flex-1 min-w-0">
+                        {/* 编号（独立一行，移动端更醒目） */}
+                        <div className="mb-1">
+                            <span className="inline-block text-[10px] md:text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-mono">
+                                {file.fullNum}
+                            </span>
                         </div>
-                        <div className="text-xs text-slate-400 flex gap-2 mt-0.5">
-                            <span className="bg-slate-50 px-1 rounded">{file.level}级文件</span>
-                            <span>{file.dept}</span>
-                            <span>{new Date(file.uploadTime).toLocaleDateString()}</span>
+                        
+                        {/* 文件名（允许换行） */}
+                        <div className="mb-1.5">
+                            <span className="text-sm md:text-base font-medium text-slate-800 leading-snug break-words group-hover:text-blue-600">
+                                {file.name}
+                            </span>
+                            {/* 文件类型标签 */}
+                            <div className="inline-flex items-center gap-1 ml-2">
+                                {file.type === 'xlsx' && <span className="text-[9px] md:text-[10px] bg-green-50 text-green-600 border border-green-200 px-1 py-0.5 rounded font-semibold">XLSX</span>}
+                                {file.pdfPath && <span className="text-[9px] md:text-[10px] bg-red-50 text-red-600 border border-red-200 px-1 py-0.5 rounded font-semibold">PDF</span>}
+                            </div>
+                        </div>
+                        
+                        {/* 元信息（允许换行） */}
+                        <div className="text-[11px] md:text-xs text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className="inline-flex items-center bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 font-medium">
+                                {file.level}级
+                            </span>
+                            <span className="break-all max-w-[150px] md:max-w-none">
+                                {file.dept}
+                            </span>
+                            <span className="hidden sm:inline text-slate-300">•</span>
+                            <span className="whitespace-nowrap">
+                                {new Date(file.uploadTime).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                            </span>
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                
+                {/* 右侧：操作按钮 */}
+                {/* 移动端：竖向排列，始终可见 */}
+                <div className="flex md:hidden flex-col gap-1 shrink-0">
+                    <button 
+                        title="预览" 
+                        onClick={(e) => { e.stopPropagation(); handlePreview(file); }} 
+                        className="p-2 hover:bg-blue-50 rounded text-slate-600 hover:text-blue-600 active:bg-blue-100 transition-colors"
+                    >
+                        <Eye size={16} />
+                    </button>
+                    {canDownloadSource(file) && (
+                        <button 
+                            title={`下载 ${(file.type || 'docx').toUpperCase()}`} 
+                            onClick={(e) => { e.stopPropagation(); handleDownload(file, 'source'); }} 
+                            className={`p-2 rounded transition-colors ${file.type === 'xlsx' ? 'hover:bg-green-50 text-green-600 active:bg-green-100' : 'hover:bg-blue-50 text-blue-600 active:bg-blue-100'}`}
+                        >
+                            <Download size={16} />
+                        </button>
+                    )}
+                </div>
+                
+                {/* 桌面端：横向排列，悬停显示 */}
+                <div className="hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button title="预览" onClick={() => handlePreview(file)} className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><Eye size={16} /></button>
                     {canDownloadSource(file) && <button title={`下载 ${(file.type || 'docx').toUpperCase()}`} onClick={() => handleDownload(file, 'source')} className={`p-1.5 rounded font-bold text-xs flex items-center gap-1 ${file.type === 'xlsx' ? 'hover:bg-green-50 hover:text-green-600' : 'hover:bg-blue-50 hover:text-blue-600 text-slate-500'}`}><Download size={14} /> {file.type === 'xlsx' ? 'E' : 'W'}</button>}
                     {hasPerm('upload') && <button title="更新" onClick={() => { setCurrentFile(file); setShowUpdateModal(true); }} className="p-1.5 hover:bg-indigo-50 hover:text-indigo-600 rounded text-slate-500"><RefreshCw size={16} /></button>}
@@ -218,9 +273,14 @@ export default function DocSystemPage() {
                     {hasPerm('delete') && <button title="删除" onClick={() => handleDelete(file.id)} className="p-1.5 hover:bg-red-50 hover:text-red-600 rounded text-slate-500"><Trash2 size={16} /></button>}
                 </div>
             </div>
+            
+            {/* 搜索高亮内容 */}
             {highlightContent && (
-                <div className="mt-2 ml-11 p-2 bg-yellow-50 rounded text-xs text-slate-600 border border-yellow-100">
-                    <div className="flex gap-1"><span className="font-bold text-yellow-600 shrink-0">匹配内容:</span><span dangerouslySetInnerHTML={{ __html: `...${highlightContent}...` }} /></div>
+                <div className="mt-3 ml-0 md:ml-11 p-2.5 bg-yellow-50 rounded text-xs text-slate-600 border border-yellow-200">
+                    <div className="flex gap-1.5">
+                        <span className="font-bold text-yellow-700 shrink-0">匹配:</span>
+                        <span className="break-words" dangerouslySetInnerHTML={{ __html: `...${highlightContent}...` }} />
+                    </div>
                 </div>
             )}
         </div>
@@ -304,44 +364,210 @@ export default function DocSystemPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-80px)]">
+      {/* 顶部标题栏 */}
       <div className="flex items-center justify-between mb-3 md:mb-6 shrink-0 px-2 md:px-0">
-         <div className="flex items-center gap-2 md:gap-4"><Link href="/dashboard" className="p-1.5 md:p-2 hover:bg-slate-200 rounded-full text-slate-500"><ArrowLeft size={20} className="md:hidden" /><ArrowLeft size={24} className="hidden md:block" /></Link><div><h1 className="text-lg md:text-2xl font-bold text-slate-900">文档管理系统</h1><p className="text-xs md:text-sm text-slate-500 hidden sm:block">EHS 体系文件库</p></div></div>
+         <div className="flex items-center gap-2 md:gap-4">
+           <Link href="/dashboard" className="p-1.5 md:p-2 hover:bg-slate-200 rounded-full text-slate-500">
+             <ArrowLeft size={20} className="md:hidden" />
+             <ArrowLeft size={24} className="hidden md:block" />
+           </Link>
+           <div>
+             <h1 className="text-lg md:text-2xl font-bold text-slate-900">文档管理系统</h1>
+             <p className="text-xs md:text-sm text-slate-500 hidden sm:block">EHS 体系文件库</p>
+           </div>
+         </div>
+         
+         {/* 🔴 水印编辑按钮 - 全局设置 */}
+         {hasPerm('edit_watermark') && (
+           <button 
+             onClick={() => {
+               setTempWatermarkText(watermarkText);
+               setShowWatermarkModal(true);
+             }}
+             className="flex items-center gap-2 px-3 md:px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
+             title="编辑全局水印"
+           >
+             <Droplet size={18} className="md:w-5 md:h-5" />
+             <span className="hidden md:inline text-sm font-medium">水印设置</span>
+           </button>
+         )}
       </div>
-      <div className="flex flex-col md:flex-row flex-1 gap-3 md:gap-6 overflow-hidden">
-         {/* Sidebar: 增加筛选控件 */}
-         <div className="w-full md:w-80 bg-white rounded-lg md:rounded-xl shadow-sm border border-slate-200 p-3 md:p-5 flex flex-col gap-3 md:gap-6 shrink-0 h-auto md:h-full overflow-y-auto max-h-[40vh] md:max-h-none">
+
+      {/* 🔴 移动端搜索和筛选触发条 */}
+      <div className="flex gap-2 mb-3 px-2 md:hidden">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input 
+            type="text" 
+            placeholder="搜索文档名称..." 
+            value={searchTerm} 
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-hytzer-blue focus:border-transparent shadow-sm"
+          />
+        </div>
+        <button 
+          onClick={() => setIsFilterOpen(true)}
+          className="p-2.5 bg-white border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50 active:bg-slate-100 shadow-sm shrink-0"
+        >
+          <Filter size={20} />
+        </button>
+      </div>
+
+      <div className="flex flex-col md:flex-row flex-1 gap-3 md:gap-6 overflow-hidden px-2 md:px-0">
+         {/* 🔴 侧边栏改为抽屉式 */}
+         <div className={`
+           fixed inset-0 z-[60] md:relative md:z-auto
+           ${isFilterOpen ? 'block' : 'hidden md:block'}
+         `}>
+           {/* 遮罩层 (仅移动端) */}
+           <div 
+             className="absolute inset-0 bg-black/40 md:hidden" 
+             onClick={() => setIsFilterOpen(false)}
+           />
+           
+           {/* 抽屉内容 */}
+           <div className={`
+             absolute right-0 top-0 bottom-0 w-80 md:relative md:w-80
+             bg-white rounded-l-xl md:rounded-xl shadow-2xl md:shadow-sm 
+             border-l md:border border-slate-200 
+             p-5 flex flex-col gap-6 overflow-y-auto
+             ${isFilterOpen ? 'animate-in slide-in-from-right duration-300' : ''}
+           `}>
+             {/* 移动端关闭按钮 */}
+             <button 
+               onClick={() => setIsFilterOpen(false)}
+               className="md:hidden absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-full text-slate-500"
+             >
+               ✕
+             </button>
+
+             <h3 className="text-lg font-bold text-slate-900 md:hidden">筛选条件</h3>
              
-             {/* 1. 搜索 */}
-             <div className="relative"><Search className="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} /><input type="text" placeholder="搜索..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-7 md:pl-9 pr-3 md:pr-4 py-1.5 md:py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs md:text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" /></div>
+             {/* 1. 桌面端搜索 (移动端隐藏) */}
+             <div className="relative hidden md:block">
+               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+               <input 
+                 type="text" 
+                 placeholder="搜索..." 
+                 value={searchTerm} 
+                 onChange={e => setSearchTerm(e.target.value)} 
+                 className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" 
+               />
+             </div>
              
              {/* 2. 部门筛选 */}
-             <div><label className="text-xs md:text-sm font-medium text-slate-700 mb-1 md:mb-2 flex items-center gap-1 md:gap-2"><Filter size={12} className="md:hidden" /><Filter size={14} className="hidden md:block" /> 部门筛选</label><select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} className="w-full px-2 md:px-3 py-1.5 md:py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs md:text-sm outline-none"><option value="">全部部门</option>{allDepts.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
-             
-             {/* 3. 级别筛选 (新增) */}
              <div>
-                <label className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2"><Layers size={14} /> 文件级别</label>
-                <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none">
-                    <option value="">全部级别</option>
-                    {[1, 2, 3, 4].map(l => <option key={l} value={l}>{l}级文件</option>)}
-                </select>
+               <label className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                 <Filter size={14} /> 部门筛选
+               </label>
+               <select 
+                 value={deptFilter} 
+                 onChange={e => {
+                   setDeptFilter(e.target.value);
+                   setIsFilterOpen(false); // 🔴 选择后自动关闭抽屉
+                 }} 
+                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-hytzer-blue"
+               >
+                 <option value="">全部部门</option>
+                 {allDepts.map(d => <option key={d} value={d}>{d}</option>)}
+               </select>
+             </div>
+             
+             {/* 3. 级别筛选 */}
+             <div>
+               <label className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                 <Layers size={14} /> 文件级别
+               </label>
+               <select 
+                 value={levelFilter} 
+                 onChange={e => {
+                   setLevelFilter(e.target.value);
+                   setIsFilterOpen(false); // 🔴 选择后自动关闭抽屉
+                 }} 
+                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-hytzer-blue"
+               >
+                 <option value="">全部级别</option>
+                 {[1, 2, 3, 4].map(l => <option key={l} value={l}>{l}级文件</option>)}
+               </select>
              </div>
 
-             {/* 4. 时间筛选 (新增) */}
+             {/* 4. 时间筛选 */}
              <div>
-                <label className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2"><Calendar size={14} /> 发布时间</label>
-                <div className="flex flex-col gap-2">
-                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none" />
-                    <div className="text-center text-slate-400 text-xs">至</div>
-                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none" />
-                </div>
+               <label className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                 <Calendar size={14} /> 发布时间
+               </label>
+               <div className="flex flex-col gap-2">
+                 <input 
+                   type="date" 
+                   value={startDate} 
+                   onChange={e => setStartDate(e.target.value)} 
+                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" 
+                 />
+                 <div className="text-center text-slate-400 text-xs">至</div>
+                 <input 
+                   type="date" 
+                   value={endDate} 
+                   onChange={e => setEndDate(e.target.value)} 
+                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" 
+                 />
+               </div>
              </div>
+
+             {/* 清空筛选按钮 */}
+             {(deptFilter || levelFilter || startDate || endDate) && (
+               <button
+                 onClick={() => {
+                   setDeptFilter('');
+                   setLevelFilter('');
+                   setStartDate('');
+                   setEndDate('');
+                   setIsFilterOpen(false);
+                 }}
+                 className="w-full py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200"
+               >
+                 清空筛选
+               </button>
+             )}
 
              <div className="border-t border-slate-100 my-2"></div>
 
-             {hasPerm('upload') ? <button onClick={() => { setShowUploadModal(true); setUploadLevel(1); }} className="w-full bg-hytzer-blue text-white py-2 md:py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-blue-600 shadow-lg shadow-blue-500/20 font-medium text-sm md:text-base"><Upload size={16} className="md:hidden" /><Upload size={18} className="hidden md:block" /> 上传文件</button> : <div className="p-3 md:p-4 bg-slate-50 text-slate-400 text-xs md:text-sm text-center rounded-lg border border-dashed">暂无上传权限</div>}
+             {/* 上传按钮 (桌面端显示) */}
+             {hasPerm('upload') ? (
+               <button 
+                 onClick={() => { 
+                   setShowUploadModal(true); 
+                   setUploadLevel(1); 
+                   setIsFilterOpen(false); // 🔴 打开上传弹窗后关闭抽屉
+                 }} 
+                 className="hidden md:flex w-full bg-hytzer-blue text-white py-3 rounded-lg items-center justify-center gap-2 hover:bg-blue-600 shadow-lg shadow-blue-500/20 font-medium"
+               >
+                 <Upload size={18} /> 上传文件
+               </button>
+             ) : (
+               <div className="hidden md:block p-4 bg-slate-50 text-slate-400 text-sm text-center rounded-lg border border-dashed">
+                 暂无上传权限
+               </div>
+             )}
+           </div>
          </div>
-         <div className="flex-1 bg-slate-50/50 rounded-lg md:rounded-xl border border-slate-200 p-3 md:p-6 overflow-y-auto custom-scrollbar">{loading ? <div className="text-center py-10 text-sm">加载中...</div> : renderTree(null)}</div>
+         {/* 内容区域 */}
+         <div className="flex-1 bg-slate-50/50 rounded-lg md:rounded-xl border border-slate-200 p-3 md:p-6 overflow-y-auto custom-scrollbar">
+           {loading ? <div className="text-center py-10 text-sm">加载中...</div> : renderTree(null)}
+         </div>
       </div>
+
+      {/* 🔴 悬浮上传按钮 (仅移动端) */}
+      {hasPerm('upload') && (
+        <button
+          onClick={() => { 
+            setShowUploadModal(true); 
+            setUploadLevel(1); 
+          }}
+          className="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-hytzer-blue text-white rounded-full shadow-2xl hover:bg-blue-600 active:scale-95 transition-transform flex items-center justify-center z-50"
+        >
+          <Upload size={24} />
+        </button>
+      )}
 
       {/* Upload Modal */}
       {showUploadModal && (
@@ -437,8 +663,10 @@ export default function DocSystemPage() {
             </div>
             <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
                 <div className="flex-1 overflow-y-auto p-3 md:p-8 bg-slate-100">
-                    <div className={`bg-white shadow-sm p-4 md:p-10 min-h-full mx-auto ${currentFile.type === 'xlsx' ? 'max-w-full overflow-x-auto' : 'max-w-3xl prose prose-slate prose-sm md:prose'}`}>
+                    <div className={`bg-white shadow-sm p-4 md:p-10 min-h-full mx-auto relative ${currentFile.type === 'xlsx' ? 'max-w-full overflow-x-auto' : 'max-w-3xl prose prose-slate prose-sm md:prose'}`}>
                         <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                        {/* 🔴 水印层 - 覆盖整个内容区域 */}
+                        {watermarkText && <Watermark text={watermarkText} />}
                     </div>
                 </div>
                 <div className="w-full md:w-72 bg-white border-t md:border-t-0 md:border-l border-slate-200 p-3 md:p-4 overflow-y-auto shrink-0 flex flex-col gap-4 md:gap-6 max-h-[30vh] md:max-h-none">
@@ -477,6 +705,102 @@ export default function DocSystemPage() {
                         ) : (<p className="text-xs text-slate-400 py-2 text-center">暂无历史版本</p>)}
                     </div>
                 </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔴 水印编辑弹窗 */}
+      {showWatermarkModal && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-3 md:p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl animate-fade-in">
+            <div className="p-4 md:p-6 border-b bg-slate-50 rounded-t-xl">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Droplet size={20} className="text-blue-600" />
+                编辑预览水印
+              </h3>
+              <p className="text-sm text-slate-500 mt-1">设置文档预览时的水印文字</p>
+            </div>
+            
+            <div className="p-4 md:p-6 space-y-4">
+              {/* 输入框 */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  水印文字
+                </label>
+                <input
+                  type="text"
+                  value={tempWatermarkText}
+                  onChange={(e) => setTempWatermarkText(e.target.value)}
+                  placeholder="例如：机密文件 · 请勿外传"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  maxLength={50}
+                />
+                <div className="flex justify-between items-center mt-1">
+                  <p className="text-xs text-slate-400">
+                    留空则不显示水印
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {tempWatermarkText.length}/50
+                  </p>
+                </div>
+              </div>
+
+              {/* 预览区域 */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  效果预览
+                </label>
+                <div className="relative bg-slate-100 rounded-lg p-8 min-h-[200px] border-2 border-dashed border-slate-300 overflow-hidden">
+                  {tempWatermarkText && <Watermark text={tempWatermarkText} />}
+                  <div className="relative z-10 bg-white p-6 rounded shadow-sm">
+                    <h4 className="text-base font-bold text-slate-900 mb-2">示例文档标题</h4>
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                      这是一段示例文本，用于展示水印效果。水印将以半透明的方式平铺在整个文档背景上，不影响内容阅读。
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <div className="h-2 bg-slate-200 rounded flex-1"></div>
+                      <div className="h-2 bg-slate-200 rounded flex-1"></div>
+                      <div className="h-2 bg-slate-200 rounded w-20"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 提示信息 */}
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                <p className="text-xs text-blue-800 flex items-start gap-2">
+                  <span className="shrink-0 mt-0.5">💡</span>
+                  <span>
+                    水印仅在预览界面显示，不会影响实际文件下载内容。建议使用简短文字以获得最佳显示效果。
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {/* 按钮区域 */}
+            <div className="p-4 md:p-6 border-t bg-slate-50 rounded-b-xl flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowWatermarkModal(false);
+                  setTempWatermarkText(watermarkText); // 恢复原值
+                }}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setWatermarkText(tempWatermarkText);
+                  setShowWatermarkModal(false);
+                }}
+                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+              >
+                <Droplet size={16} />
+                应用水印
+              </button>
             </div>
           </div>
         </div>

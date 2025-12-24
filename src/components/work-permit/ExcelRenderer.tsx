@@ -398,7 +398,8 @@ export default function ExcelRenderer({
   // useEffect intentionally removed.
 
   const handleInputChange = (rowIndex: number, colIndex: number, value: any) => {
-    const key = `${rowIndex}-${colIndex}`;
+    // 🟢 统一使用 R1C1 格式作为 Key
+    const key = `R${rowIndex + 1}C${colIndex + 1}`;
     const newData = { ...formData, [key]: value };
     setFormData(newData);
     if (onDataChange) onDataChange(newData);
@@ -406,15 +407,16 @@ export default function ExcelRenderer({
 
   // 🟢 处理内联输入框的值变化
   const handleInlineInputChange = (r: number, c: number, index: number, val: string) => {
-    const key = `${r}-${c}-inline-${index}`;
+    const key = `R${r + 1}C${c + 1}-inline-${index}`;
     const newInputs = { ...inlineInputs, [key]: val };
     setInlineInputs(newInputs);
     
     // 同时更新到 formData 中，便于提交时统一处理
-    const cellKey = `${r}-${c}`;
+    const cellKey = `R${r + 1}C${c + 1}`;
     const cellInlineData: Record<string, string> = {};
+    const prefix = `${cellKey}-inline-`;
     Object.keys(newInputs).forEach(k => {
-      if (k.startsWith(`${r}-${c}-inline-`)) {
+      if (k.startsWith(prefix)) {
         cellInlineData[k] = newInputs[k];
       }
     });
@@ -533,12 +535,13 @@ export default function ExcelRenderer({
 
   const renderCellContent = (cellValue: any, rIndex: number, cIndex: number) => {
     const valStr = String(cellValue || "").trim();
-    const inputKey = `${rIndex}-${cIndex}`;
-    const filledValue = formData[inputKey];
+    // 🟢 统一使用 R1C1 格式
+    const cellKey = `R${rIndex + 1}C${cIndex + 1}`;
+    const inputKey = cellKey;
+    const filledValue = formData[inputKey] || formData[`${rIndex}-${cIndex}`]; // 兼容旧数据读取
     const styleObj = getCellStyleObj(rIndex, cIndex);
 
     // 🟢 检查是否有对应的解析字段
-    const cellKey = `R${rIndex + 1}C${cIndex + 1}`;
     const parsedField = parsedFields?.find(f => f.cellKey === cellKey);
     const isDesignMode = mode === 'design';
     const isRequired = parsedField?.required === true;
@@ -902,8 +905,9 @@ export default function ExcelRenderer({
           <div className="flex items-center flex-wrap gap-0.5 text-sm px-1" style={styleObj}>
             {parts.map((part, idx) => {
               if (/^____+$/.test(part)) {
-                const key = `${rIndex}-${cIndex}-inline-${inlineIndex}`;
-                const value = inlineInputs[key] || '';
+                const key = `${cellKey}-inline-${inlineIndex}`;
+                // 优先从 inlineInputs 读取，如果没有则尝试从 formData 的内联对象中读取（兼容加载）
+                const value = inlineInputs[key] || (formData[`${cellKey}-inlines`]?.[key]) || (formData[`${rIndex}-${cIndex}-inlines`]?.[`${rIndex}-${cIndex}-inline-${inlineIndex}`]) || '';
                 inlineIndex++;
                 return (
                   <span key={idx} className="inline-block min-w-[60px] border-b-2 border-blue-400 px-1 font-bold text-blue-900">
@@ -921,8 +925,8 @@ export default function ExcelRenderer({
       // 检查所有内联输入是否都有值
       const inlineCount = parts.filter(p => /^____+$/.test(p)).length;
       const hasAllInlineValues = Array.from({ length: inlineCount }, (_, i) => {
-        const key = `${rIndex}-${cIndex}-inline-${i}`;
-        return inlineInputs[key] && inlineInputs[key].trim() !== '';
+        const key = `${cellKey}-inline-${i}`;
+        return (inlineInputs[key] || formData[`${cellKey}-inlines`]?.[key])?.trim() !== '';
       }).every(Boolean);
       
       return (
@@ -930,9 +934,9 @@ export default function ExcelRenderer({
           {isRequired && !hasAllInlineValues && <span className="text-red-500 font-bold mr-1 flex-shrink-0">*</span>}
           {parts.map((part, idx) => {
             if (/^____+$/.test(part)) {
-              const key = `${rIndex}-${cIndex}-inline-${inlineIndex}`;
+              const key = `${cellKey}-inline-${inlineIndex}`;
               const currentIndex = inlineIndex;
-              const value = inlineInputs[key] || '';
+              const value = inlineInputs[key] || (formData[`${cellKey}-inlines`]?.[key]) || '';
               inlineIndex++;
               return (
                 <input

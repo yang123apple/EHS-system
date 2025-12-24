@@ -3,12 +3,14 @@ import {
   Smartphone, Plus, Trash2, GripVertical, Edit2, X, Check, Eye, Settings
 } from 'lucide-react';
 import { ParsedField } from '@/types/work-permit';
-import MobileFormRenderer, { MobileFormConfigForRenderer } from '../views/MobileFormRenderer';
+import MobileFormRenderer from '../views/MobileFormRenderer';
+import type { MobileFormConfigForRenderer } from '../views/MobileFormRenderer';
 
 export interface MobileFormField {
   id: string;
   label: string;
   fieldKey: string; // 对应parsedFields中的fieldName
+  cellKey?: string; // 🟢 对应 Excel 单元格 Key (如 R1C1)
   fieldType: 'text' | 'select' | 'date' | 'number' | 'textarea' | 'signature' | 'department' | 'user' | 'option' | 'match';
   placeholder?: string;
   required: boolean;
@@ -76,10 +78,12 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
         });
 
         const autoFields: MobileFormField[] = sortedParsedFields
+          .filter(f => f.cellKey) // 🟢 强制过滤：只保留有 cellKey 的字段
           .map((f, index) => ({
-            id: `field-${Date.now()}-${index}`,
+            id: f.cellKey!, // 🟢 核心修复：ID 必须等于 cellKey (如 "R5C2")
             label: f.fieldName || f.label,
-            fieldKey: f.fieldName,
+            fieldKey: f.cellKey!, // 🟢 统一使用 cellKey
+            cellKey: f.cellKey!, // 🟢 保存单元格 Key
             fieldType: mapFieldType(f.fieldType),
             placeholder: `请输入${f.fieldName || f.label}`,
             required: f.required || false,
@@ -252,15 +256,18 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
     });
 
     // 4. 将编辑器字段转换为 renderer 可用的字段对象
-    const rendererFields = fields.map(f => ({
-      ...f,
-      // 关键：renderer 通过 cellKey/fieldKey 查找字段，这里统一用 id
-      cellKey: f.id, 
-      fieldKey: f.id,
-      fieldName: f.label, // renderer 使用 fieldName 或 label
-      fieldType: f.fieldType,
-      hint: f.placeholder, // placeholder 映射到 hint
-    }));
+    const rendererFields = fields
+      .filter(f => f.cellKey) // 🟢 强制过滤：只渲染有 cellKey 的字段
+      .map(f => ({
+        ...f,
+        // 🔴 方案C：确保 ID 等于 cellKey
+        id: f.cellKey!,
+        cellKey: f.cellKey!, 
+        fieldKey: f.cellKey!,
+        fieldName: f.label, // renderer 使用 fieldName 或 label
+        fieldType: f.fieldType,
+        hint: f.placeholder, // placeholder 映射到 hint
+      }));
 
     return {
       groups: rendererGroups,
@@ -430,18 +437,20 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
 
                 {/* 表单内容 - 使用 MobileFormRenderer */}
                 <div className="flex-1 overflow-y-auto bg-slate-50">
-                  <MobileFormRenderer 
-                    config={previewConfig}
-                    mode="preview" // 使用预览模式
-                    onFieldClick={(field) => {
-                      // 查找对应的 MobileFormField 并设置为编辑中
-                      const targetField = fields.find(f => f.id === field.id);
-                      if (targetField) {
-                        setEditingField(targetField);
-                        setViewMode('edit');
-                      }
-                    }}
-                  />
+                  {MobileFormRenderer && (
+                    <MobileFormRenderer 
+                      config={previewConfig}
+                      mode="preview" // 使用预览模式
+                      onFieldClick={(field) => {
+                        // 查找对应的 MobileFormField 并设置为编辑中
+                        const targetField = fields.find(f => f.id === field.id);
+                        if (targetField) {
+                          setEditingField(targetField);
+                          setViewMode('edit');
+                        }
+                      }}
+                    />
+                  )}
                   
                   {fields.filter(f => !f.hidden).length === 0 && (
                     <div className="text-center py-12 text-slate-400">

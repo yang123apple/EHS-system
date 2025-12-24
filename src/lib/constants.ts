@@ -26,7 +26,8 @@ export const SYSTEM_MODULES = [
       { key: 'assign', name: '指派责任人 (管理)' },
       { key: 'view_stats', name: '查看统计报表' },
       { key: 'manage_config', name: '配置基础数据 (Admin)' },
-      { key: 'delete', name: '删除隐患记录 (Admin)' }, 
+      { key: 'delete', name: '删除隐患记录 (Admin)' },
+      { key: 'edit_cc_workflow', name: '隐患抄送编辑' },
     ]
   },
   {
@@ -38,7 +39,8 @@ export const SYSTEM_MODULES = [
       { key: 'down_docx_l4', name: '下载 DOCX (4级记录表格)' },
       { key: 'down_pdf', name: '下载 PDF 源文件' },
       { key: 'delete', name: '删除文件' },
-      { key: 'edit', name: '编辑文件信息' }
+      { key: 'edit', name: '编辑文件信息' },
+      { key: 'edit_watermark', name: '编辑预览水印' }
     ]
   }
 ];

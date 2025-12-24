@@ -8,8 +8,9 @@ import {
   Clock, BarChart3, Settings, MapPin, ArrowRight, X, 
   LayoutDashboard, ListTodo, Users, Trash2, AlertCircle,
   FileSpreadsheet, History, Siren, TimerReset, Ban, CalendarClock,
-  UploadCloud, ImageIcon
+  UploadCloud, ImageIcon, ChevronRight
 } from 'lucide-react';
+import DepartmentSelectModal from '@/components/work-permit/moduls/DepartmentSelectModal';
 
 // --- 类型定义 ---
 type HazardLog = {
@@ -49,6 +50,34 @@ type HazardRecord = {
   verifyTime?: string;
   
   logs?: HazardLog[];
+
+  // ✅ V2 新增字段
+  rectifyRequirement?: string;      // 整改要求
+  requireEmergencyPlan?: boolean;   // 是否要求应急预案
+  emergencyPlanDeadline?: string;   // 应急预案截止日期
+  emergencyPlanContent?: string;    // 应急预案内容
+  emergencyPlanSubmitTime?: string; // 应急预案提交时间
+  ccDepts?: string[];               // 抄送部门
+  ccUsers?: string[];               // 抄送人员
+};
+
+// ✅ V2 新增类型：抄送规则
+type CCRule = {
+  id: string;
+  name: string;
+  riskLevels: ('low' | 'medium' | 'high' | 'major')[];
+  ccDepts: string[];
+  ccUsers: string[];
+  enabled: boolean;
+};
+
+// ✅ V2 新增类型：应急预案规则
+type EmergencyPlanRule = {
+  id: string;
+  name: string;
+  riskLevels: ('high' | 'major')[];
+  daysBeforeDeadline: number;
+  enabled: boolean;
 };
 
 type HazardConfig = { types: string[]; areas: string[]; };
@@ -94,6 +123,13 @@ export default function HiddenDangerPage() {
   // ✅ 新增：控制延期申请卡片的显示
   const [showExtensionForm, setShowExtensionForm] = useState(false);
 
+  // ✅ V2 新增：工作流规则
+  const [ccRules, setCCRules] = useState<CCRule[]>([]);
+  const [emergencyPlanRules, setEmergencyPlanRules] = useState<EmergencyPlanRule[]>([]);
+
+  // ✅ V2 阶段6：部门选择弹窗状态
+  const [showDeptSelectModal, setShowDeptSelectModal] = useState(false);
+
   // 导入 Ref
   const importInputRef = useRef<HTMLInputElement>(null);
   
@@ -105,6 +141,7 @@ export default function HiddenDangerPage() {
     fetchConfig();
     fetchRealUsers();
     fetchStats();
+    fetchWorkflowRules();
   }, []);
 
   const fetchData = async () => {
@@ -138,6 +175,60 @@ export default function HiddenDangerPage() {
              setDepartments(Array.from(new Set(data.map(u => u.department).filter(Boolean))));
          }
      } catch (e) {}
+  };
+
+  // ✅ V2 新增：获取工作流规则
+  const fetchWorkflowRules = async () => {
+      try {
+          const res = await fetch('/api/hazards/workflow');
+          if (res.ok) {
+              const data = await res.json();
+              setCCRules(data.ccRules || []);
+              setEmergencyPlanRules(data.emergencyPlanRules || []);
+          }
+      } catch (e) {
+          console.error('获取工作流规则失败:', e);
+      }
+  };
+
+  // ✅ V2 新增：自动匹配抄送规则
+  const autoMatchCCRules = (riskLevel: string) => {
+      const matchedRules = ccRules.filter(rule => 
+          rule.enabled && rule.riskLevels.includes(riskLevel as any)
+      );
+      
+      const ccDepts: string[] = [];
+      const ccUsers: string[] = [];
+      
+      matchedRules.forEach(rule => {
+          ccDepts.push(...rule.ccDepts);
+          ccUsers.push(...rule.ccUsers);
+      });
+      
+      return {
+          ccDepts: Array.from(new Set(ccDepts)),
+          ccUsers: Array.from(new Set(ccUsers))
+      };
+  };
+
+  // ✅ V2 新增：检查是否需要应急预案
+  const checkEmergencyPlanRequired = (riskLevel: string, deadline: string) => {
+      const matchedRules = emergencyPlanRules.filter(rule =>
+          rule.enabled && rule.riskLevels.includes(riskLevel as any)
+      );
+      
+      if (matchedRules.length === 0) return { required: false };
+      
+      // 计算应急预案截止日期（截止日期前N天）
+      const rectifyDeadline = new Date(deadline);
+      const maxDays = Math.max(...matchedRules.map(r => r.daysBeforeDeadline));
+      const planDeadline = new Date(rectifyDeadline);
+      planDeadline.setDate(planDeadline.getDate() - maxDays);
+      
+      return {
+          required: true,
+          deadline: planDeadline.toISOString().split('T')[0]
+      };
   };
 
   // --- 辅助函数 ---
@@ -287,7 +378,7 @@ export default function HiddenDangerPage() {
   };
 
   // 2. 核心流程处理 (PATCH)
-  const handleProcess = async (action: 'assign' | 'start_rectify' | 'finish_rectify' | 'verify_pass' | 'verify_reject' | 'request_extension' | 'approve_extension') => {
+  const handleProcess = async (action: 'assign' | 'start_rectify' | 'finish_rectify' | 'verify_pass' | 'verify_reject' | 'request_extension' | 'approve_extension' | 'submit_emergency_plan') => {
     if (!selectedHazard) return;
     
     let updates: any = { 
@@ -302,6 +393,10 @@ export default function HiddenDangerPage() {
                 return alert("截止日期不能早于今天");
             }
             const selectedUser = allUsers.find(u => u.id === processData.responsibleId);
+            
+            // ✅ V2：自动匹配抄送规则
+            const ccInfo = autoMatchCCRules(selectedHazard.riskLevel);
+            
             updates = {
                 ...updates,
                 actionName: '指派责任人',
@@ -309,7 +404,13 @@ export default function HiddenDangerPage() {
                 responsibleDept: processData.responsibleDept,
                 responsibleId: processData.responsibleId,
                 responsibleName: selectedUser?.name,
-                deadline: processData.deadline
+                deadline: processData.deadline,
+                // ✅ V2 新增字段
+                rectifyRequirement: processData.rectifyRequirement || selectedHazard.rectifyRequirement,
+                requireEmergencyPlan: processData.requireEmergencyPlan || false,
+                emergencyPlanDeadline: processData.emergencyPlanDeadline,
+                ccDepts: ccInfo.ccDepts,
+                ccUsers: ccInfo.ccUsers
             };
             break;
 
@@ -371,6 +472,16 @@ export default function HiddenDangerPage() {
                 actionName: '驳回重整',
                 status: 'assigned',
                 extensionReason: `验收被驳回: ${processData.rejectReason}`
+            };
+            break;
+        
+        case 'submit_emergency_plan':
+            if (!processData.emergencyPlanContent) return alert("请填写应急预案内容");
+            updates = {
+                ...updates,
+                actionName: '提交应急预案',
+                emergencyPlanContent: processData.emergencyPlanContent,
+                emergencyPlanSubmitTime: new Date().toISOString()
             };
             break;
     }
@@ -577,6 +688,22 @@ export default function HiddenDangerPage() {
                     </div>
                 </div>
             )}
+
+            {/* ✅ V2 阶段5：配置页面 */}
+            {viewMode === 'config' && (
+                <ConfigView 
+                    config={config}
+                    ccRules={ccRules}
+                    emergencyPlanRules={emergencyPlanRules}
+                    departments={departments}
+                    allUsers={allUsers}
+                    onConfigChange={setConfig}
+                    onCCRulesChange={setCCRules}
+                    onEmergencyPlanRulesChange={setEmergencyPlanRules}
+                    onAddConfig={handleAddConfig}
+                    onDeleteConfig={handleDeleteConfig}
+                />
+            )}
         </div>
       </div>
 
@@ -621,11 +748,33 @@ export default function HiddenDangerPage() {
                    <select className="w-full border rounded p-2" onChange={e=>setNewHazardData({...newHazardData, responsibleDept: e.target.value})}><option value="">未知/待定</option>{departments.map(d=><option key={d} value={d}>{d}</option>)}</select>
                 </div>
 
-                <textarea className="w-full border rounded p-2 h-20" placeholder="隐患描述..." onChange={e=>setNewHazardData({...newHazardData, desc: e.target.value})}></textarea>
+                <div>
+                   <label className="block text-sm font-bold text-slate-700 mb-1">隐患描述</label>
+                   <textarea className="w-full border rounded p-2 h-20" placeholder="详细描述发现的隐患..." onChange={e=>setNewHazardData({...newHazardData, desc: e.target.value})}></textarea>
+                </div>
+
+                {/* ✅ V2 新增：整改要求输入 */}
+                <div>
+                   <label className="block text-sm font-bold text-slate-700 mb-1">建议整改要求 (可选)</label>
+                   <textarea className="w-full border rounded p-2 h-16 text-sm" placeholder="例如：更换老化电缆、加装防护栏..." onChange={e=>setNewHazardData({...newHazardData, rectifyRequirement: e.target.value})}></textarea>
+                   <div className="text-xs text-slate-400 mt-1">💡 提示：填写建议的整改措施，可帮助责任人快速理解整改方向</div>
+                </div>
+
                 <button onClick={submitReport} className="w-full bg-red-600 text-white py-2 rounded shadow hover:bg-red-700 font-bold">提交</button>
            </div>
         </div>
       )}
+
+      {/* ✅ V2 阶段6：部门选择弹窗 */}
+      <DepartmentSelectModal
+        isOpen={showDeptSelectModal}
+        onClose={() => setShowDeptSelectModal(false)}
+        onSelect={(deptId, deptName) => {
+          setProcessData({...processData, responsibleDept: deptName, responsibleId: ''});
+          setShowDeptSelectModal(false);
+        }}
+        selectedDeptId={processData.responsibleDept}
+      />
 
       {showDetailModal && selectedHazard && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 md:p-4 backdrop-blur-sm">
@@ -681,23 +830,126 @@ export default function HiddenDangerPage() {
 
                          {selectedHazard.status === 'reported' && hasPerm('assign') && (
                              <div className="space-y-3 p-3 bg-white rounded border shadow-sm">
-                                 <h5 className="font-bold text-sm">指派任务</h5>
+                                 <h5 className="font-bold text-sm text-orange-700">一步指派任务</h5>
+                                 
+                                 {/* ✅ V2 阶段6：使用DepartmentSelectModal替换下拉框 */}
                                  {(() => {
                                      const targetDept = processData.responsibleDept ?? selectedHazard.responsibleDept ?? '';
                                      return (
                                          <>
-                                             <select className="w-full border rounded p-2 text-sm" value={targetDept} onChange={e => setProcessData({...processData, responsibleDept: e.target.value, responsibleId: ''})}>
-                                                 <option value="">请选择部门...</option>{departments.map(d => <option key={d} value={d}>{d}</option>)}
-                                             </select>
-                                             <select className="w-full border rounded p-2 text-sm disabled:bg-slate-200" value={processData.responsibleId || ''} onChange={e => setProcessData({...processData, responsibleId: e.target.value})} disabled={!targetDept}>
-                                                 <option value="">{targetDept ? '请选择人员...' : '请先选择部门'}</option>
-                                                 {allUsers.filter(u => u.department === targetDept).map(u => (<option key={u.id} value={u.id}>{u.name}</option>))}
-                                             </select>
+                                             <div>
+                                                 <label className="block text-xs font-bold text-slate-600 mb-1">责任部门 *</label>
+                                                 <button 
+                                                     onClick={() => setShowDeptSelectModal(true)}
+                                                     className="w-full border rounded p-2 text-sm text-left hover:border-blue-400 hover:bg-blue-50 transition flex items-center justify-between group"
+                                                 >
+                                                     <span className={targetDept ? "text-slate-800" : "text-slate-400"}>
+                                                         {targetDept || "点击选择部门..."}
+                                                     </span>
+                                                     <ChevronRight size={16} className="text-slate-400 group-hover:text-blue-500" />
+                                                 </button>
+                                             </div>
+                                             <div>
+                                                 <label className="block text-xs font-bold text-slate-600 mb-1">责任人 *</label>
+                                                 <select className="w-full border rounded p-2 text-sm disabled:bg-slate-200" value={processData.responsibleId || ''} onChange={e => setProcessData({...processData, responsibleId: e.target.value})} disabled={!targetDept}>
+                                                     <option value="">{targetDept ? '请选择人员...' : '请先选择部门'}</option>
+                                                     {allUsers.filter(u => u.department === targetDept).map(u => (<option key={u.id} value={u.id}>{u.name}</option>))}
+                                                 </select>
+                                             </div>
                                          </>
                                      );
                                  })()}
-                                 <input type="date" className="w-full border rounded p-2 text-sm" onChange={e=>setProcessData({...processData, deadline: e.target.value})} />
-                                 <button onClick={()=>handleProcess('assign')} className="w-full bg-orange-500 text-white py-2 rounded text-sm shadow hover:bg-orange-600">确认指派</button>
+                                 
+                                 {/* 截止日期 */}
+                                 <div>
+                                     <label className="block text-xs font-bold text-slate-600 mb-1">整改截止日期 *</label>
+                                     <input type="date" className="w-full border rounded p-2 text-sm" onChange={e=>{
+                                         setProcessData({...processData, deadline: e.target.value});
+                                         // 自动检查应急预案要求
+                                         if (e.target.value) {
+                                             const planCheck = checkEmergencyPlanRequired(selectedHazard.riskLevel, e.target.value);
+                                             if (planCheck.required) {
+                                                 setProcessData((prev: any) => ({
+                                                     ...prev,
+                                                     deadline: e.target.value,
+                                                     requireEmergencyPlan: true,
+                                                     emergencyPlanDeadline: planCheck.deadline
+                                                 }));
+                                             }
+                                         }
+                                     }} />
+                                 </div>
+                                 
+                                 {/* 整改要求 */}
+                                 <div>
+                                     <label className="block text-xs font-bold text-slate-600 mb-1">整改要求</label>
+                                     <textarea 
+                                         className="w-full border rounded p-2 text-sm h-20" 
+                                         placeholder="详细描述整改措施要求..."
+                                         defaultValue={selectedHazard.rectifyRequirement || ''}
+                                         onChange={e=>setProcessData({...processData, rectifyRequirement: e.target.value})}
+                                     />
+                                     {selectedHazard.rectifyRequirement && (
+                                         <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded mt-1">
+                                             💡 上报人建议：{selectedHazard.rectifyRequirement}
+                                         </div>
+                                     )}
+                                 </div>
+                                 
+                                 {/* 应急预案要求（自动判断） */}
+                                 {processData.requireEmergencyPlan && (
+                                     <div className="bg-red-50 border border-red-200 rounded p-3 space-y-2">
+                                         <div className="flex items-center gap-2 text-red-700 font-bold text-sm">
+                                             <Siren size={16}/>
+                                             <span>需要提交应急预案</span>
+                                         </div>
+                                         <div className="text-xs text-red-600">
+                                             截止日期：{processData.emergencyPlanDeadline}
+                                         </div>
+                                         <div className="text-xs text-slate-600">
+                                             根据规则，{selectedHazard.riskLevel === 'major' ? '重大' : '高'}风险隐患需要在整改前提交应急预案
+                                         </div>
+                                     </div>
+                                 )}
+                                 
+                                 {/* 抄送信息（自动匹配） */}
+                                 {(() => {
+                                     const ccInfo = autoMatchCCRules(selectedHazard.riskLevel);
+                                     if (ccInfo.ccDepts.length > 0 || ccInfo.ccUsers.length > 0) {
+                                         return (
+                                             <div className="bg-blue-50 border border-blue-200 rounded p-3 space-y-2">
+                                                 <div className="font-bold text-sm text-blue-700">自动抄送</div>
+                                                 {ccInfo.ccDepts.length > 0 && (
+                                                     <div className="text-xs">
+                                                         <span className="text-slate-600">部门：</span>
+                                                         <span className="text-blue-700">{ccInfo.ccDepts.join(', ')}</span>
+                                                     </div>
+                                                 )}
+                                                 {ccInfo.ccUsers.length > 0 && (
+                                                     <div className="text-xs">
+                                                         <span className="text-slate-600">人员：</span>
+                                                         <span className="text-blue-700">
+                                                             {ccInfo.ccUsers.map(userId => {
+                                                                 const user = allUsers.find(u => u.id === userId);
+                                                                 return user?.name || userId;
+                                                             }).join(', ')}
+                                                         </span>
+                                                     </div>
+            )}
+
+        </div>
+    );
+}
+                                     return null;
+                                 })()}
+                                 
+                                 <button 
+                                     onClick={()=>handleProcess('assign')} 
+                                     className="w-full bg-orange-500 text-white py-2 rounded text-sm shadow hover:bg-orange-600 font-bold flex items-center justify-center gap-2"
+                                 >
+                                     <CheckCircle size={16}/>
+                                     确认指派
+                                 </button>
                              </div>
                          )}
 
@@ -706,13 +958,71 @@ export default function HiddenDangerPage() {
                                  <div className="bg-orange-50 p-3 rounded border text-sm space-y-1">
                                     <div>责任人: {selectedHazard.responsibleName}</div>
                                     <div className="text-red-600 font-bold">截止: {selectedHazard.deadline}</div>
+                                    {selectedHazard.rectifyRequirement && (
+                                        <div className="text-xs text-slate-600 mt-2 pt-2 border-t">
+                                            <div className="font-bold mb-1">整改要求：</div>
+                                            <div className="bg-white p-2 rounded text-slate-700">{selectedHazard.rectifyRequirement}</div>
+                                        </div>
+                                    )}
                                  </div>
                                  
-                                 {/* ✅ 阶段一：点击开始整改 (仅在 assigned 状态下显示) */}
+                                 {/* ✅ V2 阶段4：应急预案提交 */}
+                                 {selectedHazard.requireEmergencyPlan && !selectedHazard.emergencyPlanContent && (
+                                     <div className="bg-red-50 border border-red-200 rounded p-3 space-y-2">
+                                         <div className="flex items-center gap-2 text-red-700 font-bold text-sm">
+                                             <Siren size={16}/>
+                                             <span>需要提交应急预案</span>
+                                         </div>
+                                         <div className="text-xs text-red-600">
+                                             截止日期：{selectedHazard.emergencyPlanDeadline}
+                                             {new Date(selectedHazard.emergencyPlanDeadline!) < new Date() && (
+                                                 <span className="ml-2 bg-red-600 text-white px-2 py-0.5 rounded animate-pulse">已逾期</span>
+                                             )}
+                                         </div>
+                                         <textarea 
+                                             className="w-full border border-red-300 p-2 text-sm h-24 rounded focus:ring-2 focus:ring-red-200" 
+                                             placeholder="请详细描述应急预案内容，包括应急措施、资源准备、责任分工等..."
+                                             onChange={e=>setProcessData({...processData, emergencyPlanContent:e.target.value})}
+                                         />
+                                         <button 
+                                             onClick={()=>handleProcess('submit_emergency_plan')} 
+                                             className="w-full bg-red-600 text-white py-2 rounded text-sm shadow hover:bg-red-700 font-bold"
+                                         >
+                                             提交应急预案
+                                         </button>
+                                     </div>
+                                 )}
+                                 
+                                 {/* ✅ V2 阶段4：应急预案已提交显示 */}
+                                 {selectedHazard.emergencyPlanContent && (
+                                     <div className="bg-green-50 border border-green-200 rounded p-3 space-y-2">
+                                         <div className="flex items-center gap-2 text-green-700 font-bold text-sm">
+                                             <CheckCircle size={16}/>
+                                             <span>应急预案已提交</span>
+                                         </div>
+                                         <div className="text-xs text-green-600">
+                                             提交时间：{new Date(selectedHazard.emergencyPlanSubmitTime!).toLocaleString()}
+                                         </div>
+                                         <div className="bg-white p-2 rounded text-xs text-slate-700 max-h-32 overflow-y-auto">
+                                             {selectedHazard.emergencyPlanContent}
+                                         </div>
+                                     </div>
+                                 )}
+                                 
+                                 {/* ✅ 阶段一：点击开始整改 (仅在 assigned 状态下显示，且如需应急预案则必须先提交) */}
                                  {selectedHazard.status === 'assigned' && (
-                                     <button onClick={()=>handleProcess('start_rectify')} className="w-full bg-blue-600 text-white py-2 rounded text-sm flex justify-center gap-2 shadow hover:bg-blue-700">
-                                         <TimerReset size={16}/> 开始整改
-                                     </button>
+                                     <>
+                                         {selectedHazard.requireEmergencyPlan && !selectedHazard.emergencyPlanContent ? (
+                                             <div className="bg-slate-100 border border-slate-300 text-slate-500 py-2 rounded text-sm text-center">
+                                                 <AlertCircle size={16} className="inline mr-1"/>
+                                                 请先提交应急预案后才能开始整改
+                                             </div>
+                                         ) : (
+                                             <button onClick={()=>handleProcess('start_rectify')} className="w-full bg-blue-600 text-white py-2 rounded text-sm flex justify-center gap-2 shadow hover:bg-blue-700">
+                                                 <TimerReset size={16}/> 开始整改
+                                             </button>
+                                         )}
+                                     </>
                                  )}
 
                                  {/* ✅ 延期申请逻辑：临期才显示按钮，点击展开表单 */}
@@ -849,4 +1159,462 @@ function NavBtn({ active, icon, label, onClick }: any) {
 }
 function StatCard({ label, value, color }: any) {
     return <div className="bg-white p-3 md:p-4 rounded-xl border shadow-sm"><div className="text-slate-400 text-[10px] md:text-xs mb-1">{label}</div><div className={`text-lg md:text-2xl font-bold ${color}`}>{value}</div></div>
+}
+
+// ✅ V2 阶段5：配置视图组件
+function ConfigView({ 
+    config, 
+    ccRules, 
+    emergencyPlanRules, 
+    departments, 
+    allUsers,
+    onConfigChange,
+    onCCRulesChange,
+    onEmergencyPlanRulesChange,
+    onAddConfig,
+    onDeleteConfig
+}: {
+    config: HazardConfig;
+    ccRules: CCRule[];
+    emergencyPlanRules: EmergencyPlanRule[];
+    departments: string[];
+    allUsers: SimpleUser[];
+    onConfigChange: (config: HazardConfig) => void;
+    onCCRulesChange: (rules: CCRule[]) => void;
+    onEmergencyPlanRulesChange: (rules: EmergencyPlanRule[]) => void;
+    onAddConfig: (key: 'types' | 'areas', value: string) => void;
+    onDeleteConfig: (key: 'types' | 'areas', value: string) => void;
+}) {
+    const [activeTab, setActiveTab] = useState<'basic' | 'cc' | 'plan'>('basic');
+    const [editingCCRule, setEditingCCRule] = useState<CCRule | null>(null);
+    const [editingPlanRule, setEditingPlanRule] = useState<EmergencyPlanRule | null>(null);
+    const [newType, setNewType] = useState('');
+    const [newArea, setNewArea] = useState('');
+
+    // 保存工作流规则到后端
+    const saveWorkflowRules = async () => {
+        try {
+            await fetch('/api/hazards/workflow', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ccRules, emergencyPlanRules })
+            });
+            alert('规则保存成功！');
+        } catch (e) {
+            alert('保存失败，请重试');
+        }
+    };
+
+    // 添加/编辑抄送规则
+    const saveCCRule = () => {
+        if (!editingCCRule) return;
+        
+        const exists = ccRules.find(r => r.id === editingCCRule.id);
+        if (exists) {
+            onCCRulesChange(ccRules.map(r => r.id === editingCCRule.id ? editingCCRule : r));
+        } else {
+            onCCRulesChange([...ccRules, editingCCRule]);
+        }
+        setEditingCCRule(null);
+    };
+
+    // 删除抄送规则
+    const deleteCCRule = (id: string) => {
+        if (confirm('确定删除此规则？')) {
+            onCCRulesChange(ccRules.filter(r => r.id !== id));
+        }
+    };
+
+    // 添加/编辑应急预案规则
+    const savePlanRule = () => {
+        if (!editingPlanRule) return;
+        
+        const exists = emergencyPlanRules.find(r => r.id === editingPlanRule.id);
+        if (exists) {
+            onEmergencyPlanRulesChange(emergencyPlanRules.map(r => r.id === editingPlanRule.id ? editingPlanRule : r));
+        } else {
+            onEmergencyPlanRulesChange([...emergencyPlanRules, editingPlanRule]);
+        }
+        setEditingPlanRule(null);
+    };
+
+    // 删除应急预案规则
+    const deletePlanRule = (id: string) => {
+        if (confirm('确定删除此规则？')) {
+            onEmergencyPlanRulesChange(emergencyPlanRules.filter(r => r.id !== id));
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+            {/* 标签页 */}
+            <div className="bg-white rounded-lg border shadow-sm p-4">
+                <div className="flex gap-2 border-b pb-2">
+                    <button 
+                        onClick={() => setActiveTab('basic')}
+                        className={`px-4 py-2 rounded-t text-sm font-medium transition ${activeTab === 'basic' ? 'bg-red-50 text-red-700 border-b-2 border-red-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                    >
+                        基础配置
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('cc')}
+                        className={`px-4 py-2 rounded-t text-sm font-medium transition ${activeTab === 'cc' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                    >
+                        抄送规则
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('plan')}
+                        className={`px-4 py-2 rounded-t text-sm font-medium transition ${activeTab === 'plan' ? 'bg-orange-50 text-orange-700 border-b-2 border-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                    >
+                        应急预案规则
+                    </button>
+                </div>
+            </div>
+
+            {/* 基础配置 */}
+            {activeTab === 'basic' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-white p-6 rounded-xl border shadow-sm">
+                        <h4 className="font-bold mb-4 text-slate-700">隐患类型配置</h4>
+                        <div className="flex gap-2 mb-4">
+                            <input 
+                                type="text" 
+                                className="flex-1 border rounded p-2 text-sm" 
+                                placeholder="输入新类型..."
+                                value={newType}
+                                onChange={e => setNewType(e.target.value)}
+                                onKeyPress={e => e.key === 'Enter' && (onAddConfig('types', newType), setNewType(''))}
+                            />
+                            <button 
+                                onClick={() => {onAddConfig('types', newType); setNewType('');}}
+                                className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700"
+                            >
+                                添加
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {config.types.map(t => (
+                                <div key={t} className="flex justify-between items-center p-2 bg-slate-50 rounded">
+                                    <span className="text-sm">{t}</span>
+                                    <button onClick={() => onDeleteConfig('types', t)} className="text-red-600 hover:bg-red-50 p-1 rounded">
+                                        <X size={16}/>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-xl border shadow-sm">
+                        <h4 className="font-bold mb-4 text-slate-700">区域配置</h4>
+                        <div className="flex gap-2 mb-4">
+                            <input 
+                                type="text" 
+                                className="flex-1 border rounded p-2 text-sm" 
+                                placeholder="输入新区域..."
+                                value={newArea}
+                                onChange={e => setNewArea(e.target.value)}
+                                onKeyPress={e => e.key === 'Enter' && (onAddConfig('areas', newArea), setNewArea(''))}
+                            />
+                            <button 
+                                onClick={() => {onAddConfig('areas', newArea); setNewArea('');}}
+                                className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700"
+                            >
+                                添加
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {config.areas.map(a => (
+                                <div key={a} className="flex justify-between items-center p-2 bg-slate-50 rounded">
+                                    <span className="text-sm">{a}</span>
+                                    <button onClick={() => onDeleteConfig('areas', a)} className="text-red-600 hover:bg-red-50 p-1 rounded">
+                                        <X size={16}/>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 抄送规则配置 */}
+            {activeTab === 'cc' && (
+                <div className="space-y-4">
+                    <div className="bg-white p-6 rounded-xl border shadow-sm">
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-bold text-slate-700">抄送规则列表</h4>
+                            <button 
+                                onClick={() => setEditingCCRule({ id: Date.now().toString(), name: '', riskLevels: [], ccDepts: [], ccUsers: [], enabled: true })}
+                                className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 flex items-center gap-2"
+                            >
+                                <Plus size={16}/> 新建规则
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-3">
+                            {ccRules.map(rule => (
+                                <div key={rule.id} className="border rounded p-4 hover:bg-slate-50">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="font-bold text-slate-800">{rule.name}</span>
+                                                <span className={`text-xs px-2 py-0.5 rounded ${rule.enabled ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                    {rule.enabled ? '启用' : '禁用'}
+                                                </span>
+                                            </div>
+                                            <div className="text-xs text-slate-600 space-y-1">
+                                                <div>风险等级：{rule.riskLevels.map(l => l === 'major' ? '重大' : l === 'high' ? '高' : l === 'medium' ? '中' : '低').join(', ')}</div>
+                                                {rule.ccDepts.length > 0 && <div>抄送部门：{rule.ccDepts.join(', ')}</div>}
+                                                {rule.ccUsers.length > 0 && <div>抄送人员：{rule.ccUsers.map(id => allUsers.find(u => u.id === id)?.name || id).join(', ')}</div>}
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setEditingCCRule(rule)} className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded text-xs">编辑</button>
+                                            <button onClick={() => deleteCCRule(rule.id)} className="text-red-600 hover:bg-red-50 px-2 py-1 rounded text-xs">删除</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                            {ccRules.length === 0 && (
+                                <div className="text-center text-slate-400 py-8">暂无抄送规则，点击"新建规则"开始配置</div>
+                            )}
+                        </div>
+
+                        <button onClick={saveWorkflowRules} className="w-full mt-4 bg-green-600 text-white py-2 rounded hover:bg-green-700 font-bold">
+                            保存所有规则到服务器
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* 应急预案规则配置 */}
+            {activeTab === 'plan' && (
+                <div className="space-y-4">
+                    <div className="bg-white p-6 rounded-xl border shadow-sm">
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-bold text-slate-700">应急预案规则列表</h4>
+                            <button 
+                                onClick={() => setEditingPlanRule({ id: Date.now().toString(), name: '', riskLevels: ['high'], daysBeforeDeadline: 3, enabled: true })}
+                                className="bg-orange-600 text-white px-4 py-2 rounded text-sm hover:bg-orange-700 flex items-center gap-2"
+                            >
+                                <Plus size={16}/> 新建规则
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-3">
+                            {emergencyPlanRules.map(rule => (
+                                <div key={rule.id} className="border rounded p-4 hover:bg-slate-50">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="font-bold text-slate-800">{rule.name}</span>
+                                                <span className={`text-xs px-2 py-0.5 rounded ${rule.enabled ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                    {rule.enabled ? '启用' : '禁用'}
+                                                </span>
+                                            </div>
+                                            <div className="text-xs text-slate-600 space-y-1">
+                                                <div>适用风险：{rule.riskLevels.map(l => l === 'major' ? '重大' : '高').join(', ')}</div>
+                                                <div>提前天数：整改截止日期前 {rule.daysBeforeDeadline} 天</div>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setEditingPlanRule(rule)} className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded text-xs">编辑</button>
+                                            <button onClick={() => deletePlanRule(rule.id)} className="text-red-600 hover:bg-red-50 px-2 py-1 rounded text-xs">删除</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                            {emergencyPlanRules.length === 0 && (
+                                <div className="text-center text-slate-400 py-8">暂无应急预案规则，点击"新建规则"开始配置</div>
+                            )}
+                        </div>
+
+                        <button onClick={saveWorkflowRules} className="w-full mt-4 bg-green-600 text-white py-2 rounded hover:bg-green-700 font-bold">
+                            保存所有规则到服务器
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* 编辑抄送规则弹窗 */}
+            {editingCCRule && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                        <h3 className="font-bold text-lg mb-4">编辑抄送规则</h3>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold mb-1">规则名称</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full border rounded p-2" 
+                                    value={editingCCRule.name}
+                                    onChange={e => setEditingCCRule({...editingCCRule, name: e.target.value})}
+                                    placeholder="例如：重大隐患抄送安全部"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold mb-1">适用风险等级</label>
+                                <div className="flex gap-2 flex-wrap">
+                                    {(['low', 'medium', 'high', 'major'] as const).map(level => (
+                                        <label key={level} className="flex items-center gap-2 cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={editingCCRule.riskLevels.includes(level)}
+                                                onChange={e => {
+                                                    if (e.target.checked) {
+                                                        setEditingCCRule({...editingCCRule, riskLevels: [...editingCCRule.riskLevels, level]});
+                                                    } else {
+                                                        setEditingCCRule({...editingCCRule, riskLevels: editingCCRule.riskLevels.filter(l => l !== level)});
+                                                    }
+                                                }}
+                                            />
+                                            <span className="text-sm">{level === 'major' ? '重大' : level === 'high' ? '高' : level === 'medium' ? '中' : '低'}风险</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold mb-1">抄送部门</label>
+                                <div className="border rounded p-2 max-h-40 overflow-y-auto space-y-1">
+                                    {departments.map(dept => (
+                                        <label key={dept} className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-50">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={editingCCRule.ccDepts.includes(dept)}
+                                                onChange={e => {
+                                                    if (e.target.checked) {
+                                                        setEditingCCRule({...editingCCRule, ccDepts: [...editingCCRule.ccDepts, dept]});
+                                                    } else {
+                                                        setEditingCCRule({...editingCCRule, ccDepts: editingCCRule.ccDepts.filter(d => d !== dept)});
+                                                    }
+                                                }}
+                                            />
+                                            <span className="text-sm">{dept}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold mb-1">抄送人员</label>
+                                <div className="border rounded p-2 max-h-40 overflow-y-auto space-y-1">
+                                    {allUsers.map(user => (
+                                        <label key={user.id} className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-50">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={editingCCRule.ccUsers.includes(user.id)}
+                                                onChange={e => {
+                                                    if (e.target.checked) {
+                                                        setEditingCCRule({...editingCCRule, ccUsers: [...editingCCRule.ccUsers, user.id]});
+                                                    } else {
+                                                        setEditingCCRule({...editingCCRule, ccUsers: editingCCRule.ccUsers.filter(id => id !== user.id)});
+                                                    }
+                                                }}
+                                            />
+                                            <span className="text-sm">{user.name} ({user.department})</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={editingCCRule.enabled}
+                                        onChange={e => setEditingCCRule({...editingCCRule, enabled: e.target.checked})}
+                                    />
+                                    <span className="text-sm font-bold">启用此规则</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2 mt-6">
+                            <button onClick={() => setEditingCCRule(null)} className="flex-1 border py-2 rounded hover:bg-slate-50">取消</button>
+                            <button onClick={saveCCRule} className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700">保存</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 编辑应急预案规则弹窗 */}
+            {editingPlanRule && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
+                        <h3 className="font-bold text-lg mb-4">编辑应急预案规则</h3>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold mb-1">规则名称</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full border rounded p-2" 
+                                    value={editingPlanRule.name}
+                                    onChange={e => setEditingPlanRule({...editingPlanRule, name: e.target.value})}
+                                    placeholder="例如：高风险隐患需提交应急预案"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold mb-1">适用风险等级</label>
+                                <div className="flex gap-2">
+                                    {(['high', 'major'] as const).map(level => (
+                                        <label key={level} className="flex items-center gap-2 cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={editingPlanRule.riskLevels.includes(level)}
+                                                onChange={e => {
+                                                    if (e.target.checked) {
+                                                        setEditingPlanRule({...editingPlanRule, riskLevels: [...editingPlanRule.riskLevels, level]});
+                                                    } else {
+                                                        setEditingPlanRule({...editingPlanRule, riskLevels: editingPlanRule.riskLevels.filter(l => l !== level)});
+                                                    }
+                                                }}
+                                            />
+                                            <span className="text-sm">{level === 'major' ? '重大' : '高'}风险</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold mb-1">应急预案截止时间</label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm text-slate-600">整改截止日期前</span>
+                                    <input 
+                                        type="number" 
+                                        className="w-20 border rounded p-2 text-center" 
+                                        value={editingPlanRule.daysBeforeDeadline}
+                                        onChange={e => setEditingPlanRule({...editingPlanRule, daysBeforeDeadline: parseInt(e.target.value) || 0})}
+                                        min="1"
+                                        max="30"
+                                    />
+                                    <span className="text-sm text-slate-600">天</span>
+                                </div>
+                                <div className="text-xs text-slate-400 mt-1">例如：设置为3天，则应急预案需要在整改截止日期前3天提交</div>
+                            </div>
+
+                            <div>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={editingPlanRule.enabled}
+                                        onChange={e => setEditingPlanRule({...editingPlanRule, enabled: e.target.checked})}
+                                    />
+                                    <span className="text-sm font-bold">启用此规则</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2 mt-6">
+                            <button onClick={() => setEditingPlanRule(null)} className="flex-1 border py-2 rounded hover:bg-slate-50">取消</button>
+                            <button onClick={savePlanRule} className="flex-1 bg-orange-600 text-white py-2 rounded hover:bg-orange-700">保存</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 }

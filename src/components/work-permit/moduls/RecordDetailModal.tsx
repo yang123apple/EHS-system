@@ -111,16 +111,7 @@ export default function RecordDetailModal({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 预解析表单数据和模板解析字段，供找人策略使用
-  const recordData = useMemo(() => {
-    try {
-      return record.dataJson ? JSON.parse(record.dataJson) : {};
-    } catch (e) {
-      console.error("解析 dataJson 失败", e);
-      return {};
-    }
-  }, [record.dataJson]);
-
+  // 预解析模板解析字段
   const parsedFields = useMemo(() => {
     if (!record.template?.parsedFields) return [] as any[];
     try {
@@ -130,6 +121,45 @@ export default function RecordDetailModal({
       return [] as any[];
     }
   }, [record.template?.parsedFields, record.template?.id]);
+
+  // 预解析表单数据，供找人策略使用
+  const recordData = useMemo(() => {
+    try {
+      if (!record.dataJson) return {};
+      
+      // 🔴 方案A：多层解析，防止 dataJson 被双重字符串化
+      let data = record.dataJson;
+      while (typeof data === 'string') {
+        data = JSON.parse(data);
+      }
+
+      // 🔴 如果是数组，利用 parsedFields 重建对象
+      if (Array.isArray(data)) {
+        console.warn("⚠️ 详情页：检测到数组格式，正在利用 parsedFields 重建对象");
+        const obj: any = {};
+        parsedFields.forEach((f, idx) => {
+          if (f.cellKey && data[idx] !== undefined) {
+            obj[f.cellKey] = data[idx];
+          }
+        });
+        console.log("📊 [RecordDetail] 数组重建为对象后:", obj);
+        return obj;
+      }
+      
+      console.log("📊 [RecordDetail] 解析的 recordData:", data);
+      console.log("📊 [RecordDetail] recordData 键列表:", Object.keys(data));
+      console.log("📊 [RecordDetail] recordData 类型检查:", {
+        isArray: Array.isArray(data),
+        isObject: typeof data === 'object',
+        keys: Object.keys(data).slice(0, 5)
+      });
+      
+      return data;
+    } catch (e) {
+      console.error("解析 dataJson 失败", e);
+      return {};
+    }
+  }, [record.dataJson, parsedFields]);
 
   // 🔵 V3.4 Section点击处理
   const handleSectionClick = (cellKey: string, fieldName: string) => {
@@ -273,13 +303,9 @@ export default function RecordDetailModal({
         );
 
         if (!field?.cellKey) continue;
-        const pos = field.cellKey.match(/^R(\d+)C(\d+)$/);
-        if (!pos) continue;
-
-        const r0 = Number(pos[1]) - 1;
-        const c0 = Number(pos[2]) - 1;
-        const key = `${r0}-${c0}`;
-        const fieldValue = String(recordData[key] ?? '').trim();
+        // 🟢 统一使用 cellKey 读取数据
+        const key = field.cellKey;
+        const fieldValue = String(recordData[key] ?? recordData[`${Number(key.match(/R(\d+)/)?.[1] || 1) - 1}-${Number(key.match(/C(\d+)/)?.[1] || 1) - 1}`] ?? '').trim();
         const hit = fieldValue && fieldValue.includes(match.containsText);
 
         console.log('🔍 [调试-文本匹配]', {
@@ -324,13 +350,9 @@ export default function RecordDetailModal({
         );
 
         if (!field?.cellKey) continue;
-        const pos = field.cellKey.match(/^R(\d+)C(\d+)$/);
-        if (!pos) continue;
-
-        const r0 = Number(pos[1]) - 1;
-        const c0 = Number(pos[2]) - 1;
-        const key = `${r0}-${c0}`;
-        const rawCell = recordData[key];
+        // 🟢 统一使用 cellKey 读取数据
+        const key = field.cellKey;
+        const rawCell = recordData[key] ?? recordData[`${Number(key.match(/R(\d+)/)?.[1] || 1) - 1}-${Number(key.match(/C(\d+)/)?.[1] || 1) - 1}`];
         const rawValue = String(rawCell ?? '');
         const fieldValue = rawValue.trim();
         const normalized = fieldValue.replace(/\s+/g, '');
@@ -843,48 +865,32 @@ export default function RecordDetailModal({
             
             {/* 根据屏幕尺寸和配置决定渲染哪个视图 */}
             {(() => {
-              // 使用完整模板信息
-              const templateToUse = fullTemplate || record.template;
+              // 🟢 修复：检查是否应该显示移动端视图（打印时强制使用桌面端样式）
+              const shouldShowMobile = isMobile && mobileFormConfigForRenderer && !window.matchMedia('print').matches;
               
-              // 检查是否应该显示移动端视图（打印时强制使用桌面端样式）
-              const shouldShowMobile = isMobile && templateToUse?.mobileFormConfig && !window.matchMedia('print').matches;
+              console.log('🔍 [RecordDetail] 渲染决策:', {
+                isMobile,
+                hasMobileConfig: !!mobileFormConfigForRenderer,
+                isPrinting: window.matchMedia('print').matches,
+                shouldShowMobile,
+                fullTemplateId: fullTemplate?.id,
+                recordTemplateId: record.template?.id
+              });
               
               if (shouldShowMobile) {
-                let mobileConfig: any = null;
-                try {
-                  mobileConfig = templateToUse.mobileFormConfig 
-                    ? JSON.parse(templateToUse.mobileFormConfig as string)
-                    : null;
-                  
-                  console.log('📱 解析 mobileFormConfig:', {
-                    raw: templateToUse.mobileFormConfig?.substring(0, 200),
-                    parsed: mobileConfig,
-                    hasGroups: !!mobileConfig?.groups,
-                    groupsIsArray: Array.isArray(mobileConfig?.groups),
-                    groupsLength: mobileConfig?.groups?.length
-                  });
-                } catch (e) {
-                  console.error('❌ 解析 mobileFormConfig 失败:', e);
-                }
-                
-              // 🟢 使用统一的 MobileFormRenderer 渲染（V3.6）
-                if (mobileFormConfigForRenderer) {
-                  console.log('✅ 使用 MobileFormRenderer 渲染移动端表单');
-                  return (
-                    <div className="relative z-10">
-                      <MobileFormRenderer
-                        config={mobileFormConfigForRenderer}
-                        parsedFields={parsedFields}
-                        title={mobileFormConfigForRenderer.title}
-                        code={record.code}
-                        formData={recordData}
-                        mode="readonly"
-                      />
-                    </div>
-                  );
-                } else {
-                  console.log('⚠️ 无有效的移动端配置，降级到桌面端视图');
-                }
+                console.log('✅ 使用 MobileFormRenderer 渲染移动端表单');
+                return (
+                  <div className="relative z-10">
+                    <MobileFormRenderer
+                      config={mobileFormConfigForRenderer}
+                      parsedFields={parsedFields}
+                      title={mobileFormConfigForRenderer.title}
+                      code={record.code}
+                      formData={recordData}
+                      mode="readonly"
+                    />
+                  </div>
+                );
               }
               
               // 否则显示桌面端视图

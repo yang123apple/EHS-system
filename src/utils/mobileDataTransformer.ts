@@ -2,7 +2,7 @@ import { ParsedField } from '@/types/work-permit';
 
 /**
  * 移动端数据转换器
- * 确保桌面端 ExcelGrid 的 formData (格式: {"4-1": "内容"}) 与移动端标准 JSON 格式互通
+ * 统一使用 cellKey (格式: "R1C1") 作为全系统唯一数据标识
  */
 
 export interface MobileFieldData {
@@ -11,8 +11,8 @@ export interface MobileFieldData {
 }
 
 /**
- * 将 ExcelGrid 的原始数据 (r-c 格式) 转换为移动端易读的对象格式
- * @param formData - 桌面端表单数据 {"4-1": "内容", "4-1-inlines": {...}}
+ * 将 ExcelGrid 的原始数据转换为移动端格式的对象
+ * @param formData - 表单数据 {"R1C1": "内容"}
  * @param parsedFields - 解析的字段信息
  * @returns 移动端格式的数据对象
  */
@@ -23,27 +23,23 @@ export const transformToMobileData = (
   const mobileData: Record<string, MobileFieldData> = {};
 
   parsedFields.forEach(field => {
-    // 根据 cellKey (如 R5C2) 转换回坐标 4-1
-    const match = field.cellKey.match(/R(\d+)C(\d+)/);
-    if (match) {
-      const r = parseInt(match[1]) - 1;
-      const c = parseInt(match[2]) - 1;
-      const key = `${r}-${c}`;
-      
-      // 存储数据，同时保留 field 信息用于渲染
-      mobileData[field.fieldName] = {
-        value: formData[key] || '',
+    // 🟢 统一使用 cellKey (如 R5C2) 作为读取 Key
+    const key = field.cellKey;
+    if (!key) return;
+    
+    // 存储数据，同时保留 field 信息用于渲染
+    mobileData[field.fieldName] = {
+      value: formData[key] || '',
+      fieldInfo: field
+    };
+
+    // 如果有内联输入框数据 (保持 R1C1 风格)
+    const inlinesKey = `${key}-inlines`;
+    if (formData[inlinesKey]) {
+      mobileData[`${field.fieldName}_inlines`] = {
+        value: formData[inlinesKey],
         fieldInfo: field
       };
-
-      // 如果有内联输入框数据，也一并转换
-      const inlinesKey = `${r}-${c}-inlines`;
-      if (formData[inlinesKey]) {
-        mobileData[`${field.fieldName}_inlines`] = {
-          value: formData[inlinesKey],
-          fieldInfo: field
-        };
-      }
     }
   });
 
@@ -51,12 +47,12 @@ export const transformToMobileData = (
 };
 
 /**
- * 将移动端修改后的数据反向写回桌面端 formData
+ * 将移动端修改后的数据反向写回 formData
  * @param mobileFieldName - 移动端字段名
  * @param newValue - 新值
  * @param parsedFields - 解析的字段信息
- * @param currentFormData - 当前的桌面端表单数据
- * @returns 更新后的桌面端表单数据
+ * @param currentFormData - 当前的表单数据
+ * @returns 更新后的表单数据
  */
 export const syncToExcelData = (
   mobileFieldName: string,
@@ -67,12 +63,11 @@ export const syncToExcelData = (
   const field = parsedFields.find(f => f.fieldName === mobileFieldName);
   if (!field) return currentFormData;
 
-  const match = field.cellKey.match(/R(\d+)C(\d+)/);
-  if (match) {
-    const r = parseInt(match[1]) - 1;
-    const c = parseInt(match[2]) - 1;
-    return { ...currentFormData, [`${r}-${c}`]: newValue };
+  // 🟢 统一写回 cellKey (如 R5C2)
+  if (field.cellKey) {
+    return { ...currentFormData, [field.cellKey]: newValue };
   }
+  
   return currentFormData;
 };
 
@@ -82,7 +77,6 @@ export const syncToExcelData = (
  * @returns 分组后的字段数组
  */
 export const groupParsedFields = (parsedFields: ParsedField[]) => {
-  // 如果字段本身有 group 属性，使用该属性分组
   const hasGroupInfo = parsedFields.some(f => f.group);
   
   if (hasGroupInfo) {
@@ -97,7 +91,6 @@ export const groupParsedFields = (parsedFields: ParsedField[]) => {
     return Array.from(groups.entries()).map(([title, fields]) => ({ title, fields }));
   }
 
-  // 否则，按字段类型自动分组
   const groups: { title: string; fields: ParsedField[] }[] = [];
   const signatureFields: ParsedField[] = [];
   const regularFields: ParsedField[] = [];
@@ -134,7 +127,6 @@ export const groupParsedFields = (parsedFields: ParsedField[]) => {
 export const extractOptionsFromCell = (cellValue: string): string[] => {
   if (!cellValue || typeof cellValue !== 'string') return [];
   
-  // 移除勾选标记，提取纯文本选项
   const options = cellValue
     .split(/[□☑]/)
     .filter(Boolean)

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { Calendar, User, Building, ChevronRight, Hash, AlignLeft, CheckSquare, List, FileText, Users, Building2, Smartphone } from 'lucide-react';
 
 export interface MobileFormGroup {
@@ -83,7 +83,7 @@ const getGroupIcon = (title: string) => {
   return <List size={16} />;
 };
 
-export default function MobileFormRenderer(props: MobileFormRendererProps) {
+const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
   const {
     config,
     parsedFields = [],
@@ -101,16 +101,90 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
   } = props;
 
   // 🆕 状态锁：处理中文输入法闪烁和焦点丢失
-  const isComposing = React.useRef(false);
-  const lastScrollY = React.useRef(0);
-  const containerRef = React.useRef<HTMLDivElement>(null);
+  const isComposing = useRef(false);
+  const lastScrollY = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  // 🟢 修复问题3：输入跳动
+  const activeInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const isUserScrolling = useRef(false);
 
-  // 🆕 恢复滚动位置
-  React.useLayoutEffect(() => {
-    if (lastScrollY.current > 0) {
-      window.scrollTo(0, lastScrollY.current);
-    }
-  });
+  // 🟢 监听用户主动滚动
+  useEffect(() => {
+    let scrollTimeout: NodeJS.Timeout;
+    
+    const handleScroll = () => {
+      isUserScrolling.current = true;
+      clearTimeout(scrollTimeout);
+      
+      scrollTimeout = setTimeout(() => {
+        isUserScrolling.current = false;
+      }, 150);
+    };
+    
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
+  }, []);
+
+  // 🟢 智能恢复滚动位置 - 已移除
+  // 移除原因：在移动端，手动干预滚动会与系统软键盘的 scrollIntoView 冲突，导致点击输入框时页面跳动。
+
+  // 🆕 预计算所有分组的字段，避免在渲染路径中实时计算导致子组件重挂载
+  const memoizedGroups = useMemo(() => {
+    if (!config || !config.groups) return [];
+    
+    return config.groups.map((group: any, groupIndex: number) => {
+      const groupTitle = group.title || group.name || `分组 ${groupIndex + 1}`;
+      const rawKeys = group.fieldKeys || group.fields || group.keys || [];
+      const sourceFields = (config.fields && config.fields.length > 0) ? config.fields : parsedFields;
+      
+      let groupFields: any[] = [];
+      
+      if (Array.isArray(rawKeys) && rawKeys.length > 0) {
+        groupFields = rawKeys.map((keyOrObj: any) => {
+          const fieldKey = typeof keyOrObj === 'string' ? keyOrObj : (keyOrObj.cellKey || keyOrObj.fieldKey);
+          if (!fieldKey) return null;
+
+          return sourceFields.find((f: any) => 
+            f.id === fieldKey || 
+            f.cellKey === fieldKey || 
+            f.fieldKey === fieldKey ||
+            f.fieldName === fieldKey ||
+            f.label === fieldKey ||
+            (typeof fieldKey === 'string' && f.fieldName && f.fieldName.includes(fieldKey))
+          );
+        }).filter(Boolean);
+      }
+      
+      if (groupFields.length === 0) {
+        groupFields = sourceFields.filter((f: any) => {
+          const fGroup = f.group || f.groupName;
+          return fGroup && (
+            fGroup === groupTitle || 
+            fGroup === group.name || 
+            groupTitle.includes(fGroup) ||
+            fGroup.includes(groupTitle)
+          );
+        });
+      }
+
+      if (groupFields.length === 0 && (groupTitle.includes('审批') || groupTitle.includes('意见'))) {
+        groupFields = sourceFields.filter((f: any) => 
+          f.fieldType === 'signature' || 
+          (f.fieldName && (f.fieldName.includes('意见') || f.fieldName.includes('审批') || f.fieldName.includes('签署')))
+        );
+      }
+      
+      return {
+        ...group,
+        title: groupTitle,
+        fields: groupFields
+      };
+    });
+  }, [config, parsedFields]);
   
   // 优雅处理 config 为空的情况
   if (!config || !config.groups) {
@@ -127,48 +201,63 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
     );
   }
 
+  // 🆕 统一 Key 获取逻辑：优先使用 field.id (编辑器中已设为 cellKey)
+  const getFieldKey = useCallback((field: any) => {
+    // 🟢 核心修复：优先使用 field.id，回退到 cellKey
+    // 编辑器中已将 id 设置为 cellKey，确保一致性
+    return field.id || field.cellKey || "";
+  }, []);
+
   // 🆕 使用 useCallback 稳定函数引用，解决输入一个字符就失去焦点的问题
-  const handleFieldChange = React.useCallback((field: any, value: any) => {
+  const handleFieldChange = useCallback((field: any, value: any) => {
     if (!onDataChange) return;
-    
-    // 获取字段的输入key
-    let inputKey: string;
-    
-    if (field.rowIndex !== undefined && field.colIndex !== undefined) {
-      inputKey = `${field.rowIndex}-${field.colIndex}`;
-    } else {
-      const fieldKeyString = field.cellKey || field.fieldKey || "";
-      const match = fieldKeyString.match(/R(\d+)C(\d+)/);
-      if (match) {
-        inputKey = `${parseInt(match[1]) - 1}-${parseInt(match[2]) - 1}`;
-      } else {
-        inputKey = fieldKeyString;
+    const inputKey = getFieldKey(field);
+    if (inputKey) onDataChange(inputKey, value);
+  }, [onDataChange, getFieldKey]);
+
+  // 🟢 处理输入框获取焦点
+  const handleInputFocus = useCallback((e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    activeInputRef.current = e.target as any;
+    // 🆕 使用原生 scrollIntoView 让浏览器处理对焦
+    setTimeout(() => {
+      if (activeInputRef.current) {
+        activeInputRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
-    }
-    
-    // 记录滚动位置
-    lastScrollY.current = window.scrollY;
-    onDataChange(inputKey, value);
-  }, [onDataChange]);
+    }, 300);
+  }, []);
+
+  // 🟢 处理输入框失去焦点
+  const handleInputBlur = useCallback(() => {
+    activeInputRef.current = null;
+  }, []);
 
   // 获取字段当前值
-  const getFieldValue = React.useCallback((field: any): any => {
-    let inputKey: string;
+  const getFieldValue = useCallback((field: any): any => {
+    const inputKey = getFieldKey(field);
     
-    if (field.rowIndex !== undefined && field.colIndex !== undefined) {
-      inputKey = `${field.rowIndex}-${field.colIndex}`;
-    } else {
-      const fieldKeyString = field.cellKey || field.fieldKey || "";
-      const match = fieldKeyString.match(/R(\d+)C(\d+)/);
-      if (match) {
-        inputKey = `${parseInt(match[1]) - 1}-${parseInt(match[2]) - 1}`;
-      } else {
-        inputKey = fieldKeyString;
+    // 🔴 方案B：如果 formData 还是字符串，尝试自愈
+    let localData = formData;
+    if (typeof localData === 'string') {
+      console.warn("⚠️ [Renderer] 检测到 formData 是字符串，尝试自愈解析");
+      try { 
+        localData = JSON.parse(localData); 
+      } catch(e) { 
+        console.error("❌ [Renderer] formData 字符串解析失败:", e);
+        return ''; 
       }
     }
+
+    const value = localData[inputKey];
     
-    return formData[inputKey] || '';
-  }, [formData]);
+    console.log("🔍 [Renderer] 最终读取结果:", { 
+      fieldName: field.fieldName || field.label, 
+      inputKey, 
+      value: value || '空',
+      dataType: typeof localData
+    });
+    
+    return value || '';
+  }, [formData, getFieldKey]);
 
   // 🟢 统一的字段值渲染函数（只读模式）
   const defaultRenderFieldValue = (field: any, value: any) => {
@@ -203,8 +292,8 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
     }
   };
 
-  // 🟢 统一的字段渲染函数
-  const renderField = (field: any, groupIndex: number, fieldIndex: number) => {
+  // 🟢 统一的字段渲染函数 - 使用 useCallback 稳定引用，防止输入框闪烁
+  const renderField = useCallback((field: any, groupIndex: number, fieldIndex: number) => {
     const currentValue = getFieldValue(field);
     const isRequired = field.required === true;
     const label = field.fieldName || field.label || '请填写';
@@ -214,24 +303,19 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
     const isPreview = mode === 'preview';
     const fieldKey = field.cellKey || field.fieldKey || `${groupIndex}-${fieldIndex}`;
     
-    // 处理预览模式下的点击
     const handleClick = () => {
       if (isPreview && props.onFieldClick) {
         props.onFieldClick(field);
       }
     };
 
-    // 🟢 对于只读模式，使用统一的样式渲染
+    // 1. 只读模式渲染
     if (isReadonly) {
       const isInlineField = !['textarea', 'match', 'signature'].includes(fieldType);
       const renderValue = renderFieldValue ? renderFieldValue(field, currentValue) : defaultRenderFieldValue(field, currentValue);
       
       return (
-        <div 
-          key={fieldKey} 
-          onClick={handleClick}
-          className={`border-b border-slate-50 py-3.5 last:border-0 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}
-        >
+        <div onClick={handleClick} className={`border-b border-slate-50 py-3.5 last:border-0 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}>
           {isInlineField ? (
             <div className="flex items-start gap-3">
               <label className="text-[13px] font-medium text-slate-500 flex items-center gap-2 shrink-0 pt-0.5 min-w-[90px] max-w-[120px]">
@@ -240,9 +324,7 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
                 {isRequired && <span className="text-red-500 -ml-1">*</span>}
               </label>
               <div className="flex-1 min-w-0 text-right">
-                <div className="text-[14px] text-slate-800 break-words overflow-wrap-anywhere whitespace-normal font-medium">
-                  {renderValue}
-                </div>
+                <div className="text-[14px] text-slate-800 break-words overflow-wrap-anywhere whitespace-normal font-medium">{renderValue}</div>
               </div>
             </div>
           ) : (
@@ -253,9 +335,7 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
                 {isRequired && <span className="text-red-500 -ml-1">*</span>}
               </label>
               <div className="bg-slate-50/50 rounded-lg px-3 py-2.5 border border-slate-100/50">
-                <div className="text-[14px] text-slate-800 break-words whitespace-pre-wrap overflow-wrap-anywhere leading-relaxed">
-                  {renderValue}
-                </div>
+                <div className="text-[14px] text-slate-800 break-words whitespace-pre-wrap overflow-wrap-anywhere leading-relaxed">{renderValue}</div>
               </div>
             </>
           )}
@@ -263,32 +343,51 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
       );
     }
 
+    // 2. 编辑模式 - 特殊大字段 (Textarea, Match, Signature)
     if (fieldType === 'textarea' || fieldType === 'match' || fieldType === 'signature' || (field.hint && field.hint.includes('____'))) {
-      if (fieldType === 'textarea' || fieldType === 'signature') {
+      // 🟢 Signature 字段特殊处理：编辑模式显示占位符（与桌面端一致）
+      if (fieldType === 'signature') {
+        const approverHint = field.label || '签核人';
+        const display = currentValue;
         return (
-          <div 
-            key={fieldKey} 
-            onClick={handleClick}
-            className={`py-3 border-b border-slate-100 last:border-0 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}
-          >
+          <div onClick={handleClick} className={`py-3 border-b border-slate-100 last:border-0 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
+              {getFieldIcon(fieldType)}
+              <span className="break-words">{label}</span>
+              {isRequired && <span className="text-red-500 ml-0.5">*</span>}
+            </label>
+            <div className="w-full p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm flex flex-col items-center justify-center min-h-[60px] text-amber-700 italic select-none">
+              {display ? (
+                <span className="whitespace-pre-line text-slate-800 not-italic text-center">{display}</span>
+              ) : (
+                <>
+                  <span className="text-center">待 {approverHint} 签核</span>
+                  <span className="text-[10px] text-amber-500 mt-1 text-center">签核后自动写入意见/签名/日期</span>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      }
+      
+      // Textarea 字段
+      if (fieldType === 'textarea') {
+        return (
+          <div onClick={handleClick} className={`py-3 border-b border-slate-100 last:border-0 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}>
             <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
               {getFieldIcon(fieldType)}
               <span className="break-words">{label}</span>
               {isRequired && <span className="text-red-500 ml-0.5">*</span>}
             </label>
             <textarea
-              defaultValue={currentValue}
-              onBlur={(e) => handleFieldChange(field, e.target.value)}
-              onCompositionStart={() => { isComposing.current = true; }}
-              onCompositionEnd={(e: any) => { 
-                isComposing.current = false;
-                handleFieldChange(field, e.target.value);
-              }}
-              rows={fieldType === 'signature' ? 2 : 3}
+              value={currentValue}
+              onChange={(e) => handleFieldChange(field, e.target.value)}
+              onFocus={handleInputFocus}
+              onBlur={handleInputBlur}
+              rows={3}
               className="w-full p-3 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all resize-none shadow-sm"
               placeholder={field.hint || `请输入${label}...`}
               disabled={isDisabled}
-              style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
             />
           </div>
         );
@@ -296,37 +395,26 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
       if (fieldType === 'match') {
         const matchOptions = field.options || [];
         const selectedOptions = currentValue ? (Array.isArray(currentValue) ? currentValue : currentValue.split(',').filter(Boolean)) : [];
-        const toggleOption = (opt: string, e: React.MouseEvent) => {
-          e.preventDefault();
-          if (isDisabled) return;
-          const newSelected = selectedOptions.includes(opt)
-            ? selectedOptions.filter((o: string) => o !== opt)
-            : [...selectedOptions, opt];
-          handleFieldChange(field, newSelected.join(','));
-        };
         return (
-          <div 
-            key={fieldKey} 
-            onClick={handleClick}
-            className={`py-3 border-b border-slate-100 last:border-0 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}
-          >
+          <div onClick={handleClick} className={`py-3 border-b border-slate-100 last:border-0 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}>
             <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
               {getFieldIcon(fieldType)}
               <span className="break-words">{label}</span>
               {isRequired && <span className="text-red-500 ml-0.5">*</span>}
             </label>
             <div className="flex flex-wrap gap-2">
-              {matchOptions.map((opt: string, idx: number) => (
+              {matchOptions.map((opt: string) => (
                 <button
                   key={opt}
                   type="button"
-                  onClick={(e) => toggleOption(opt, e)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (isDisabled) return;
+                    const newSelected = selectedOptions.includes(opt) ? selectedOptions.filter((o: string) => o !== opt) : [...selectedOptions, opt];
+                    handleFieldChange(field, newSelected.join(','));
+                  }}
                   disabled={isDisabled}
-                  className={`flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-all border ${
-                    selectedOptions.includes(opt) 
-                      ? 'bg-blue-500 text-white border-blue-600 shadow-sm' 
-                      : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                  }`}
+                  className={`flex items-center gap-2 px-3 py-2 rounded transition-all border ${selectedOptions.includes(opt) ? 'bg-blue-500 text-white border-blue-600 shadow-sm' : 'bg-slate-100 text-slate-700 border-slate-200'}`}
                 >
                   <div className={`w-4 h-4 rounded-sm border flex items-center justify-center ${selectedOptions.includes(opt) ? 'bg-white border-white' : 'bg-white border-slate-300'}`}>
                     {selectedOptions.includes(opt) && <CheckSquare size={12} className="text-blue-500" />}
@@ -340,211 +428,135 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
       }
     }
 
-    const FieldWrapper = ({ children }: { children: React.ReactNode }) => (
-      <div 
-        key={fieldKey} 
-        onClick={handleClick}
-        className={`flex items-start justify-between border-b border-slate-50 py-4 last:border-0 gap-4 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}
-      >
+    // 3. 编辑模式 - 标准行字段 (Text, Select, Date, Department)
+    return (
+      <div onClick={handleClick} className={`flex items-start justify-between border-b border-slate-50 py-4 last:border-0 gap-4 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}>
         <label className="flex items-center gap-2 text-[13px] font-medium text-slate-500 min-w-[90px] max-w-[140px] shrink-0 pt-1">
           {getFieldIcon(fieldType)}
           <span className="whitespace-normal break-words leading-tight">{label}</span>
           {isRequired && <span className="text-red-500 -ml-1">*</span>}
         </label>
         <div className="flex-1 flex justify-end min-w-0">
-          {children}
+          {(() => {
+            switch (fieldType) {
+              case 'text':
+              case 'number':
+              case 'user':
+              case 'personnel':
+              case 'personal':
+                return (
+                  <input
+                    type={fieldType === 'number' ? 'number' : 'text'}
+                    value={currentValue}
+                    onChange={(e) => handleFieldChange(field, e.target.value)}
+                    onFocus={handleInputFocus}
+                    onBlur={handleInputBlur}
+                    disabled={isDisabled}
+                    placeholder="填写"
+                    className="w-full text-right bg-transparent border-b border-dashed border-slate-300 outline-none text-sm text-slate-800 placeholder:text-slate-300 focus:border-blue-400 px-2 py-1"
+                  />
+                );
+              case 'select':
+                return (
+                  <div className="relative flex items-center w-full justify-end">
+                    <select
+                      value={currentValue}
+                      onChange={(e) => handleFieldChange(field, e.target.value)}
+                      onFocus={handleInputFocus}
+                      onBlur={handleInputBlur}
+                      disabled={isDisabled}
+                      className="appearance-none bg-transparent pr-6 text-right outline-none text-sm text-slate-800 border-b border-dashed border-slate-300 focus:border-blue-400 px-2 py-1 w-full max-w-[200px]"
+                    >
+                      <option value="">选择</option>
+                      {field.options?.map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
+                    </select>
+                    <ChevronRight size={14} className="text-slate-400 absolute right-0 pointer-events-none" />
+                  </div>
+                );
+              case 'date':
+                return (
+                  <input
+                    type="date"
+                    value={currentValue}
+                    onChange={(e) => handleFieldChange(field, e.target.value)}
+                    onFocus={handleInputFocus}
+                    onBlur={handleInputBlur}
+                    disabled={isDisabled}
+                    className="bg-transparent text-right outline-none text-sm text-slate-800 border-b border-dashed border-slate-300 focus:border-blue-400 px-2 py-1"
+                  />
+                );
+              case 'option':
+                const useSwitch = field.options?.length === 2 && ((field.options.includes('是') && field.options.includes('否')) || (field.options.includes('通过') && field.options.includes('不通过')));
+                if (useSwitch) {
+                  const positiveOpt = field.options.find((o: string) => ['是', '通过'].includes(o));
+                  const negativeOpt = field.options.find((o: string) => ['否', '不通过'].includes(o));
+                  const isActive = currentValue === positiveOpt;
+                  return (
+                    <div className="flex items-center">
+                      <div 
+                        onClick={() => !isDisabled && handleFieldChange(field, isActive ? negativeOpt : positiveOpt)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${isActive ? 'bg-blue-500' : 'bg-slate-200'} ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ease-in-out ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </div>
+                      <span className="ml-2 text-xs text-slate-500 min-w-[30px]">{currentValue || '未选'}</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="flex flex-wrap gap-1 justify-end max-w-full">
+                    {field.options?.map((opt: string, idx: number) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); if (!isDisabled) handleFieldChange(field, opt); }}
+                        className={`px-3 py-1.5 rounded text-xs transition-all border ${currentValue === opt ? 'bg-blue-500 text-white border-blue-600 shadow-sm font-medium' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+                        disabled={isDisabled}
+                      >{opt}</button>
+                    ))}
+                  </div>
+                );
+              case 'department':
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const inputKey = getFieldKey(field);
+                      console.log("🟢 [Mobile] 点击部门字段:", { inputKey, label, isDisabled });
+                      if (!isDisabled && onDepartmentClick && inputKey) {
+                        onDepartmentClick(inputKey, label);
+                      }
+                    }}
+                    className="flex items-center gap-1 text-sm text-slate-800 hover:text-blue-600 transition-colors py-1"
+                    disabled={isDisabled}
+                  >
+                    <span className={`break-words text-right max-w-[150px] ${currentValue ? 'text-slate-800' : 'text-slate-300'}`}>{currentValue || '点击选择部门'}</span>
+                    <ChevronRight size={16} className="text-slate-400 shrink-0" />
+                  </button>
+                );
+              default:
+                return (
+                  <input
+                    type="text"
+                    value={currentValue}
+                    onChange={(e) => handleFieldChange(field, e.target.value)}
+                    onFocus={handleInputFocus}
+                    onBlur={handleInputBlur}
+                    disabled={isDisabled}
+                    placeholder="填写"
+                    className="w-full text-right bg-transparent border-b border-dashed border-slate-300 outline-none text-sm text-slate-800"
+                  />
+                );
+            }
+          })()}
         </div>
       </div>
     );
-
-    switch (fieldType) {
-      case 'text':
-      case 'number':
-        return (
-          <FieldWrapper>
-            <input
-              type={fieldType}
-              defaultValue={currentValue}
-              key={`${fieldKey}-${currentValue === ''}`}
-              onBlur={(e) => handleFieldChange(field, e.target.value)}
-              onCompositionStart={() => { isComposing.current = true; }}
-              onCompositionEnd={(e: any) => { 
-                isComposing.current = false;
-                handleFieldChange(field, e.target.value);
-              }}
-              onFocus={(e) => { e.stopPropagation(); }}
-              disabled={isDisabled}
-              placeholder="填写"
-              className="w-full text-right bg-transparent border-b border-dashed border-slate-300 outline-none text-sm text-slate-800 placeholder:text-slate-300 focus:border-blue-400 px-2 py-1"
-              required={isRequired}
-              style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
-            />
-          </FieldWrapper>
-        );
-      
-      case 'select':
-        return (
-          <FieldWrapper>
-            <div className="relative flex items-center w-full justify-end">
-              <select
-                value={currentValue}
-                onChange={(e) => handleFieldChange(field, e.target.value)}
-                disabled={isDisabled}
-                className="appearance-none bg-transparent pr-6 text-right outline-none text-sm text-slate-800 border-b border-dashed border-slate-300 focus:border-blue-400 px-2 py-1 w-full max-w-[200px]"
-              >
-                <option value="">选择</option>
-                {field.options?.map((opt: string, i: number) => (
-                  <option key={i} value={opt}>{opt}</option>
-                ))}
-              </select>
-              <ChevronRight size={14} className="text-slate-400 absolute right-0 pointer-events-none" />
-            </div>
-          </FieldWrapper>
-        );
-      
-      case 'date':
-        return (
-          <FieldWrapper>
-            <input
-              type="date"
-              value={currentValue}
-              onChange={(e) => handleFieldChange(field, e.target.value)}
-              disabled={isDisabled}
-              className="bg-transparent text-right outline-none text-sm text-slate-800 border-b border-dashed border-slate-300 focus:border-blue-400 px-2 py-1"
-            />
-          </FieldWrapper>
-        );
-      
-      case 'option':
-        const useSwitch = field.options?.length === 2 && (
-          (field.options.includes('是') && field.options.includes('否')) ||
-          (field.options.includes('通过') && field.options.includes('不通过'))
-        );
-
-        if (useSwitch) {
-          const positiveOpt = field.options.find((o: string) => ['是', '通过'].includes(o));
-          const negativeOpt = field.options.find((o: string) => ['否', '不通过'].includes(o));
-          const isActive = currentValue === positiveOpt;
-
-          return (
-            <FieldWrapper>
-              <div 
-                onClick={() => {
-                  if (isDisabled) return;
-                  handleFieldChange(field, isActive ? negativeOpt : positiveOpt);
-                }}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  isActive ? 'bg-blue-500' : 'bg-slate-200'
-                } ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    isActive ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </div>
-              <span className="ml-2 text-xs text-slate-500 min-w-[30px]">{currentValue || '未选'}</span>
-            </FieldWrapper>
-          );
-        }
-
-        return (
-          <FieldWrapper>
-            <div className="flex flex-wrap gap-1 justify-end max-w-full">
-              {field.options?.map((opt: string, idx: number) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (!isDisabled) handleFieldChange(field, opt);
-                  }}
-                  className={`px-3 py-1.5 rounded text-xs transition-all break-words text-left border ${
-                    currentValue === opt 
-                      ? 'bg-blue-500 text-white border-blue-600 shadow-sm font-medium' 
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                  disabled={isDisabled}
-                  style={{ wordBreak: 'break-word', whiteSpace: 'normal', overflowWrap: 'anywhere' }}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-          </FieldWrapper>
-        );
-      
-      case 'department':
-        return (
-          <FieldWrapper>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                if (!isDisabled && onDepartmentClick) {
-                  let inputKey: string;
-                  if (field.rowIndex !== undefined && field.colIndex !== undefined) {
-                    inputKey = `${field.rowIndex}-${field.colIndex}`;
-                  } else {
-                    const match = (field.cellKey || "").match(/R(\d+)C(\d+)/);
-                    inputKey = match ? `${parseInt(match[1]) - 1}-${parseInt(match[2]) - 1}` : field.cellKey;
-                  }
-                  onDepartmentClick(inputKey, label);
-                }
-              }}
-              className="flex items-center gap-1 text-sm text-slate-800 hover:text-blue-600 transition-colors py-1"
-              disabled={isDisabled}
-            >
-              <span className={`break-words text-right max-w-[150px] ${currentValue ? 'text-slate-800' : 'text-slate-300'}`}>
-                {currentValue || '点击选择部门'}
-              </span>
-              <ChevronRight size={16} className="text-slate-400 shrink-0" />
-            </button>
-          </FieldWrapper>
-        );
-      
-      case 'user':
-      case 'personnel':
-      case 'personal':
-        return (
-          <FieldWrapper>
-            <input
-              type="text"
-              defaultValue={currentValue}
-              key={`${fieldKey}-${currentValue === ''}`}
-              onBlur={(e) => handleFieldChange(field, e.target.value)}
-              onCompositionStart={() => { isComposing.current = true; }}
-              onCompositionEnd={(e: any) => { 
-                isComposing.current = false;
-                handleFieldChange(field, e.target.value);
-              }}
-              onFocus={(e) => e.stopPropagation()}
-              disabled={isDisabled}
-              placeholder="请输入姓名"
-              className="w-full text-right bg-transparent border-b border-dashed border-slate-300 outline-none text-sm text-slate-800 placeholder:text-slate-300 focus:border-blue-400 px-2 py-1"
-              style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
-            />
-          </FieldWrapper>
-        );
-      
-      default:
-        return (
-          <FieldWrapper>
-            <input
-              type="text"
-              defaultValue={currentValue}
-              onBlur={(e) => handleFieldChange(field, e.target.value)}
-              disabled={isDisabled}
-              placeholder="填写"
-              className="w-full text-right bg-transparent border-b border-dashed border-slate-300 outline-none text-sm text-slate-800"
-            />
-          </FieldWrapper>
-        );
-    }
-  };
+  }, [getFieldValue, getFieldIcon, handleFieldChange, handleInputFocus, handleInputBlur, mode, onDepartmentClick, onSectionClick, props.onFieldClick, renderFieldValue, getFieldKey]);
 
   return (
-    <div ref={containerRef} className="bg-slate-100/50 p-4 space-y-4 min-h-full">
+    <div ref={containerRef} className="bg-slate-100/50 p-4 space-y-4 min-h-full pb-[50vh]">
       {(title || code) && (
         <div className="bg-white rounded-lg p-4 shadow-sm">
           {title && <h3 className="text-lg font-bold text-slate-800 text-center">{title}</h3>}
@@ -554,61 +566,15 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
         </div>
       )}
       
-      {config.groups && config.groups.map((group: any, groupIndex: number) => {
-        const groupTitle = group.title || group.name || `分组 ${groupIndex + 1}`;
-        
-        const groupFields = (() => {
-          const rawKeys = group.fieldKeys || group.fields || group.keys || [];
-          const sourceFields = (config.fields && config.fields.length > 0) ? config.fields : parsedFields;
-          
-          if (Array.isArray(rawKeys) && rawKeys.length > 0) {
-            const fields = rawKeys.map((keyOrObj: any) => {
-              const fieldKey = typeof keyOrObj === 'string' ? keyOrObj : (keyOrObj.cellKey || keyOrObj.fieldKey);
-              if (!fieldKey) return null;
-
-              let field = sourceFields.find((f: any) => 
-                f.id === fieldKey || 
-                f.cellKey === fieldKey || 
-                f.fieldKey === fieldKey ||
-                f.fieldName === fieldKey ||
-                f.label === fieldKey ||
-                (typeof fieldKey === 'string' && f.fieldName && f.fieldName.includes(fieldKey))
-              );
-              
-              return field;
-            }).filter(Boolean);
-            
-            if (fields.length > 0) return fields;
-          }
-          
-          const matchedByGroup = sourceFields.filter((f: any) => {
-            const fGroup = f.group || f.groupName;
-            return fGroup && (
-              fGroup === groupTitle || 
-              fGroup === group.name || 
-              groupTitle.includes(fGroup) ||
-              fGroup.includes(groupTitle)
-            );
-          });
-          
-          if (matchedByGroup.length > 0) return matchedByGroup;
-
-          if (groupTitle.includes('审批') || groupTitle.includes('意见')) {
-            const signatureFields = sourceFields.filter((f: any) => 
-              f.fieldType === 'signature' || 
-              (f.fieldName && (f.fieldName.includes('意见') || f.fieldName.includes('审批') || f.fieldName.includes('签署')))
-            );
-            if (signatureFields.length > 0) return signatureFields;
-          }
-          
-          return [];
-        })();
+      {memoizedGroups.map((group: any, groupIndex: number) => {
+        const groupTitle = group.title;
+        const groupFields = group.fields;
         
         if (groupFields.length === 0) return null;
         
         const isEven = groupIndex % 2 === 0;
         return (
-          <div key={groupIndex} className={`rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-4 transition-colors ${isEven ? 'bg-white' : 'bg-blue-50/30'}`}>
+          <div key={`group-${groupIndex}`} className={`rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-4 transition-colors ${isEven ? 'bg-white' : 'bg-blue-50/30'}`}>
             <div className={`${isEven ? 'bg-slate-50' : 'bg-blue-100/40'} px-4 py-3 border-b border-slate-200 flex items-center justify-between`}>
               <h4 className="text-slate-800 font-bold text-[14px] flex items-center gap-2">
                 <span className={`p-1 rounded-lg ${isEven ? 'bg-blue-50 text-blue-600' : 'bg-white text-blue-700 shadow-sm'}`}>
@@ -622,9 +588,10 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
             </div>
             <div className="px-4">
               {groupFields.map((field: any, fieldIndex: number) => {
-                const fieldKey = field?.cellKey || field?.fieldKey || `${groupIndex}-${fieldIndex}`;
+                // 🚩 使用绝对唯一且稳定的 key，防止重绘时焦点丢失
+                const stableKey = field.cellKey || field.fieldKey || `R${field.rowIndex}C${field.colIndex}` || `${groupIndex}-${fieldIndex}`;
                 return (
-                  <React.Fragment key={fieldKey}>
+                  <React.Fragment key={stableKey}>
                     {renderField(field, groupIndex, fieldIndex)}
                   </React.Fragment>
                 );
@@ -635,4 +602,7 @@ export default function MobileFormRenderer(props: MobileFormRendererProps) {
       })}
     </div>
   );
-}
+});
+
+export type { MobileFormRendererProps };
+export default MobileFormRenderer;

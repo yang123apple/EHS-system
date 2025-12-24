@@ -100,10 +100,25 @@ export interface HazardRecord {
   reporterId: string;
   reporterName: string;
   reportTime: string;
+  
+  // 🟢 新增：整改要求方式
+  rectifyRequirement?: string;
+  
   responsibleDept?: string;
   responsibleId?: string;
   responsibleName?: string;
   deadline?: string;
+  
+  // 🟢 新增：应急预案要求
+  requireEmergencyPlan?: boolean;
+  emergencyPlanDeadline?: string;
+  emergencyPlanContent?: string;
+  emergencyPlanSubmitTime?: string;
+  
+  // 🟢 新增：抄送信息
+  ccDepts?: string[]; // 抄送部门ID列表
+  ccUsers?: string[]; // 抄送人员ID列表
+  
   isExtensionRequested?: boolean;
   extensionReason?: string;
   rectifyDesc?: string;
