@@ -82,11 +82,11 @@ export default function NotificationPanel() {
       markAsRead([notification.id]);
     }
 
-    // 跳转到相关页面，并带上记录ID参数
+    // 跳转到相关页面，并带上记录ID参数（会自动打开详情弹窗）
     if (notification.relatedType === 'permit' && notification.relatedId) {
-      window.location.href = `/work-permit?recordId=${notification.relatedId}`;
+      window.location.href = `/work-permit?permitId=${notification.relatedId}`;
     } else if (notification.relatedType === 'hazard' && notification.relatedId) {
-      window.location.href = `/hidden-danger?recordId=${notification.relatedId}`;
+      window.location.href = `/hidden-danger?hazardId=${notification.relatedId}`;
     }
   };
 
@@ -108,14 +108,32 @@ export default function NotificationPanel() {
   // 获取类型图标
   const getTypeIcon = (type: string) => {
     switch (type) {
+      // 作业票相关
       case 'approval_pending':
         return <FileSignature className="w-4 h-4 text-orange-500" />;
       case 'approval_passed':
         return <CheckCheck className="w-4 h-4 text-green-500" />;
       case 'approval_rejected':
         return <X className="w-4 h-4 text-red-500" />;
+      
+      // 隐患相关
       case 'hazard_assigned':
-        return <AlertTriangle className="w-4 h-4 text-yellow-500" />;
+        return <AlertTriangle className="w-4 h-4 text-yellow-600" />;
+      case 'hazard_cc':
+        return <Bell className="w-4 h-4 text-blue-500" />;
+      case 'hazard_submitted':
+        return <FileText className="w-4 h-4 text-blue-600" />;
+      case 'hazard_rectified':
+        return <CheckCheck className="w-4 h-4 text-green-600" />;
+      case 'hazard_verified':
+        return <CheckCheck className="w-4 h-4 text-green-700" />;
+      case 'hazard_rejected':
+        return <X className="w-4 h-4 text-red-600" />;
+      case 'hazard_extension':
+        return <FileSignature className="w-4 h-4 text-orange-600" />;
+      case 'hazard_closed':
+        return <CheckCheck className="w-4 h-4 text-emerald-600" />;
+      
       default:
         return <FileText className="w-4 h-4 text-blue-500" />;
     }

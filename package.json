@@ -11,6 +11,8 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.1.0",
     "@prisma/client": "^6.0.1",
+    "autoprefixer": "^10.4.23",
+    "caniuse-lite": "^1.0.30001761",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "fuse.js": "^7.1.0",
@@ -31,7 +33,6 @@
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "autoprefixer": "^10.4.22",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.0.8",

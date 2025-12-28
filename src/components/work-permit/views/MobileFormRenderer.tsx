@@ -231,32 +231,10 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
     activeInputRef.current = null;
   }, []);
 
-  // 获取字段当前值
+  // 获取字段当前值 - 优化版本：移除调试日志和重复解析
   const getFieldValue = useCallback((field: any): any => {
     const inputKey = getFieldKey(field);
-    
-    // 🔴 方案B：如果 formData 还是字符串，尝试自愈
-    let localData = formData;
-    if (typeof localData === 'string') {
-      console.warn("⚠️ [Renderer] 检测到 formData 是字符串，尝试自愈解析");
-      try { 
-        localData = JSON.parse(localData); 
-      } catch(e) { 
-        console.error("❌ [Renderer] formData 字符串解析失败:", e);
-        return ''; 
-      }
-    }
-
-    const value = localData[inputKey];
-    
-    console.log("🔍 [Renderer] 最终读取结果:", { 
-      fieldName: field.fieldName || field.label, 
-      inputKey, 
-      value: value || '空',
-      dataType: typeof localData
-    });
-    
-    return value || '';
+    return formData[inputKey] || '';
   }, [formData, getFieldKey]);
 
   // 🟢 统一的字段值渲染函数（只读模式）
@@ -523,7 +501,6 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
                     onClick={(e) => {
                       e.preventDefault();
                       const inputKey = getFieldKey(field);
-                      console.log("🟢 [Mobile] 点击部门字段:", { inputKey, label, isDisabled });
                       if (!isDisabled && onDepartmentClick && inputKey) {
                         onDepartmentClick(inputKey, label);
                       }

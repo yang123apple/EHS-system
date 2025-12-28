@@ -129,3 +129,13 @@ model Notification {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+// 🟢 新增：隐患系统配置表
+model HazardConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique // 配置项键名: hazard_types, hazard_areas
+  value       String   // JSON 字符串存储配置值
+  description String?  // 配置说明
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

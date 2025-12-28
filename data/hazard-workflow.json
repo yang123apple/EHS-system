@@ -1,4 +1,138 @@
 {
-  "ccRules": [],
-  "emergencyPlanRules": []
+  "version": 6,
+  "updatedAt": "2025-12-26T00:48:02.441Z",
+  "updatedBy": "Admin",
+  "steps": [
+    {
+      "id": "report",
+      "name": "上报并指派",
+      "description": "隐患上报，执行人强制为发起人",
+      "handlerStrategy": {
+        "type": "fixed",
+        "description": "执行人：上报人（系统自动）",
+        "fixedUsers": []
+      },
+      "ccRules": [
+        {
+          "id": "cc_1766632398760",
+          "type": "fixed_users",
+          "config": {
+            "userIds": [
+              "77010550",
+              "33641446"
+            ]
+          },
+          "description": "新抄送规则"
+        }
+      ]
+    },
+    {
+      "id": "assign",
+      "name": "开始整改",
+      "description": "指派整改责任人，默认为管理员",
+      "handlerStrategy": {
+        "type": "reporter_manager",
+        "description": "默认：管理员角色",
+        "approvalMode": "OR"
+      },
+      "ccRules": [
+        {
+          "id": "cc_1766632848281",
+          "type": "responsible_manager",
+          "config": {},
+          "description": "新抄送规则"
+        }
+      ]
+    },
+    {
+      "id": "step_1766710054626",
+      "name": "EHS确认",
+      "description": "",
+      "handlerStrategy": {
+        "type": "fixed",
+        "description": "默认由上报人主管处理",
+        "approvalMode": "OR",
+        "fixedUsers": [
+          {
+            "userId": "77010550",
+            "userName": "孙斌"
+          },
+          {
+            "userId": "33641446",
+            "userName": "杨光"
+          }
+        ]
+      },
+      "ccRules": []
+    },
+    {
+      "id": "rectify",
+      "name": "提交整改",
+      "description": "整改责任人提交整改结果",
+      "handlerStrategy": {
+        "type": "fixed",
+        "description": "执行人：整改责任人（系统自动）",
+        "fixedUsers": []
+      },
+      "ccRules": [
+        {
+          "id": "cc_1766632882393",
+          "type": "fixed_users",
+          "config": {
+            "userIds": [
+              "77010550",
+              "33641446"
+            ]
+          },
+          "description": "新抄送规则"
+        },
+        {
+          "id": "cc_1766634421593",
+          "type": "responsible",
+          "config": {},
+          "description": "新抄送规则"
+        },
+        {
+          "id": "cc_1766634428434",
+          "type": "reporter",
+          "config": {},
+          "description": "新抄送规则"
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "name": "验收闭环",
+      "description": "验收整改结果，默认为管理员",
+      "handlerStrategy": {
+        "type": "fixed",
+        "description": "默认：管理员角色",
+        "approvalMode": "OR",
+        "fixedUsers": [
+          {
+            "userId": "77010550",
+            "userName": "孙斌"
+          },
+          {
+            "userId": "33641446",
+            "userName": "杨光"
+          }
+        ]
+      },
+      "ccRules": [
+        {
+          "id": "cc_1766632923063",
+          "type": "reporter_manager",
+          "config": {},
+          "description": "新抄送规则"
+        },
+        {
+          "id": "cc_1766634460120",
+          "type": "responsible_manager",
+          "config": {},
+          "description": "新抄送规则"
+        }
+      ]
+    }
+  ]
 }

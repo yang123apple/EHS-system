@@ -1,0 +1,40 @@
+src/
+├── app/
+│   └── hidden-danger/           # 隐患管理主模块
+│       ├── page.tsx                         # 模块主入口 (负责 ViewMode 切换)ok
+│       ├── layout.tsx                       # 模块布局 (含侧边栏/导航)ok
+│       ├── _components/                     # 【私有组件】仅在该模块使用的 UIok
+│       │   ├── views/                       # 不同视图的展示组件ok
+│       │   │   ├── OverviewDashboard.tsx    # 工作台视图 (StatCard + 首页卡片)ok
+│       │   │   ├── HazardDataTable.tsx      # 隐患查询/我的任务列表 (Table + 分页)ok
+│       │   │   └── WorkflowConfig.tsx       # 设置页面 (基础配置 + 抄送/预案规则)ok
+│       │   ├── modals/                      # 弹窗组件ok
+│       │   │   ├── HazardReportModal.tsx    # 隐患上报弹窗  ok
+│       │   │   └── HazardDetailModal/       # 隐患详情弹窗 (核心业务流)ok
+│       │   │       ├── index.tsx            # 详情主入口ok
+│       │   │       ├── ProcessingFlow.tsx   # 处理记录时间轴ok
+│       │   │       ├── ActionForms/         # 不同阶段的处理表单ok
+│       │   │       │   ├── AssignForm.tsx   # 指派表单ok
+│       │   │       │   ├── RectifyForm.tsx  # 整改提交表单ok
+│       │   │       │   └── VerifyForm.tsx   # 验收表单ok
+│       │   │       └── ExtensionCard.tsx    # 延期申请逻辑ok
+│       │   └── HazardCard.tsx               # 首页使用的卡片小组件ok
+│       └── _hooks/                          # 【业务逻辑抽离】ok
+│           ├── useHazardData.ts             # 处理数据获取、筛选、分页逻辑ok
+│           └── useHazardWorkflow.ts         # 处理指派、整改、验收、延期等 PATCH 请求ok
+│
+├── services/                                # 【API 层】
+│   ├── hazard.service.ts                    # 隐患相关接口：fetch/axios 封装ok
+│   └── workflow.service.ts                  # 工作流规则配置接口ok
+│
+├── types/                                   # 【全局类型定义】
+│   ├── hidden-danger.d.ts                   # HazardRecord, CCRule 等接口定义ok
+│   └── common.d.ts                          # 分页、通用 API 返回格式ok
+│
+├── constants/                               # 【常量/配置】ok
+│   └── hazard.ts                            # 风险等级颜色映射、状态文字映射ok
+│
+└── components/                              # 【公共业务组件库】
+    ├── ui/                                  # 基础 UI 组件 (Button, Input, Select)
+    └── work-permit/                         # 跨模块组件 (如您代码中的 DepartmentSelectModal)
+        └── DepartmentSelectModal.tsx

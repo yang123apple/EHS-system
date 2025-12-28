@@ -73,17 +73,25 @@ export async function PATCH(request: Request) {
   const hazards = await db.getHazards();
   const oldRecord = hazards.find(h => h.id === id);
   
-  if (!oldRecord) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (!oldRecord) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
 
   // 构造日志
   const changeDesc = generateChanges(oldRecord, updates);
-  const newLog = {
+  const newLog: any = {
     operatorId: operatorId || 'system',
     operatorName: operatorName || '系统',
     action: actionName || '更新记录', // 例如：指派、整改、驳回
     time: new Date().toISOString(),
     changes: changeDesc || updates.extensionReason || '无关键字段变更'
   };
+
+  // 如果有抄送信息，也记录到日志中
+  if (updates.ccUsers && updates.ccUsers.length > 0) {
+    newLog.ccUsers = updates.ccUsers;
+    newLog.ccUserNames = updates.ccUserNames || [];
+  }
 
   const finalUpdates = {
     ...updates,

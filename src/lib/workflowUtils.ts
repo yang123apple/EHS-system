@@ -50,14 +50,9 @@ export async function resolveApprovers(
   // 3. 指定部门的负责人
   if (approverStrategy === 'specific_dept_manager' && strategyConfig?.targetDeptId) {
     const deptId = strategyConfig.targetDeptId;
-    const users = await db.getUsers();
-    // 查找该部门的用户，然后找其主管
-    const deptUsers = users.filter(u => u.departmentId === deptId);
-    if (deptUsers.length > 0) {
-      const manager = await findSupervisor(deptUsers[0].id);
-      return manager ? [manager] : [];
-    }
-    return [];
+    // 🟢 直接从组织架构数据中查找该部门的 managerId
+    const managers = await findDeptManager(deptId);
+    return managers;
   }
 
   // 4. 指定角色 (如EHS经理)

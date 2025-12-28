@@ -186,7 +186,12 @@
     "id": "37133843",
     "role": "user",
     "avatar": "/image/default_avatar.jpg",
-    "permissions": {}
+    "permissions": {
+      "hidden_danger": [
+        "report",
+        "handle"
+      ]
+    }
   },
   {
     "username": "吴媛",
@@ -234,7 +239,17 @@
     "id": "77010550",
     "role": "user",
     "avatar": "/image/default_avatar.jpg",
-    "permissions": {}
+    "permissions": {
+      "hidden_danger": [
+        "report",
+        "handle",
+        "assign",
+        "view_stats",
+        "manage_config",
+        "delete",
+        "edit_cc_workflow"
+      ]
+    }
   },
   {
     "username": "杨光",
@@ -258,6 +273,24 @@
         "lock_template",
         "delete_template",
         "approve_permit"
+      ],
+      "hidden_danger": [
+        "report",
+        "handle",
+        "assign",
+        "view_stats",
+        "manage_config",
+        "delete",
+        "edit_cc_workflow"
+      ],
+      "doc_sys": [
+        "upload",
+        "down_docx_l123",
+        "down_docx_l4",
+        "down_pdf",
+        "delete",
+        "edit",
+        "edit_watermark"
       ]
     }
   },
@@ -271,7 +304,12 @@
     "id": "51063273",
     "role": "user",
     "avatar": "/image/default_avatar.jpg",
-    "permissions": {}
+    "permissions": {
+      "hidden_danger": [
+        "handle",
+        "report"
+      ]
+    }
   },
   {
     "username": "韩晔",
@@ -283,7 +321,12 @@
     "id": "21382244",
     "role": "user",
     "avatar": "/image/default_avatar.jpg",
-    "permissions": {}
+    "permissions": {
+      "hidden_danger": [
+        "report",
+        "handle"
+      ]
+    }
   },
   {
     "username": "周游",
@@ -409,14 +452,18 @@
         "create_permit",
         "create_project",
         "adjust_schedule"
+      ],
+      "hidden_danger": [
+        "handle",
+        "report"
       ]
     }
   },
   {
     "username": "李广才",
     "name": "李广才",
-    "department": "电极生产运营部",
-    "departmentId": "dept_1766209208649_389",
+    "department": "电极生产",
+    "departmentId": "dept_1766713477533_583",
     "jobTitle": "生产主管",
     "password": "123",
     "id": "74224522",
@@ -475,8 +522,8 @@
   {
     "username": "徐飞龙",
     "name": "徐飞龙",
-    "department": "电极生产运营部",
-    "departmentId": "dept_1766209208649_389",
+    "department": "电极设备",
+    "departmentId": "dept_1766713548516_830",
     "jobTitle": "涂布设备工程师",
     "password": "123",
     "id": "57754037",
@@ -619,8 +666,8 @@
   {
     "username": "李宇航",
     "name": "李宇航",
-    "department": "电极生产运营部",
-    "departmentId": "dept_1766209208649_389",
+    "department": "电极生产",
+    "departmentId": "dept_1766713477533_583",
     "jobTitle": "操作员",
     "password": "123",
     "id": "56334805",
@@ -629,6 +676,10 @@
     "permissions": {
       "work_permit": [
         "create_permit"
+      ],
+      "hidden_danger": [
+        "handle",
+        "report"
       ]
     }
   },

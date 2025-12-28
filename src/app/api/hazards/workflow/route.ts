@@ -1,51 +1,159 @@
-// src/app/api/hazards/workflow/route.ts
-import { NextResponse } from 'next/server';
-import fs from 'fs';
+import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs/promises';
 import path from 'path';
+import type { HazardWorkflowConfig } from '@/types/hidden-danger';
 
 const WORKFLOW_FILE = path.join(process.cwd(), 'data', 'hazard-workflow.json');
 
-// 确保目录存在
-function ensureDir() {
-  const dir = path.dirname(WORKFLOW_FILE);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+// 确保数据目录和文件存在
+async function ensureWorkflowFile() {
+  try {
+    await fs.access(WORKFLOW_FILE);
+  } catch {
+    // 文件不存在，创建默认配置
+    const defaultConfig: HazardWorkflowConfig = {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      updatedBy: 'system',
+      steps: [
+        {
+          id: 'report',
+          name: '上报并指派',
+          description: '隐患上报，执行人强制为发起人',
+          handlerStrategy: {
+            type: 'fixed',
+            description: '执行人：上报人（系统自动）',
+            fixedUsers: []
+          },
+          ccRules: []
+        },
+        {
+          id: 'assign',
+          name: '开始整改',
+          description: '指派整改责任人，默认为管理员',
+          handlerStrategy: {
+            type: 'role',
+            description: '默认：管理员角色',
+            roleName: '管理员'
+          },
+          ccRules: []
+        },
+        {
+          id: 'rectify',
+          name: '提交整改',
+          description: '整改责任人提交整改结果',
+          handlerStrategy: {
+            type: 'fixed',
+            description: '执行人：整改责任人（系统自动）',
+            fixedUsers: []
+          },
+          ccRules: []
+        },
+        {
+          id: 'verify',
+          name: '验收闭环',
+          description: '验收整改结果，默认为管理员',
+          handlerStrategy: {
+            type: 'role',
+            description: '默认：管理员角色',
+            roleName: '管理员'
+          },
+          ccRules: []
+        }
+      ]
+    };
+    
+    const dataDir = path.dirname(WORKFLOW_FILE);
+    try {
+      await fs.access(dataDir);
+    } catch {
+      await fs.mkdir(dataDir, { recursive: true });
+    }
+    
+    await fs.writeFile(WORKFLOW_FILE, JSON.stringify(defaultConfig, null, 2), 'utf-8');
   }
 }
 
-// 默认配置
-const DEFAULT_WORKFLOW = {
-  ccRules: [] as Array<{
-    id: string;
-    name: string;
-    riskLevels: string[]; // 触发风险等级 ['high', 'major']
-    ccDepts: string[]; // 抄送部门ID列表
-    ccUsers: string[]; // 抄送人员ID列表
-    enabled: boolean;
-  }>,
-  emergencyPlanRules: [] as Array<{
-    id: string;
-    riskLevels: string[]; // 需要应急预案的风险等级
-    deadlineDays: number; // 要求提交预案的天数
-    enabled: boolean;
-  }>
-};
-
+/**
+ * GET /api/hazards/workflow
+ * 获取工作流配置
+ */
 export async function GET() {
-  ensureDir();
-  
-  if (!fs.existsSync(WORKFLOW_FILE)) {
-    fs.writeFileSync(WORKFLOW_FILE, JSON.stringify(DEFAULT_WORKFLOW, null, 2));
-    return NextResponse.json(DEFAULT_WORKFLOW);
+  try {
+    await ensureWorkflowFile();
+    const data = await fs.readFile(WORKFLOW_FILE, 'utf-8');
+    const config: HazardWorkflowConfig = JSON.parse(data);
+    
+    return NextResponse.json({
+      success: true,
+      data: config
+    });
+  } catch (error) {
+    console.error('Failed to load workflow config:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Failed to load workflow configuration'
+      },
+      { status: 500 }
+    );
   }
-  
-  const data = JSON.parse(fs.readFileSync(WORKFLOW_FILE, 'utf-8'));
-  return NextResponse.json(data);
 }
 
-export async function POST(request: Request) {
-  ensureDir();
-  const body = await request.json();
-  fs.writeFileSync(WORKFLOW_FILE, JSON.stringify(body, null, 2));
-  return NextResponse.json({ success: true });
+/**
+ * POST /api/hazards/workflow
+ * 保存工作流配置
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { config, userId, userName } = body;
+    
+    if (!config || !config.steps) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Invalid workflow configuration'
+        },
+        { status: 400 }
+      );
+    }
+    
+    // 验证配置结构
+    const validatedConfig: HazardWorkflowConfig = {
+      version: (config.version || 0) + 1,
+      updatedAt: new Date().toISOString(),
+      updatedBy: userName || userId || 'unknown',
+      steps: config.steps.map((step: any) => ({
+        id: step.id,
+        name: step.name,
+        description: step.description || '',
+        handlerStrategy: step.handlerStrategy,
+        ccRules: step.ccRules || []
+      }))
+    };
+    
+    // 保存到文件
+    await ensureWorkflowFile();
+    await fs.writeFile(
+      WORKFLOW_FILE,
+      JSON.stringify(validatedConfig, null, 2),
+      'utf-8'
+    );
+    
+    return NextResponse.json({
+      success: true,
+      data: validatedConfig,
+      message: '工作流配置已保存'
+    });
+  } catch (error) {
+    console.error('Failed to save workflow config:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Failed to save workflow configuration'
+      },
+      { status: 500 }
+    );
+  }
 }

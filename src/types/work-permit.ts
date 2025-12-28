@@ -38,8 +38,8 @@ export interface ParsedField {
   colIndex?: number;      // 🟢 原始列索引
 }
 
-// 🟢 审批人策略：新增 'specific_dept_manager'、'template_text_match'、'template_option_match'
-export type ApproverStrategy = 'fixed' | 'current_dept_manager' | 'specific_dept_manager' | 'role' | 'template_field_manager' | 'template_text_match' | 'template_option_match';
+// 🟢 审批人策略：新增 'specific_dept_manager'、'template_text_match'、'template_option_match'、'template_field_dept_manager'
+export type ApproverStrategy = 'fixed' | 'current_dept_manager' | 'specific_dept_manager' | 'role' | 'template_field_manager' | 'template_field_dept_manager' | 'template_text_match' | 'template_option_match';
 
 export type Template = {
   id: string;
@@ -74,6 +74,7 @@ export interface WorkflowApprover {
   deptId: string;
   userId: string;
   userName: string;
+  name: string; // 🟢 审批人姓名（与 userName 保持一致，兼容性字段）
   // 🟢 条件签模式下的触发条件
   conditions?: Array<{
     field: string;     // 字段名
@@ -254,7 +255,10 @@ export type PartPickStrategy = 'field_match'; // ָ���ֶβ���
 // Part������
 export interface WorkflowPart {
   part: number;              // Part��� (1, 2, 3...)
+  name?: string;             // 🟢 Part名称（如 "需求单位审批"）
   pickStrategy: PartPickStrategy; // ʰȡ����
   pickConfig: {
+    fieldName?: string;      // 🟢 字段名称（用于field_match策略）
   };
+  outputCell?: string;       // 🟢 绑定的输出单元格（如 "R5C3"）
 }

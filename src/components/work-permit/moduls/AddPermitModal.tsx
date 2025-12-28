@@ -135,22 +135,13 @@ export default function AddPermitModal({
 
   // --- 回调函数：使用 useCallback 保持稳定 ---
   const handleMobileFormDataChange = useCallback((key: string, value: any) => {
-    // 🟢 增强调试：打印所有尝试更新的数据
-    console.log("📝 [AddPermitModal] 尝试回写数据:", { key, value });
+    // 基础检查：拒绝空 Key
+    if (!key) return;
     
-    // 🟢 基础检查：拒绝空 Key
-    if (!key) {
-      console.error("❌ [AddPermitModal] 收到空 Key，输入无效");
-      return;
-    }
-    
-    // 🟢 放宽限制：接受所有非空 Key，让数据流先通
-    // TODO: 后续可在此添加格式校验，但当前先确保输入可用
     setPermitFormData(prev => ({ ...prev, [key]: value }));
   }, []);
 
   const handleDepartmentSelect = useCallback((inputKey: string) => {
-    console.log("🔵 [Mobile] 准备打开部门弹窗, Key:", inputKey);
     setActiveInputKey(inputKey);
     setDeptModalOpen(true);
   }, []);
@@ -296,13 +287,9 @@ export default function AddPermitModal({
           isOpen={true}
           onClose={() => { setDeptModalOpen(false); setActiveInputKey(null); }}
           onSelect={(id, name) => { 
-            // 🟢 修复：使用函数式更新确保状态一致性
             const targetKey = activeInputKey;
-            if (!targetKey) {
-              console.error("❌ [Mobile] 丢失 activeInputKey，无法回写数据");
-              return;
-            }
-            console.log("🟢 [Mobile] 部门选择回写:", targetKey, "->", name);
+            if (!targetKey) return;
+            
             setPermitFormData(prev => ({ ...prev, [targetKey]: name }));
             setDeptModalOpen(false); 
             setActiveInputKey(null);

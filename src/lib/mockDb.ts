@@ -91,6 +91,7 @@ export interface HazardLog {
 
 export interface HazardRecord {
   id: string;
+  code?: string; // 隐患编号：日期+序号，如20251225001
   status: 'reported' | 'assigned' | 'rectifying' | 'verified' | 'closed';
   riskLevel: 'low' | 'medium' | 'high' | 'major';
   type: string;
@@ -107,6 +108,7 @@ export interface HazardRecord {
   responsibleDept?: string;
   responsibleId?: string;
   responsibleName?: string;
+  old_personal_ID?: string[]; // 历史经手人ID数组（包括所有处理人和抄送人）
   deadline?: string;
   
   // 🟢 新增：应急预案要求
@@ -294,12 +296,20 @@ export const db = {
   // === 隐患相关 ===
   getHazards: async () => [...hazardRecords],
 
-  createHazard: async (data: Omit<HazardRecord, 'id' | 'status' | 'logs'>) => {
+  createHazard: async (data: any) => {
+    // 生成隐患编号：日期+序号（如20251225001）
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, ''); // 20251225
+    const todayHazards = hazardRecords.filter(h => h.code?.startsWith(today) || h.id?.includes(today));
+    const nextNumber = (todayHazards.length + 1).toString().padStart(3, '0'); // 001, 002, ...
+    const code = `${today}${nextNumber}`;
+    
     const newHazard: HazardRecord = {
       ...data,
-      id: `H-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 1000)}`,
-      status: 'reported',
-      logs: [
+      id: data.id || `H-${code}`,
+      code: code, // 隐患编号
+      old_personal_ID: data.old_personal_ID || [], // 初始化历史经手人数组
+      status: data.status || 'reported', // 使用传入的状态，默认为 reported
+      logs: data.logs || [
         {
           operatorId: data.reporterId,
           operatorName: data.reporterName,

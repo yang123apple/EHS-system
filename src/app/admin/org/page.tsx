@@ -1,9 +1,11 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
-import { Network, ChevronRight, ChevronDown, Plus, Trash2, Edit2, User as UserIcon, Briefcase, BadgeCheck, UserPlus, X, GripVertical, LogOut, FileSpreadsheet, Download, Upload, HelpCircle } from 'lucide-react';
+import { Network, ChevronRight, ChevronDown, Plus, Trash2, Edit2, User as UserIcon, Briefcase, BadgeCheck, UserPlus, X, GripVertical, LogOut, FileSpreadsheet, Download, Upload, HelpCircle, FolderTree, Settings } from 'lucide-react';
 import jschardet from 'jschardet';
 import { parseTableFile, pick } from '@/utils/fileImport';
 import * as XLSX from 'xlsx';
+import DepartmentSelectModal from '@/components/work-permit/moduls/DepartmentSelectModal';
+import Link from 'next/link';
 
 // 定义接口
 interface OrgNode {
@@ -38,6 +40,14 @@ export default function OrgStructurePage() {
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [targetDeptForMember, setTargetDeptForMember] = useState<OrgNode | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
+  
+  // 🟢 新增：员工部门调整弹窗状态
+  const [showUserDeptModal, setShowUserDeptModal] = useState(false);
+  const [adjustingUser, setAdjustingUser] = useState<UserSimple | null>(null);
+  
+  // 🟢 新增：员工编辑弹窗状态
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserSimple | null>(null);
   
   // 🟢 导入功能
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -292,6 +302,74 @@ export default function OrgStructurePage() {
     }
   };
 
+  // 🟢 新增：打开员工部门调整弹窗
+  const handleOpenUserDeptAdjust = (user: UserSimple) => {
+    setAdjustingUser(user);
+    setShowUserDeptModal(true);
+  };
+
+  // 🟢 新增：处理员工部门调整
+  const handleUserDeptSelect = async (deptId: string, deptName: string) => {
+    if (!adjustingUser) return;
+    await updateUserDepartment(adjustingUser.id, deptId, deptName);
+    setShowUserDeptModal(false);
+    setAdjustingUser(null);
+  };
+
+  // 🟢 新增：打开员工编辑弹窗
+  const handleOpenEditUser = (user: UserSimple) => {
+    setEditingUser(user);
+    setShowEditUserModal(true);
+  };
+
+  // 🟢 新增：保存员工编辑
+  const handleSaveEditUser = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    
+    const formData = new FormData(e.currentTarget);
+    const payload: any = {};
+    formData.forEach((value, key) => {
+      payload[key] = value;
+    });
+
+    try {
+      const res = await fetch(`/api/users/${editingUser.id}`, { 
+        method: 'PUT', 
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      
+      if (res.ok) { 
+        alert('修改成功'); 
+        setShowEditUserModal(false);
+        setEditingUser(null);
+        fetchData(); 
+      } else { 
+        alert('修改失败'); 
+      }
+    } catch (err) { 
+      alert('网络错误'); 
+    }
+  };
+
+  // 🟢 新增：删除员工
+  const handleDeleteUser = async (user: UserSimple) => {
+    if (confirm(`确定删除用户 ${user.name} (${user.username}) 吗？\n\n此操作不可恢复！`)) {
+      try {
+        const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
+        if (res.ok) {
+          alert('删除成功');
+          fetchData();
+        } else {
+          alert('删除失败');
+        }
+      } catch (err) {
+        alert('网络错误');
+      }
+    }
+  };
+
   const handleDrop = async (e: React.DragEvent, targetNode: OrgNode) => {
     e.preventDefault();
     e.stopPropagation();
@@ -435,13 +513,39 @@ export default function OrgStructurePage() {
                                 </span>
                             )}
                         </div>
-                        <button 
-                            onClick={() => handleRemoveMember(user)}
-                            className="text-slate-300 hover:text-red-500 opacity-0 group-hover/user:opacity-100 transition-opacity p-1"
-                            title="移除成员"
-                        >
-                            <X size={14} />
-                        </button>
+                        <div className="flex items-center gap-1 opacity-0 group-hover/user:opacity-100 transition-opacity">
+                            {/* 🟢 配置权限按钮 */}
+                            <Link 
+                                href={`/admin/account/${user.id}`}
+                                className="p-1.5 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100 transition-colors"
+                                title="配置权限"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <Settings size={14} />
+                            </Link>
+                            {/* 🟢 编辑信息按钮 */}
+                            <button 
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenEditUser(user);
+                                }}
+                                className="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors"
+                                title="编辑信息"
+                            >
+                                <Edit2 size={14} />
+                            </button>
+                            {/* 🟢 删除按钮 */}
+                            <button 
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteUser(user);
+                                }}
+                                className="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 transition-colors"
+                                title="删除用户"
+                            >
+                                <Trash2 size={14} />
+                            </button>
+                        </div>
                     </div>
                 ))}
              </div>
@@ -591,6 +695,65 @@ export default function OrgStructurePage() {
             </div>
         )}
 
+            {/* 🟢 员工部门调整弹窗 */}
+            {showUserDeptModal && adjustingUser && (
+                <DepartmentSelectModal
+                    isOpen={showUserDeptModal}
+                    onClose={() => {
+                        setShowUserDeptModal(false);
+                        setAdjustingUser(null);
+                    }}
+                    onSelect={handleUserDeptSelect}
+                    selectedDeptId={adjustingUser.departmentId}
+                />
+            )}
+
+            {/* 🟢 员工信息编辑弹窗 */}
+            {showEditUserModal && editingUser && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm p-3 md:p-4">
+                    <div className="bg-white rounded-xl w-full max-w-md p-4 md:p-6 shadow-2xl animate-fade-in max-h-[95vh] overflow-y-auto">
+                        <h3 className="text-lg font-bold mb-6 text-slate-900 flex items-center gap-2">
+                            <Edit2 size={20} className="text-hytzer-blue"/> 
+                            编辑用户: {editingUser.name}
+                        </h3>
+                        <form onSubmit={handleSaveEditUser} className="space-y-5">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">姓名</label>
+                                    <input name="name" type="text" required defaultValue={editingUser.name} className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-hytzer-blue transition-all" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">登录账号</label>
+                                    <input name="username" type="text" required defaultValue={editingUser.username} className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-hytzer-blue transition-all" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">部门</label>
+                                <input name="department" type="text" required defaultValue={editingUser.department} className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-hytzer-blue transition-all" />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-1">
+                                    <Briefcase size={14} className="text-slate-400"/> 职务
+                                </label>
+                                <input name="jobTitle" type="text" defaultValue={editingUser.jobTitle || ''} placeholder="例如：EHS工程师" className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-hytzer-blue transition-all" />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">头像 URL (可选)</label>
+                                <input name="avatar" type="text" defaultValue={editingUser.avatar || ''} placeholder="https://..." className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-hytzer-blue transition-all" />
+                            </div>
+                            
+                            <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-slate-100">
+                                <button type="button" onClick={() => { setShowEditUserModal(false); setEditingUser(null); }} className="px-5 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors">取消</button>
+                                <button type="submit" className="px-5 py-2 bg-hytzer-blue text-white rounded-lg hover:bg-blue-600 shadow-lg shadow-blue-500/30 font-medium transition-colors">保存修改</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* 🟢 导入指南模态框 */}
             {showImportGuide && (
               <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm p-2 md:p-4">
@@ -622,7 +785,7 @@ export default function OrgStructurePage() {
 
                     {/* 示例 */}
                     <section>
-                      <h3 className="text-lg font-bold text-slate-900 mb-3">📝 示例数据</h3>
+                      <h3 className="text-lg font-bold text-slate-900 mb-3">� 示例数据</h3>
                       <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 overflow-x-auto">
                         <pre className="text-sm font-mono whitespace-pre">
       {`XX新能源科技有限公司,admin,超级管理员
@@ -638,7 +801,7 @@ export default function OrgStructurePage() {
 
                     {/* 字段说明 */}
                     <section>
-                      <h3 className="text-lg font-bold text-slate-900 mb-3">🔍 字段说明</h3>
+                      <h3 className="text-lg font-bold text-slate-900 mb-3">�🔍 字段说明</h3>
                       <div className="space-y-3">
                         <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
                           <h4 className="font-bold text-blue-900 mb-2">1. 部门路径（必填）</h4>

@@ -297,7 +297,7 @@ export default function WorkflowEditorModal({
 
   const addApproverRow = (stepIdx: number) => {
     const newSteps = [...workflowSteps];
-    newSteps[stepIdx].approvers.push({ deptId: '', userId: '', userName: '' });
+    newSteps[stepIdx].approvers.push({ deptId: '', userId: '', userName: '', name: '' });
     setWorkflowSteps(newSteps);
   };
 

@@ -12,6 +12,8 @@ interface User {
   avatar: string;
   role: 'admin' | 'user';
   department: string;
+  departmentId?: string;  // 部门ID
+  jobTitle?: string;       // 职位
   permissions: any;
   password?: string;
   email?: string;

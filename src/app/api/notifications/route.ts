@@ -75,17 +75,53 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-// POST /api/notifications - 创建新通知（系统内部使用）
+// POST /api/notifications - 创建新通知（支持单个或批量）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    
+    // 支持批量创建
+    if (body.notifications && Array.isArray(body.notifications)) {
+      const notifications = body.notifications;
+      
+      if (notifications.length === 0) {
+        return NextResponse.json({ success: true, count: 0 });
+      }
+
+      // 验证每个通知都有必要字段
+      const invalidNotification = notifications.find(
+        (n: any) => !n.userId || !n.type || !n.title || !n.content
+      );
+
+      if (invalidNotification) {
+        return NextResponse.json({ error: '通知数据缺少必要字段' }, { status: 400 });
+      }
+
+      // 批量创建通知
+      const result = await prisma.notification.createMany({
+        data: notifications.map((n: any) => ({
+          userId: n.userId,
+          type: n.type,
+          title: n.title,
+          content: n.content,
+          relatedType: n.relatedType || 'hazard',
+          relatedId: n.relatedId,
+          isRead: false,
+        })),
+      });
+
+      console.log(`✅ 批量创建通知成功: ${result.count} 条`);
+      return NextResponse.json({ success: true, count: result.count });
+    }
+
+    // 支持单个创建（向后兼容）
     const { userId, type, title, content, relatedType, relatedId } = body;
 
     if (!userId || !type || !title || !content) {
       return NextResponse.json({ error: '缺少必要字段' }, { status: 400 });
     }
 
-    // 创建通知
+    // 创建单个通知
     const notification = await prisma.notification.create({
       data: {
         userId,

@@ -14,6 +14,9 @@ export interface User {
   avatar: string;
   role: UserRole;
   department: string;
+  departmentId?: string; // 🟢 部门ID（与组织架构关联）
+  jobTitle?: string; // 🟢 职位/岗位
+  directManagerId?: string; // 🟢 直属上级ID（Point-to-Point 上下级关系）
   permissions: UserPermissions;
 }
 
