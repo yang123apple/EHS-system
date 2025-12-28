@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.1.0",
-    "@prisma/client": "^6.0.1",
+    "@prisma/client": "^5.10.0",
     "autoprefixer": "^10.4.23",
     "caniuse-lite": "^1.0.30001761",
     "clsx": "^2.1.1",
@@ -37,7 +37,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.0.8",
     "postcss": "^8.5.6",
-    "prisma": "^6.0.1",
+    "prisma": "^5.10.0",
     "tailwindcss": "^4.1.17",
     "typescript": "^5"
   }

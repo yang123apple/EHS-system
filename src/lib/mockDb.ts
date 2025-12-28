@@ -1,10 +1,12 @@
 // src/lib/mockDb.ts
-// 🟢 纯内存 Mock DB - 适用于 Next.js（无 fs/path）
-import * as userDb from './userDb';
-import * as orgDb from './orgDb';
+// ⚠️ 本文件现已重构为 Prisma 的代理层，原有的内存/JSON逻辑已被 src/lib/db.ts 接管
+// ⚠️ 保留部分类型导出以兼容现有代码，但逻辑已转发
+
+import { db as prismaDb } from './db';
+import { User, DepartmentNode, HazardRecord, HazardConfig } from '@/types/database';
 
 // ==========================================
-// 1. 系统模块与权限定义
+// 1. 系统模块与权限定义 (常量保持不变)
 // ==========================================
 export const SYSTEM_MODULES = [
   {
@@ -50,307 +52,68 @@ export const SYSTEM_MODULES = [
 ];
 
 // ==========================================
-// 2. 接口定义
+// 2. 类型导出 (直接复用 database.ts，减少重复定义)
 // ==========================================
-
-export interface DepartmentNode {
-  id: string;
-  name: string;
-  parentId: string | null;
-  managerId?: string;
-  level: number; // 🟢 部门层级
-  children?: DepartmentNode[];
-}
-
-export type UserRole = 'admin' | 'user';
-export interface UserPermissions {
-  [moduleKey: string]: string[];
-}
-
-export interface User {
-  id: string;
-  username: string;
-  name: string;
-  password: string;
-  avatar: string;
-  role: UserRole;
-  department: string;
-  departmentId?: string;
-  jobTitle?: string;
-  directManagerId?: string;
-  permissions: UserPermissions;
-}
-
-export interface HazardLog {
-  operatorId: string;
-  operatorName: string;
-  action: string;
-  time: string;
-  changes?: string;
-}
-
-export interface HazardRecord {
-  id: string;
-  code?: string; // 隐患编号：日期+序号，如20251225001
-  status: 'reported' | 'assigned' | 'rectifying' | 'verified' | 'closed';
-  riskLevel: 'low' | 'medium' | 'high' | 'major';
-  type: string;
-  location: string;
-  desc: string;
-  photos: string[];
-  reporterId: string;
-  reporterName: string;
-  reportTime: string;
-  
-  // 🟢 新增：整改要求方式
-  rectifyRequirement?: string;
-  
-  responsibleDept?: string;
-  responsibleId?: string;
-  responsibleName?: string;
-  old_personal_ID?: string[]; // 历史经手人ID数组（包括所有处理人和抄送人）
-  deadline?: string;
-  
-  // 🟢 新增：应急预案要求
-  requireEmergencyPlan?: boolean;
-  emergencyPlanDeadline?: string;
-  emergencyPlanContent?: string;
-  emergencyPlanSubmitTime?: string;
-  
-  // 🟢 新增：抄送信息
-  ccDepts?: string[]; // 抄送部门ID列表
-  ccUsers?: string[]; // 抄送人员ID列表
-  
-  isExtensionRequested?: boolean;
-  extensionReason?: string;
-  rectifyDesc?: string;
-  rectifyPhotos?: string[];
-  rectifyTime?: string;
-  verifierId?: string;
-  verifierName?: string;
-  verifyTime?: string;
-  logs: HazardLog[];
-}
-
-export interface HazardConfig {
-  types: string[];
-  areas: string[];
-}
+export type { User, UserRole, UserPermissions, DepartmentNode, HazardRecord, HazardLog, HazardConfig } from '@/types/database';
 
 // ==========================================
-// 3. 内存数据初始化
-// ==========================================
-
-let departments: DepartmentNode[] = [
-  { id: 'dept_root', name: 'XX新能源科技有限公司', parentId: null, managerId: '88888888', level: 1 },
-  { id: 'dept_ehs', name: 'EHS部', parentId: 'dept_root', managerId: '88888888', level: 2 },
-  { id: 'dept_prod', name: '生产部', parentId: 'dept_root', managerId: '', level: 2 },
-  { id: 'dept_ws1', name: '一号车间', parentId: 'dept_prod', managerId: '', level: 3 },
-];
-
-let users: User[] = [
-  {
-    id: '88888888',
-    username: 'admin',
-    name: '超级管理员',
-    password: 'admin',
-    avatar: '/image/default_avatar.jpg',
-    role: 'admin',
-    department: 'EHS部',
-    departmentId: 'dept_ehs',
-    jobTitle: 'EHS总监',
-    directManagerId: '',
-    permissions: { all: ['all'] },
-  },
-];
-
-let hazardRecords: HazardRecord[] = [
-  {
-    id: 'H-20231218-001',
-    status: 'assigned',
-    riskLevel: 'medium',
-    type: '用电安全',
-    location: '一号车间',
-    desc: '配电箱门未关闭，且缺少警示标识',
-    photos: [],
-    reporterId: '88888888',
-    reporterName: '超级管理员',
-    reportTime: new Date().toISOString(),
-    responsibleDept: '设备部',
-    responsibleId: '88888888',
-    responsibleName: '超级管理员',
-    deadline: new Date(Date.now() + 86400000 * 3).toISOString(),
-    logs: [
-      {
-        operatorId: '88888888',
-        operatorName: '超级管理员',
-        action: '上报隐患',
-        time: new Date().toISOString(),
-        changes: '创建记录',
-      },
-      {
-        operatorId: '88888888',
-        operatorName: '超级管理员',
-        action: '指派责任人',
-        time: new Date().toISOString(),
-        changes: '指派给: 超级管理员',
-      },
-    ],
-  },
-];
-
-let hazardConfig: HazardConfig = {
-  types: ['用电安全', '消防设施', '机械伤害', '化学品管理', '劳保穿戴', '现场5S'],
-  areas: ['一号车间', '二号车间', '仓库区', '办公楼', '实验室', '厂区道路'],
-};
-
-// ==========================================
-// 4. 数据库操作对象 (纯内存)
+// 3. 数据库操作对象 (转发到 prismaDb)
 // ==========================================
 
 export const db = {
   // === 用户相关 ===
-  getUsers: async () => userDb.getUsers(), // 🟢 从 userDb 加载实际数据
-  getUserByUsername: async (username: string) => userDb.getUsers().find((u) => u.username === username),
-  getUserById: async (id: string) => userDb.getUsers().find((u) => u.id === id),
+  getUsers: async () => prismaDb.getUsers(),
 
-  updateUser: async (id: string, data: Partial<User>) => {
-    const allUsers = userDb.getUsers();
-    const idx = allUsers.findIndex((u) => u.id === id);
-    if (idx !== -1) {
-      allUsers[idx] = { ...allUsers[idx], ...data };
-      userDb.saveUsers(allUsers);
-      return allUsers[idx];
-    }
-    return null;
+  getUserByUsername: async (username: string) => {
+    const users = await prismaDb.getUsers();
+    return users.find((u) => u.username === username);
   },
 
-  createUser: async (data: Omit<User, 'id' | 'permissions' | 'avatar'>) => {
-    const allUsers = userDb.getUsers();
-    if (allUsers.some((u) => u.username === data.username)) {
-      throw new Error('登录账号已存在');
-    }
-    const newUser: User = {
-      ...data,
-      id: Math.floor(10000000 + Math.random() * 90000000).toString(),
-      avatar: '/image/default_avatar.jpg',
-      permissions: {},
-      directManagerId: data.directManagerId || '',
-    };
-    allUsers.push(newUser);
-    userDb.saveUsers(allUsers);
-    return newUser;
-  },
+  getUserById: async (id: string) => prismaDb.getUserById(id),
 
-  deleteUser: async (id: string) => {
-    users = users.filter((u) => u.id !== id);
-    return true;
-  },
+  updateUser: async (id: string, data: Partial<User>) => prismaDb.updateUser(id, data),
+
+  createUser: async (data: any) => prismaDb.saveUser(data),
+
+  deleteUser: async (id: string) => prismaDb.deleteUser(id),
 
   // === 组织架构相关 ===
-  getDepartments: async () => orgDb.getDepartments(), // 🟢 从 orgDb 加载实际数据
+  getDepartments: async () => prismaDb.getDepartments(),
 
-  getOrgTree: async () => {
-    const list = orgDb.getDepartments();
-    const map: Record<string, DepartmentNode> = {};
-    const tree: DepartmentNode[] = [];
-    list.forEach((node: DepartmentNode) => {
-      map[node.id] = { ...node, children: [] };
-    });
-    list.forEach((node: DepartmentNode) => {
-      if (node.parentId && map[node.parentId]) {
-        map[node.parentId].children?.push(map[node.id]);
-      } else {
-        tree.push(map[node.id]);
-      }
-    });
-    return tree;
-  },
+  getOrgTree: async () => prismaDb.getOrgTree(),
 
   createDepartment: async (data: { name: string; parentId: string | null; managerId?: string; level: number }) => {
-    const newDept: DepartmentNode = {
-      id: `dept_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      name: data.name,
-      parentId: data.parentId,
-      managerId: data.managerId,
-      level: data.level,
-    };
-    departments.push(newDept);
-    return newDept;
+    return prismaDb.createDepartment(data);
   },
 
-  updateDepartment: async (id: string, data: Partial<DepartmentNode>) => {
-    const idx = departments.findIndex((d) => d.id === id);
-    if (idx !== -1) {
-      departments[idx] = { ...departments[idx], ...data };
-      return departments[idx];
-    }
-    return null;
-  },
+  updateDepartment: async (id: string, data: Partial<DepartmentNode>) => prismaDb.updateDepartment(id, data),
 
-  deleteDepartment: async (id: string) => {
-    departments = departments.filter((d) => d.id !== id);
-    return true;
-  },
+  deleteDepartment: async (id: string) => prismaDb.deleteDepartment(id),
 
   // === 隐患相关 ===
-  getHazards: async () => [...hazardRecords],
+  getHazards: async () => prismaDb.getHazards(),
 
-  createHazard: async (data: any) => {
-    // 生成隐患编号：日期+序号（如20251225001）
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, ''); // 20251225
-    const todayHazards = hazardRecords.filter(h => h.code?.startsWith(today) || h.id?.includes(today));
-    const nextNumber = (todayHazards.length + 1).toString().padStart(3, '0'); // 001, 002, ...
-    const code = `${today}${nextNumber}`;
-    
-    const newHazard: HazardRecord = {
-      ...data,
-      id: data.id || `H-${code}`,
-      code: code, // 隐患编号
-      old_personal_ID: data.old_personal_ID || [], // 初始化历史经手人数组
-      status: data.status || 'reported', // 使用传入的状态，默认为 reported
-      logs: data.logs || [
-        {
-          operatorId: data.reporterId,
-          operatorName: data.reporterName,
-          action: '上报隐患',
-          time: new Date().toISOString(),
-          changes: '创建记录',
-        },
-      ],
-    };
-    hazardRecords.unshift(newHazard);
-    return newHazard;
-  },
+  createHazard: async (data: any) => prismaDb.createHazard(data),
 
-  updateHazard: async (id: string, data: Partial<HazardRecord>) => {
-    const idx = hazardRecords.findIndex((h) => h.id === id);
-    if (idx !== -1) {
-      hazardRecords[idx] = { ...hazardRecords[idx], ...data };
-      return hazardRecords[idx];
-    }
-    return null;
-  },
+  updateHazard: async (id: string, data: Partial<HazardRecord>) => prismaDb.updateHazard(id, data),
 
-  deleteHazard: async (id: string) => {
-    hazardRecords = hazardRecords.filter((h) => h.id !== id);
-    return true;
-  },
+  deleteHazard: async (id: string) => prismaDb.deleteHazard(id),
 
-  getHazardConfig: async () => ({ ...hazardConfig }),
+  getHazardConfig: async () => prismaDb.getHazardConfig(),
 
-  updateHazardConfig: async (data: Partial<HazardConfig>) => {
-    hazardConfig = { ...hazardConfig, ...data };
-    return hazardConfig;
-  },
+  updateHazardConfig: async (data: Partial<HazardConfig>) => prismaDb.updateHazardConfig(data),
 };
 
 // ==========================================
-// 5. 辅助函数（供 API Routes 使用）
+// 4. 辅助函数 (兼容旧 API)
 // ==========================================
+// 注意：这些函数原本是同步返回数组，但现在数据在数据库里，必须变为异步或者仅供特殊场景使用
+// 为了兼容，我们这里只能抛出错误或提供临时实现，但根据 grep 结果，这些函数主要用于 userDb 内部，
+// 而 userDb 我们也会重构。
 
-export const getUsers = () => [...users];
-export const saveUsers = (newUsers: User[]) => {
-  users = newUsers;
+export const getUsers = () => {
+    console.warn("Call to deprecated synchronous getUsers(). This may fail.");
+    return [];
 };
+export const saveUsers = (newUsers: User[]) => { console.warn("Call to deprecated saveUsers(). Ignored."); };
 export const generateUniqueId = () => Math.floor(10000000 + Math.random() * 90000000).toString();

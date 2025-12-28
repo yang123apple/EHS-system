@@ -1,141 +1,186 @@
 generator client {
   provider = "prisma-client-js"
-  // ❌ 绝对不要写 previewFeatures
-  // ❌ 绝对不要写 engineType
 }
 
 datasource db {
   provider = "sqlite"
-  // ✅ 必须加回这一行，因为 config 文件没了
   url      = env("DATABASE_URL")
 }
 
-// 1. 工程/项目表
 model Project {
   id              String   @id @default(cuid())
-  // ✅ 新增：项目编号 (自动生成，唯一)
   code            String   @unique @default(cuid())
   name            String
   contractNo      String?
   location        String
   startDate       DateTime
   endDate         DateTime
-  
   requestDept     String
   requestHead     String
   requestContact  String
-
   mgmtDept        String?
   mgmtHead        String?
   mgmtContact     String?
-
   supplierName    String
   supplierHead    String
   supplierContact String
-
-  // 🟢 新增：附件和软删除支持
-  attachments     String?  // JSON 格式存储附件列表
-  deletedAt       DateTime? // 软删除时间戳
-
+  attachments     String?
+  deletedAt       DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
   permits         WorkPermitRecord[]
 }
 
-// 2. 作业票模板
 model WorkPermitTemplate {
   id            String   @id @default(cuid())
   name          String
   type          String
   structureJson String
-  
-  // ✅ 新增：存储流程定义
-  // 格式: [{ step: 1, name: "需求部门", rowIndex: 16, role: "user" }, ...]
-  workflowConfig String? 
-
-  // 🟢 新增：存储解析的模板字段
-  // 格式: [{ cellKey: "R1C1", label: "部门", fieldName: "department", fieldType: "department", hint: "..." }]
+  workflowConfig String?
   parsedFields  String?
-
-  // 🟢 V3.3 模板级别系统
-  level         String   @default("primary")  // primary=一级, secondary=二级
-  sectionBindings String?                    // JSON: { "R5C3": "templateId", ... } section单元格绑定的二级模板
-
-  // 🟢 V3.4 纸张方向设置
-  orientation   String   @default("portrait") // portrait=纵向, landscape=横向
-
-  // 🟢 移动端表单配置
-  // 格式: { enabled: boolean, fields: [{ id, label, fieldKey, fieldType, ... }] }
+  level         String   @default("primary")
+  sectionBindings String?
+  orientation   String   @default("portrait")
   mobileFormConfig String?
-
   isLocked      Boolean  @default(false)
   createdAt     DateTime @default(now())
   records       WorkPermitRecord[]
 }
 
-// 3. 作业票填写记录
 model WorkPermitRecord {
   id          String   @id @default(cuid())
-  code        String?  @unique  // 🟢 新增：作业单编号（如 251220-001-DH-251222-001）
+  code        String?  @unique
   projectId   String
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   templateId  String
   template    WorkPermitTemplate @relation(fields: [templateId], references: [id])
   dataJson    String
-  
-  // ✅ 修改：状态不再只是 active，还有 pending_step_1, approved, rejected 等
   status      String   @default("draft") 
-  
-  // ✅ 新增：当前进行到第几步 (0 表示刚提交/第一步)
   currentStep Int      @default(0)
-
-  // ✅ 新增：存储审批历史
-  // 格式: [{ step: 0, approver: "张三", opinion: "同意", time: "2023...", action: "pass" }]
-  approvalLogs String? 
-
-  // ✅ 新增：附件列表（可为空），以 JSON 字符串保存，格式示例: [{ name: 'xxx.jpg', url: '/uploads/xxx.jpg' }]
+  approvalLogs String?
   attachments String?
-
-  // 🟢 新增：解析后的字段值（用于工作流条件匹配）
-  // 格式: { "constructionDepartment": "Engineering", "startDate": "2024-01-15", ... }
   parsedFieldValues String?
-
   createdAt   DateTime @default(now())
 }
 
-// ✅ 新增：系统操作日志表
-model SystemLog {
-  id        String   @id @default(cuid())
-  userId    String?  // 操作人ID
-  userName  String?  // 操作人姓名 (冗余存储，方便快速展示)
-  action    String   // 动作类型 (如: DELETE_PERMIT, APPROVE_PASS)
-  targetId  String?  // 操作对象ID (如作业票ID)
-  details   String?  // 详细描述 (JSON字符串或文本)
-  ip        String?  // 操作IP (可选)
-  createdAt DateTime @default(now())
+model User {
+  id              String   @id @default(cuid())
+  username        String   @unique
+  name            String
+  password        String
+  avatar          String   @default("/image/default_avatar.jpg")
+  role            String   @default("user")
+  departmentId    String?
+  department      Department? @relation(fields: [departmentId], references: [id])
+  jobTitle        String?
+  directManagerId String?
+  permissions     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  reportedHazards  HazardRecord[] @relation("Reporter")
+  assignedHazards  HazardRecord[] @relation("Responsible")
 }
 
-// 🟢 新增：消息通知表
-model Notification {
+model Department {
   id          String   @id @default(cuid())
-  userId      String   // 接收通知的用户ID
-  type        String   // 通知类型: approval_pending, approval_passed, approval_rejected, etc.
-  title       String   // 通知标题
-  content     String   // 通知内容
-  relatedType String?  // 关联对象类型: permit, hazard, document
-  relatedId   String?  // 关联对象ID (如作业票ID)
-  isRead      Boolean  @default(false) // 是否已读
+  name        String
+  parentId    String?
+  parent      Department? @relation("DeptHierarchy", fields: [parentId], references: [id])
+  children    Department[] @relation("DeptHierarchy")
+  managerId   String?
+  level       Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
+}
+
+model HazardRecord {
+  id              String   @id @default(cuid())
+  code            String?  @unique
+  status          String   @default("reported")
+  riskLevel       String   @default("low")
+  type            String
+  location        String
+  desc            String
+  photos          String?
+  reporterId      String
+  reporter        User     @relation("Reporter", fields: [reporterId], references: [id])
+  reporterName    String
+  reportTime      DateTime @default(now())
+  responsibleId   String?
+  responsible     User?    @relation("Responsible", fields: [responsibleId], references: [id])
+  responsibleName String?
+  responsibleDept String?
+  deadline        DateTime?
+  rectifyDesc     String?
+  rectifyPhotos   String?
+  rectifyTime     DateTime?
+  verifierId      String?
+  verifierName    String?
+  verifyTime      DateTime?
+  rectifyRequirement    String?
+  requireEmergencyPlan  Boolean  @default(false)
+  emergencyPlanDeadline DateTime?
+  emergencyPlanContent  String?
+  emergencyPlanSubmitTime DateTime?
+  ccDepts               String?
+  ccUsers               String?
+  logs                  String?
+  old_personal_ID       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model HazardConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
-// 🟢 新增：隐患系统配置表
-model HazardConfig {
+model Document {
   id          String   @id @default(cuid())
-  key         String   @unique // 配置项键名: hazard_types, hazard_areas
-  value       String   // JSON 字符串存储配置值
-  description String?  // 配置说明
+  name        String
+  type        String
+  docxPath    String?
+  pdfPath     String?
+  prefix      String?
+  suffix      Int?
+  fullNum     String?
+  level       Int
+  parentId    String?
+  parent      Document? @relation("DocHierarchy", fields: [parentId], references: [id])
+  children    Document[] @relation("DocHierarchy")
+  dept        String?
+  uploader    String?
+  uploadTime  DateTime @default(now())
+  searchText  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SystemLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  userName  String?
+  action    String
+  targetId  String?
+  details   String?
+  ip        String?
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String
+  title       String
+  content     String
+  relatedType String?
+  relatedId   String?
+  isRead      Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

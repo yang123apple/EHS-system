@@ -4,21 +4,25 @@ import fs from 'fs';
 import path from 'path';
 import mammoth from 'mammoth'; // 用于提取 Word 文本
 import * as XLSX from 'xlsx';  // 用于提取 Excel 文本
+import { prisma } from '@/lib/prisma';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
-const DB_FILE = path.join(process.cwd(), 'data', 'docs.json');
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-if (!fs.existsSync(path.dirname(DB_FILE))) fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 
-const getDbData = () => {
-  if (!fs.existsSync(DB_FILE)) return [];
-  try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf-8')); } 
-  catch (e) { return []; }
-};
-const saveDbData = (data: any) => fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-
-export async function GET() { return NextResponse.json(getDbData()); }
+export async function GET() {
+  const docs = await prisma.document.findMany({
+    orderBy: { createdAt: 'desc' }
+  });
+  // 转换 uploadTime (bigint/datetime 差异)
+  // 我们的 schema 中 uploadTime 是 DateTime，但原 JSON 中是 timestamp number
+  // 前端可能期望 number，这里我们做个转换或者前端兼容
+  const safeDocs = docs.map(d => ({
+    ...d,
+    uploadTime: d.uploadTime.getTime() // 转换为毫秒时间戳兼容前端
+  }));
+  return NextResponse.json(safeDocs);
+}
 
 // 辅助函数：提取文件纯文本
 async function extractTextFromFile(buffer: Buffer, isXlsx: boolean): Promise<string> {
@@ -64,70 +68,75 @@ export async function POST(req: Request) {
 
     if (isXlsx && level !== 4) return NextResponse.json({ error: 'Excel (XLSX) 文件仅允许作为 4级记录表上传' }, { status: 400 });
 
-    const fileId = Date.now().toString(36);
     const ext = isXlsx ? 'xlsx' : 'docx';
+    // 文件保存到磁盘
+    const fileId = Date.now().toString(36);
     const safeFileName = `${ext.toUpperCase()}-${fileId}.${ext}`; 
     const buffer = Buffer.from(await file.arrayBuffer());
     
-    // 1. 保存物理文件
     try {
         fs.writeFileSync(path.join(UPLOAD_DIR, safeFileName), buffer);
     } catch (ioError) {
         return NextResponse.json({ error: '服务器写入文件失败' }, { status: 500 });
     }
 
-    // 2. === 新增：提取并存储搜索文本 ===
+    // 2. 提取文本
     const searchText = await extractTextFromFile(buffer, !!isXlsx);
 
     // 3. 编号逻辑
-    const currentFiles = getDbData();
     let finalPrefix = '';
     let suffix = 1;
 
     if (level === 4) {
         if (!parentId) return NextResponse.json({ error: '4级文件必须选择上级' }, { status: 400 });
-        const parentFile = currentFiles.find((f: any) => f.id === parentId);
+        const parentFile = await prisma.document.findUnique({ where: { id: parentId } });
         if (!parentFile) return NextResponse.json({ error: '上级文件不存在' }, { status: 404 });
-        finalPrefix = parentFile.fullNum; 
-        const siblings = currentFiles.filter((f: any) => f.parentId === parentId && f.level === 4);
-        if (siblings.length > 0) {
-            const maxSuffix = Math.max(...siblings.map((f: any) => Number(f.suffix) || 0));
-            suffix = maxSuffix + 1;
+
+        finalPrefix = parentFile.fullNum || '';
+
+        // 查找最大的 suffix
+        const maxSibling = await prisma.document.findFirst({
+          where: { parentId, level: 4 },
+          orderBy: { suffix: 'desc' }
+        });
+        if (maxSibling && maxSibling.suffix) {
+          suffix = maxSibling.suffix + 1;
         }
     } else {
         if (!userInputPrefix) return NextResponse.json({ error: '请输入前缀' }, { status: 400 });
         finalPrefix = userInputPrefix.toUpperCase();
-        const samePrefixFiles = currentFiles.filter((f: any) => f.prefix === finalPrefix);
-        if (samePrefixFiles.length > 0) {
-            const maxSuffix = Math.max(...samePrefixFiles.map((f: any) => Number(f.suffix) || 0));
-            suffix = maxSuffix + 1;
+
+        const maxSamePrefix = await prisma.document.findFirst({
+          where: { prefix: finalPrefix },
+          orderBy: { suffix: 'desc' }
+        });
+
+        if (maxSamePrefix && maxSamePrefix.suffix) {
+          suffix = maxSamePrefix.suffix + 1;
         }
     }
     
     const suffixStr = suffix.toString().padStart(3, '0');
     const fullNum = `${finalPrefix}-${suffixStr}`;
 
-    const newDoc = {
-      id: fileId,
-      name: file.name.replace(`.${ext}`, ''),
-      docxPath: `/uploads/${safeFileName}`, 
-      pdfPath: null,
-      prefix: finalPrefix,
-      suffix: suffix,
-      fullNum: fullNum,
-      level: level,
-      parentId: parentId || null,
-      dept: dept,
-      type: isXlsx ? 'xlsx' : 'docx', 
-      uploadTime: Date.now(),
-      uploader: uploader,
-      searchText: searchText // === 新增字段 ===
-    };
+    const newDoc = await prisma.document.create({
+      data: {
+        name: file.name.replace(`.${ext}`, ''),
+        type: ext,
+        docxPath: `/uploads/${safeFileName}`,
+        level,
+        parentId: parentId || null,
+        dept,
+        uploader,
+        uploadTime: new Date(), // Prisma DateTime
+        searchText,
+        prefix: finalPrefix,
+        suffix,
+        fullNum
+      }
+    });
 
-    currentFiles.push(newDoc);
-    saveDbData(currentFiles);
-
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, doc: newDoc });
 
   } catch (error: any) {
     console.error("UPLOAD ERROR:", error);
