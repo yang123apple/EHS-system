@@ -5,6 +5,7 @@ import { HazardRecord, CCRule, EmergencyPlanRule, HazardWorkflowConfig, SimpleUs
 import { HazardDispatchEngine, DispatchAction } from '@/services/hazardDispatchEngine';
 import { matchHandler } from '@/app/hidden-danger/_utils/handler-matcher';
 import type { Department } from '@/utils/departmentUtils';
+import { SystemLogService } from '@/services/systemLog.service';
 
 export function useHazardWorkflow(onSuccess: () => void) {
   const [loading, setLoading] = useState(false);
@@ -232,6 +233,54 @@ export function useHazardWorkflow(onSuccess: () => void) {
 
       // 更新隐患状态
       await hazardService.updateHazard({ id: hazard.id, ...updates });
+
+      // 记录系统操作日志（包含引擎派发快照）
+      try {
+        const actionTypeMap: Record<string, string> = {
+          'submit': 'hazard_reported',
+          'assign': 'hazard_assigned',
+          'finish_rectify': 'hazard_rectified',
+          'verify_pass': 'hazard_verified',
+          'verify_reject': 'hazard_rejected',
+        };
+
+        const logAction = actionTypeMap[action] || `hazard_${action}`;
+        
+        // 构建快照数据
+        const snapshot = {
+          action: result.log.action,
+          operatorName: user?.name,
+          operatedAt: new Date().toISOString(),
+          hazardCode: hazard.code,
+          hazardDesc: hazard.desc,
+          currentStep: workflowConfig.steps[currentStepIndex]?.name,
+          nextStep: workflowConfig.steps[nextStepIndex]?.name,
+          dispatchResult: {
+            assignedTo: result.handlers.userNames,
+            assignedToIds: result.handlers.userIds,
+            ccTo: result.ccUsers.userNames,
+            ccToIds: result.ccUsers.userIds,
+            matchedBy: result.handlers.matchedBy || '默认规则',
+            status: result.newStatus,
+          },
+          comment: payload?.comment || payload?.rejectReason || payload?.extensionReason,
+          additionalData: payload,
+        };
+
+        await SystemLogService.createLog({
+          action: logAction,
+          targetType: 'hazard',
+          targetId: hazard.id,
+          userId: user?.id || 'system',
+          userName: user?.name || '系统',
+          details: `${result.log.action}：${hazard.code} - ${hazard.desc?.substring(0, 50)}`,
+          snapshot,
+        });
+
+        console.log('📝 已记录系统日志，包含派发快照');
+      } catch (logError) {
+        console.error('❌ 记录系统日志失败（不影响主流程）:', logError);
+      }
 
       // 创建通知（通过 API）
       if (result.notifications && result.notifications.length > 0) {

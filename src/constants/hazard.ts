@@ -2,7 +2,7 @@
 import { HazardStatus, RiskLevel } from '@/types/hidden-danger';
 
 // 视图模式定义
-export type ViewMode = 'overview' | 'my_tasks' | 'all_list' | 'stats' | 'config';
+export type ViewMode = 'overview' | 'my_tasks' | 'all_list' | 'stats' | 'config' | 'logs';
 
 export const VIEW_MODES = {
   OVERVIEW: 'overview' as ViewMode,
@@ -10,6 +10,7 @@ export const VIEW_MODES = {
   ALL_LIST: 'all_list' as ViewMode,
   STATS: 'stats' as ViewMode,
   CONFIG: 'config' as ViewMode,
+  LOGS: 'logs' as ViewMode,
 };
 
 // 风险等级映射

@@ -4,6 +4,7 @@ export const SYSTEM_MODULES = [
   {
     key: 'work_permit',
     name: '作业许可系统',
+    basePermission: 'access', // 基础权限：能访问该系统
     permissions: [
       { key: 'create_project', name: '新建工程' },
       { key: 'delete_project', name: '删除工程' },
@@ -20,6 +21,7 @@ export const SYSTEM_MODULES = [
   {
     key: 'hidden_danger',
     name: '隐患排查治理系统',
+    basePermission: 'access', // 基础权限：能访问该系统
     permissions: [
       { key: 'report', name: '隐患上报' },
       { key: 'handle', name: '整改/验收隐患' },
@@ -33,6 +35,7 @@ export const SYSTEM_MODULES = [
   {
     key: 'doc_sys',
     name: 'EHS文档管理系统',
+    basePermission: 'access', // 基础权限：能访问该系统
     permissions: [
       { key: 'upload', name: '上传文件 (DOCX/PDF)' },
       { key: 'down_docx_l123', name: '下载 DOCX (1-3级体系文件)' },
@@ -46,6 +49,7 @@ export const SYSTEM_MODULES = [
   {
     key: 'training',
     name: '培训管理系统',
+    basePermission: 'access', // 基础权限：能访问该系统
     permissions: [
       { key: 'create_material', name: '创建培训资料' },
       { key: 'edit_material', name: '编辑培训资料' },

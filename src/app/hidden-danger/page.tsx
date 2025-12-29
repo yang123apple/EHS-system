@@ -6,6 +6,7 @@ import { OverviewDashboard } from './_components/views/OverviewDashboard';
 import { HazardDataTable } from './_components/views/HazardDataTable';
 import { WorkflowConfig } from './_components/views/WorkflowConfig';
 import { StatsAnalysis } from './_components/views/StatsAnalysis';
+import { SystemLogView } from './_components/views/SystemLogView';
 import HazardDetailModal from './_components/modals/HazardDetailModal';
 import { HazardReportModal } from './_components/modals/HazardReportModal';
 import { BatchUploadModal } from './_components/modals/BatchUploadModal';
@@ -293,6 +294,10 @@ export default function HiddenDangerPage({
             departments={departments}
             onRefresh={refresh}
           />
+        )}
+
+        {viewMode === 'logs' && (
+          <SystemLogView loading={loading} />
         )}
       </main>
 

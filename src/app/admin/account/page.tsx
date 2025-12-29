@@ -7,8 +7,9 @@ import { parseTableFile, pick } from '@/utils/fileImport';
 import { flattenDepartments, matchDepartment } from '@/utils/departmentUtils';
 import * as XLSX from 'xlsx';
 // 引入 GitFork 图标用于表示汇报关系
-import { Trash2, UserPlus, Settings, Search, Filter, Edit, UploadCloud, User as UserIcon, Briefcase, GitFork, FileSpreadsheet, Download } from 'lucide-react';
+import { Trash2, UserPlus, Settings, Search, Filter, Edit, UploadCloud, User as UserIcon, Briefcase, GitFork, FileSpreadsheet, Download, Shield } from 'lucide-react';
 import Link from 'next/link';
+import BatchPermissionModal from './_components/BatchPermissionModal';
 
 interface User {
   id: string;
@@ -19,6 +20,7 @@ interface User {
   // 🟢 1. 新增：直属上级 ID (可选)
   directManagerId?: string; 
   avatar?: string;
+  permissions?: Record<string, string[]>;
 }
 
 export default function AccountManagement() {
@@ -49,6 +51,11 @@ export default function AccountManagement() {
   // 编辑弹窗状态
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+
+  // 批量权限管理状态
+  const [showBatchPermissionModal, setShowBatchPermissionModal] = useState(false);
+  const [allUsersForBatch, setAllUsersForBatch] = useState<User[]>([]);
+  const [isLoadingAllUsers, setIsLoadingAllUsers] = useState(false);
 
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -385,6 +392,31 @@ export default function AccountManagement() {
   // No client-side filtering needed now, use 'users' directly
   const filteredUsers = users;
 
+  // 加载所有用户用于批量权限管理
+  const loadAllUsersForBatch = async () => {
+    setIsLoadingAllUsers(true);
+    try {
+      // 不使用分页，获取所有用户
+      const res = await fetch('/api/users?limit=9999');
+      const data = await res.json();
+      
+      let allUsers = [];
+      if (data.data) {
+        allUsers = data.data.filter((u: any) => u.username !== 'admin');
+      } else {
+        allUsers = data.filter((u: any) => u.username !== 'admin');
+      }
+      
+      setAllUsersForBatch(allUsers);
+      setShowBatchPermissionModal(true);
+    } catch (error) {
+      console.error('加载全部用户失败:', error);
+      alert('加载用户列表失败，请重试');
+    } finally {
+      setIsLoadingAllUsers(false);
+    }
+  };
+
   // Debounce search
   useEffect(() => {
       const handler = setTimeout(() => {
@@ -470,7 +502,17 @@ export default function AccountManagement() {
           {/* 搜索栏 */}
           <div className="p-3 md:p-4 border-b border-slate-100 bg-slate-50/50 space-y-2 md:space-y-3">
              <div className="flex justify-between items-center">
-                 <h2 className="text-base md:text-lg font-bold text-slate-800">用户列表 <span className="text-slate-400 text-xs md:text-sm font-normal">({totalUsers})</span></h2>
+                 <h2 className="text-base md:text-lg font-bold text-slate-800">
+                   用户列表 <span className="text-slate-400 text-xs md:text-sm font-normal">({totalUsers})</span>
+                 </h2>
+                 <button
+                   onClick={loadAllUsersForBatch}
+                   disabled={isLoadingAllUsers}
+                   className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-500/30 font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                 >
+                   <Shield size={16} />
+                   {isLoadingAllUsers ? '加载中...' : '批量管理权限'}
+                 </button>
              </div>
              <div className="flex flex-col sm:flex-row gap-2 md:gap-4">
                  <div className="relative flex-1">
@@ -645,9 +687,20 @@ export default function AccountManagement() {
                         <button type="submit" className="px-5 py-2 bg-hytzer-blue text-white rounded-lg hover:bg-blue-600 shadow-lg shadow-blue-500/30 font-medium transition-colors">保存修改</button>
                     </div>
                 </form>
-            </div>
+          </div>
         </div>
       )}
+
+      {/* 批量权限管理弹窗 */}
+      <BatchPermissionModal
+        isOpen={showBatchPermissionModal}
+        onClose={() => setShowBatchPermissionModal(false)}
+        allUsers={allUsersForBatch}
+        onSuccess={() => {
+          setShowBatchPermissionModal(false);
+          loadUsers(currentPage);
+        }}
+      />
     </div>
   );
 }

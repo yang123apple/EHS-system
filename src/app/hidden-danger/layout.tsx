@@ -1,6 +1,6 @@
 // src/app/hidden-danger/layout.tsx
 "use client";
-import { AlertTriangle, TrafficCone, ListTodo, Search, Settings, BarChart3 } from 'lucide-react';
+import { AlertTriangle, TrafficCone, ListTodo, Search, Settings, BarChart3, FileText } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { ViewMode, VIEW_MODES } from '@/constants/hazard';
 import { useState, ReactNode } from 'react';
@@ -39,6 +39,12 @@ const navItems = [
     label: '统计分析', 
     mode: VIEW_MODES.STATS,
     show: hasPerm('view_stats') 
+  },
+  { 
+    icon: <FileText size={18}/>, 
+    label: '操作日志', 
+    mode: VIEW_MODES.LOGS,
+    show: user?.role === 'admin'
   },
 ];
 

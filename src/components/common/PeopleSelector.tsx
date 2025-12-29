@@ -152,7 +152,8 @@ export default function PeopleSelector({ isOpen, onClose, onConfirm, mode, multi
 
   // Tree Node Component
   const TreeNode = ({ node, level }: { node: OrgNode, level: number }) => {
-    const [expanded, setExpanded] = useState(false);
+    // 默认展开所有节点
+    const [expanded, setExpanded] = useState(true);
     const hasChildren = node.children && node.children.length > 0;
 
     // Check selection state
@@ -163,9 +164,9 @@ export default function PeopleSelector({ isOpen, onClose, onConfirm, mode, multi
       <div className="select-none">
         <div
             onClick={() => toggleDept(node)}
-            className={`flex items-center gap-2 p-2 my-1 rounded cursor-pointer transition-colors
-                ${isDeptSelected ? 'bg-blue-100 border-blue-300 text-blue-800' :
-                  isActive ? 'bg-slate-100 text-slate-900 font-medium' : 'hover:bg-slate-50 text-slate-600'}
+            className={`flex items-center gap-2 p-2 my-1 rounded cursor-pointer transition-all border-2
+                ${isDeptSelected ? 'bg-blue-500 border-blue-600 text-white shadow-md font-semibold' :
+                  isActive ? 'bg-slate-100 text-slate-900 font-medium border-slate-200' : 'hover:bg-slate-50 text-slate-600 border-transparent'}
             `}
             style={{ marginLeft: `${level * 16}px` }}
         >
@@ -175,9 +176,9 @@ export default function PeopleSelector({ isOpen, onClose, onConfirm, mode, multi
           >
              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </div>
-          <Briefcase size={14} className={isDeptSelected || isActive ? "text-blue-600" : "text-slate-400"} />
+          <Briefcase size={14} className={isDeptSelected ? "text-white" : isActive ? "text-blue-600" : "text-slate-400"} />
           <span className="text-sm truncate flex-1">{node.name}</span>
-          {isDeptSelected && <Check size={14} className="text-blue-600" />}
+          {isDeptSelected && <Check size={16} className="text-white font-bold" />}
         </div>
         {expanded && hasChildren && (
           <div className="border-l border-slate-200 ml-[1rem]">

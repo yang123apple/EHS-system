@@ -6,10 +6,12 @@ import * as XLSX from 'xlsx';
 import { 
   Search, FileText, FolderOpen, Download, Trash2, Edit, Upload, 
   Eye, ArrowLeft, Filter, ChevronRight, CornerDownRight, MoreHorizontal,
-  File as FileIcon, Sheet, RefreshCw, History, Clock, Calendar, Layers, Droplet
+  File as FileIcon, Sheet, RefreshCw, History, Clock, Calendar, Layers, Droplet, Activity
 } from 'lucide-react';
 import Link from 'next/link';
 import Watermark from '@/components/common/Watermark';
+import SystemLogModal from './_components/SystemLogModal';
+import { SystemLogService } from '@/services/systemLog.service';
 
 interface HistoryRecord {
   id: string; type: 'docx' | 'xlsx' | 'pdf'; name: string; path: string; uploadTime: number; uploader: string;
@@ -52,6 +54,7 @@ export default function DocSystemPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showWatermarkModal, setShowWatermarkModal] = useState(false); // 🔴 水印编辑弹窗
+  const [showLogModal, setShowLogModal] = useState(false); // 🔴 操作日志弹窗
   
   const [uploadLevel, setUploadLevel] = useState(1);
   const [editLevel, setEditLevel] = useState(1);
@@ -143,6 +146,7 @@ export default function DocSystemPage() {
     const file = formData.get('file') as File;
     const level = parseInt(formData.get('level') as string);
     const prefix = formData.get('prefix') as string;
+    const dept = formData.get('dept') as string;
 
     if (level === 4) {
         if (!file.name.endsWith('.docx') && !file.name.endsWith('.xlsx')) return alert("4级文件支持 .docx 或 .xlsx");
@@ -153,22 +157,94 @@ export default function DocSystemPage() {
 
     try {
       const res = await fetch('/api/docs', { method: 'POST', body: formData });
-      if (res.ok) { setShowUploadModal(false); loadFiles(); alert('上传成功'); } 
+      if (res.ok) {
+        const data = await res.json();
+        setShowUploadModal(false);
+        loadFiles();
+        alert('上传成功');
+
+        // 🔴 记录系统日志
+        try {
+          await SystemLogService.createLog({
+            action: 'document_uploaded',
+            targetType: 'document',
+            targetId: data.id || 'unknown',
+            userId: user?.id || 'system',
+            userName: user?.name || '系统',
+            details: `上传文档：${file.name}`,
+            snapshot: {
+              action: 'document_uploaded',
+              operatorName: user?.name || '未知',
+              operatedAt: new Date().toISOString(),
+              documentInfo: {
+                fileName: file.name,
+                level: level,
+                dept: dept,
+                prefix: prefix
+              }
+            }
+          });
+        } catch (logErr) {
+          console.error('日志记录失败:', logErr);
+        }
+      } 
       else { const err = await res.json(); alert(err.error || '上传失败'); }
     } catch (err) { alert('网络错误'); }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('确定删除此文档？')) return;
+    
+    // 获取待删除文件信息用于日志
+    const fileToDelete = files.find(f => f.id === id);
+    
     try {
       const res = await fetch(`/api/docs/${id}`, { method: 'DELETE' });
-      if (res.ok) { loadFiles(); if (currentFile?.id === id) { setShowPreviewModal(false); setShowEditModal(false); setShowUpdateModal(false); }} 
+      if (res.ok) {
+        loadFiles();
+        if (currentFile?.id === id) {
+          setShowPreviewModal(false);
+          setShowEditModal(false);
+          setShowUpdateModal(false);
+        }
+
+        // 🔴 记录系统日志
+        if (fileToDelete) {
+          try {
+            await SystemLogService.createLog({
+              action: 'document_deleted',
+              targetType: 'document',
+              targetId: id,
+              userId: user?.id || 'system',
+              userName: user?.name || '系统',
+              details: `删除文档：${fileToDelete.fullNum} ${fileToDelete.name}`,
+              snapshot: {
+                action: 'document_deleted',
+                operatorName: user?.name || '未知',
+                operatedAt: new Date().toISOString(),
+                documentInfo: {
+                  fullNum: fileToDelete.fullNum,
+                  name: fileToDelete.name,
+                  level: fileToDelete.level,
+                  dept: fileToDelete.dept
+                }
+              }
+            });
+          } catch (logErr) {
+            console.error('日志记录失败:', logErr);
+          }
+        }
+      } 
       else { const d = await res.json(); alert(d.error || '删除失败'); }
     } catch (err) { alert('请求出错'); }
   };
 
   const handleDeleteHistory = async (docId: string, historyId: string) => {
     if (!confirm('确定永久删除此历史文件？')) return;
+    
+    // 获取历史记录信息用于日志
+    const historyRecord = currentFile?.history?.find(h => h.id === historyId);
+    
     try {
         const res = await fetch(`/api/docs/${docId}?historyId=${historyId}`, { method: 'DELETE' });
         if (res.ok) {
@@ -177,6 +253,38 @@ export default function DocSystemPage() {
             if (currentFile && currentFile.id === docId) {
                 const updatedHistory = currentFile.history?.filter(h => h.id !== historyId);
                 setCurrentFile({ ...currentFile, history: updatedHistory });
+            }
+
+            // 🔴 记录系统日志
+            if (historyRecord) {
+              try {
+                await SystemLogService.createLog({
+                  action: 'document_history_deleted',
+                  targetType: 'document',
+                  targetId: docId,
+                  userId: user?.id || 'system',
+                  userName: user?.name || '系统',
+                  details: `删除历史版本：${historyRecord.name}`,
+                  snapshot: {
+                    action: 'document_history_deleted',
+                    operatorName: user?.name || '未知',
+                    operatedAt: new Date().toISOString(),
+                    documentInfo: {
+                      fullNum: currentFile?.fullNum,
+                      name: currentFile?.name,
+                      level: currentFile?.level,
+                      dept: currentFile?.dept
+                    },
+                    historyInfo: {
+                      name: historyRecord.name,
+                      type: historyRecord.type,
+                      uploadTime: historyRecord.uploadTime
+                    }
+                  }
+                });
+              } catch (logErr) {
+                console.error('日志记录失败:', logErr);
+              }
             }
         } else alert('删除失败');
     } catch (e) { alert('网络错误'); }
@@ -199,23 +307,98 @@ export default function DocSystemPage() {
   };
 
   const handleUpdateVersion = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault(); if (!currentFile) return;
+    e.preventDefault();
+    if (!currentFile) return;
+    
     const formData = new FormData(e.currentTarget);
     if (user) formData.append('uploader', user.username);
+    const newFile = formData.get('mainFile') as File;
+    
     try {
         const res = await fetch(`/api/docs/${currentFile.id}`, { method: 'PUT', body: formData });
-        if (res.ok) { setShowUpdateModal(false); loadFiles(); alert('更新成功'); } else alert('更新失败');
+        if (res.ok) {
+          setShowUpdateModal(false);
+          loadFiles();
+          alert('更新成功');
+
+          // 🔴 记录系统日志
+          try {
+            await SystemLogService.createLog({
+              action: 'document_version_updated',
+              targetType: 'document',
+              targetId: currentFile.id,
+              userId: user?.id || 'system',
+              userName: user?.name || '系统',
+              details: `更新文档版本：${currentFile.fullNum} ${currentFile.name}`,
+              snapshot: {
+                action: 'document_version_updated',
+                operatorName: user?.name || '未知',
+                operatedAt: new Date().toISOString(),
+                documentInfo: {
+                  fullNum: currentFile.fullNum,
+                  name: currentFile.name,
+                  level: currentFile.level,
+                  dept: currentFile.dept
+                },
+                updateInfo: {
+                  newFileName: newFile?.name || '未知'
+                }
+              }
+            });
+          } catch (logErr) {
+            console.error('日志记录失败:', logErr);
+          }
+        } else alert('更新失败');
     } catch (e) { alert('网络错误'); }
   };
 
   const handleSaveEdit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault(); if (!currentFile) return;
+    e.preventDefault();
+    if (!currentFile) return;
+    
     const formData = new FormData(e.currentTarget);
     if (!isAdmin) formData.set('dept', currentFile.dept);
     if (formData.get('parentId') === currentFile.id) return alert("上级不能是自己");
+    
+    const newName = formData.get('name') as string;
+    const newLevel = parseInt(formData.get('level') as string);
+    const newDept = formData.get('dept') as string;
+    
     try {
         const res = await fetch(`/api/docs/${currentFile.id}`, { method: 'PUT', body: formData });
-        if (res.ok) { setShowEditModal(false); loadFiles(); alert('修改成功'); } else alert('保存失败');
+        if (res.ok) {
+          setShowEditModal(false);
+          loadFiles();
+          alert('修改成功');
+
+          // 🔴 记录系统日志
+          try {
+            await SystemLogService.createLog({
+              action: 'document_info_updated',
+              targetType: 'document',
+              targetId: currentFile.id,
+              userId: user?.id || 'system',
+              userName: user?.name || '系统',
+              details: `修改文档信息：${currentFile.fullNum} ${currentFile.name}`,
+              snapshot: {
+                action: 'document_info_updated',
+                operatorName: user?.name || '未知',
+                operatedAt: new Date().toISOString(),
+                documentInfo: {
+                  fullNum: currentFile.fullNum,
+                  oldName: currentFile.name,
+                  newName: newName,
+                  oldLevel: currentFile.level,
+                  newLevel: newLevel,
+                  oldDept: currentFile.dept,
+                  newDept: newDept
+                }
+              }
+            });
+          } catch (logErr) {
+            console.error('日志记录失败:', logErr);
+          }
+        } else alert('保存失败');
     } catch (err) { alert('网络错误'); }
   };
 
@@ -589,6 +772,20 @@ export default function DocSystemPage() {
 
              <div className="border-t border-slate-100 my-2"></div>
 
+             {/* 🔴 操作日志按钮 (仅 admin 可见) */}
+             {isAdmin && (
+               <button
+                 onClick={() => {
+                   setShowLogModal(true);
+                   setIsFilterOpen(false);
+                 }}
+                 className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-700 rounded-lg hover:from-purple-100 hover:to-indigo-100 transition-all border border-purple-200 font-medium"
+               >
+                 <Activity size={18} />
+                 查看操作日志
+               </button>
+             )}
+
              {/* 上传按钮 (桌面端显示) */}
              {hasPerm('upload') ? (
                <button 
@@ -790,6 +987,12 @@ export default function DocSystemPage() {
           </div>
         </div>
       )}
+
+      {/* 🔴 系统操作日志弹窗 */}
+      <SystemLogModal 
+        isOpen={showLogModal} 
+        onClose={() => setShowLogModal(false)} 
+      />
 
       {/* 🔴 水印编辑弹窗 */}
       {showWatermarkModal && (

@@ -171,7 +171,9 @@ model SystemLog {
   userName  String?
   action    String
   targetId  String?
+  targetType String? // 'hazard', 'document', 'permit' 等
   details   String?
+  snapshot  String?  // JSON string: 记录流程快照（引擎解析结果、候选人列表等）
   ip        String?
   createdAt DateTime @default(now())
 }
