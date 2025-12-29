@@ -1,10 +1,14 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/app/(dashboard)/hidden-danger/_components/views/HazardDataTable.tsx
-import { FileSpreadsheet, Trash2, Search as SearchIcon, ChevronLeft, ChevronRight, FileQuestion } from 'lucide-react';
+import { FileSpreadsheet, Trash2, ChevronLeft, ChevronRight, FileQuestion } from 'lucide-react';
 import { StatusBadge, RiskBadge } from '../Badges';
 import { HazardRecord } from '@/types/hidden-danger';
 import { ViewMode } from '@/constants/hazard';
 import { TableSkeleton } from '@/components/common/Loading';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import * as XLSX from 'xlsx';
+import { cn } from '@/lib/utils';
 
 interface Props {
   hazards: HazardRecord[];
@@ -43,25 +47,29 @@ export function HazardDataTable({
   const showPagination = totalPages > 1;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col h-full">
-      {/* 工具栏 */}
-      <div className="p-4 border-b flex justify-between items-center bg-white">
-        <div className="flex items-center gap-4">
-          <h3 className="font-bold text-slate-800">
+    <Card className="h-full border-slate-200 bg-white flex flex-col overflow-hidden shadow-sm">
+      {/* Tools */}
+      <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-white/50 backdrop-blur-sm sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          <h3 className="text-lg font-bold text-slate-800 tracking-tight">
             {viewMode === 'my_tasks' ? '我的任务' : '全部隐患'}
           </h3>
-          <span className="text-sm text-slate-500">共 {total} 条</span>
+          <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+             Total: {total}
+          </span>
         </div>
-        <button 
+        <Button
+          variant="outline"
+          size="sm"
           onClick={handleExport} 
           disabled={hazards.length === 0}
-          className="flex items-center gap-2 text-green-700 bg-green-50 px-4 py-2 rounded-lg border border-green-200 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="gap-2 text-green-700 bg-green-50/50 hover:bg-green-100 hover:border-green-300 border-green-200"
         >
-          <FileSpreadsheet size={16} /> 导出 Excel
-        </button>
+          <FileSpreadsheet size={14} /> 导出 Excel
+        </Button>
       </div>
 
-      {/* 表格体 */}
+      {/* Table Content */}
       <div className="flex-1 overflow-auto">
         {loading ? (
           <div className="p-6">
@@ -69,45 +77,65 @@ export function HazardDataTable({
           </div>
         ) : hazards.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full py-16 text-slate-400">
-            <FileQuestion size={64} className="mb-4" />
-            <p className="text-lg font-medium">暂无数据</p>
-            <p className="text-sm mt-2">
+            <div className="p-4 bg-slate-50 rounded-full mb-4">
+                 <FileQuestion size={40} className="text-slate-300" />
+            </div>
+            <p className="text-base font-semibold text-slate-600">暂无数据</p>
+            <p className="text-sm mt-1 text-slate-400">
               {viewMode === 'my_tasks' ? '您当前没有待处理的任务' : '还没有隐患记录'}
             </p>
           </div>
         ) : (
-          <table className="w-full text-sm text-left">
-            <thead className="bg-slate-50 border-b text-slate-500 sticky top-0">
+          <table className="w-full text-sm text-left border-collapse">
+            <thead className="bg-slate-50/80 border-b border-slate-100 text-slate-500 sticky top-0 z-0 backdrop-blur-sm">
               <tr>
-                <th className="p-4">风险/状态</th>
-                <th className="p-4">描述</th>
-                <th className="p-4">责任信息</th>
-                <th className="p-4 text-right">操作</th>
+                <th className="p-4 font-semibold w-32">风险等级</th>
+                <th className="p-4 font-semibold w-32">状态</th>
+                <th className="p-4 font-semibold">隐患描述</th>
+                <th className="p-4 font-semibold w-48">责任信息</th>
+                <th className="p-4 font-semibold w-24 text-right">操作</th>
               </tr>
             </thead>
-            <tbody>
-              {hazards.map(h => (
-                <tr key={h.id} className="border-b hover:bg-slate-50 cursor-pointer transition-colors" onClick={() => onSelect(h)}>
-                  <td className="p-4 space-y-1">
+            <tbody className="divide-y divide-slate-50">
+              {hazards.map((h, index) => (
+                <tr
+                    key={h.id}
+                    className={cn(
+                        "group transition-colors cursor-pointer hover:bg-blue-50/30",
+                        index % 2 === 0 ? "bg-white" : "bg-slate-50/30" // Zebra striping
+                    )}
+                    onClick={() => onSelect(h)}
+                >
+                  <td className="p-4 align-top">
                     <RiskBadge level={h.riskLevel} />
-                    <div className="mt-1"><StatusBadge status={h.status} /></div>
                   </td>
-                  <td className="p-4">
-                    <div className="font-medium text-slate-800 truncate max-w-xs">{h.desc}</div>
-                    <div className="text-xs text-slate-400 mt-1">{h.location} | {h.type}</div>
+                   <td className="p-4 align-top">
+                    <StatusBadge status={h.status} />
                   </td>
-                  <td className="p-4">
+                  <td className="p-4 align-top">
+                    <div className="font-medium text-slate-800 truncate max-w-md mb-1 group-hover:text-blue-700 transition-colors">
+                        {h.desc}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
+                        <span className="bg-slate-100 px-1.5 rounded">{h.code || h.id}</span>
+                        <span>{h.location}</span>
+                        <span>•</span>
+                        <span>{h.type}</span>
+                    </div>
+                  </td>
+                  <td className="p-4 align-top">
                     {h.responsibleName ? (
-                      <div>
-                        <div className="font-bold">{h.responsibleName}</div>
-                        <div className="text-xs text-slate-400">截止: {h.deadline}</div>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm font-semibold text-slate-700">{h.responsibleName}</span>
+                        <span className="text-xs text-slate-400">截止: {h.deadline?.split('T')[0] || '-'}</span>
                       </div>
-                    ) : <span className="text-slate-400">-</span>}
+                    ) : <span className="text-slate-300 text-xs italic">待指派</span>}
                   </td>
-                  <td className="p-4 text-right">
+                  <td className="p-4 align-top text-right">
                     <button 
                       onClick={(e) => {e.stopPropagation(); onDelete(h.id);}} 
-                      className="text-red-500 p-2 hover:bg-red-50 rounded transition-colors"
+                      className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                      title="删除记录"
                     >
                       <Trash2 size={16} />
                     </button>
@@ -119,33 +147,37 @@ export function HazardDataTable({
         )}
       </div>
 
-      {/* 分页器 */}
+      {/* Pagination */}
       {showPagination && !loading && (
-        <div className="p-4 border-t flex items-center justify-between bg-slate-50">
-          <div className="text-sm text-slate-600">
+        <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-white/50 backdrop-blur-sm">
+          <div className="text-xs text-slate-500 font-medium">
             显示 {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, total)} 条，共 {total} 条
           </div>
           <div className="flex items-center gap-2">
-            <button
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
               onClick={() => onPageChange(page - 1)}
               disabled={page === 1}
-              className="px-3 py-1 border rounded-lg hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <ChevronLeft size={16} />
-            </button>
-            <span className="text-sm font-medium">
-              第 {page} / {totalPages} 页
+              <ChevronLeft size={14} />
+            </Button>
+            <span className="text-sm font-bold text-slate-700 w-16 text-center">
+               {page} / {totalPages}
             </span>
-            <button
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
               onClick={() => onPageChange(page + 1)}
               disabled={page === totalPages}
-              className="px-3 py-1 border rounded-lg hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <ChevronRight size={16} />
-            </button>
+              <ChevronRight size={14} />
+            </Button>
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

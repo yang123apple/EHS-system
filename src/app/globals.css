@@ -1,15 +1,22 @@
 @import "tailwindcss";
 
 @theme {
-  /* 定义 Hytzer 品牌色 */
-  --color-hytzer-blue: #1E88E5;
-  --color-hytzer-dark: #0F172A; /* 深空蓝 */
-  --color-hytzer-light: #F8FAFC;
+  /* 定义 Hytzer 品牌色 - Updated to Industrial Blue */
+  --color-hytzer-blue: #1e3a8a; /* Industrial Blue */
+  --color-hytzer-dark: #0f172a; /* Slate 900 */
+  --color-hytzer-light: #f8fafc; /* Slate 50 */
+
+  /* EHS Safety Colors */
+  --color-ehs-red: #ef4444; /* Danger */
+  --color-ehs-orange: #f97316; /* Warning */
+  --color-ehs-green: #22c55e; /* Safe */
+  --color-ehs-blue: #3b82f6; /* In Progress */
 }
 
 /* 基础样式 */
 body {
   @apply bg-slate-50 text-slate-900;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
 /* Toast 动画 */
@@ -26,6 +33,26 @@ body {
 
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Glassmorphism Badge Utility */
+/* Fixed for Tailwind v4: removed bg-opacity-* utilities */
+.badge-glass {
+  @apply bg-white/40 backdrop-blur-sm border-white/50;
+}
+
+/* Card Styles */
+.card-industrial {
+  @apply bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-300;
 }
 
 /* 打印样式重置 */
