@@ -236,12 +236,35 @@ export default function AccountManagement() {
           return;
         }
         
+        // 🟢 检查已存在的登录账号并自动去重
+        const existingUsernames = new Set(users.map(u => u.username));
+        const newUsers = importedUsers.filter(u => !existingUsernames.has(u.username));
+        const duplicateUsers = importedUsers.filter(u => existingUsernames.has(u.username));
+        const duplicateCount = duplicateUsers.length;
+        
+        if (newUsers.length === 0) {
+          alert(`⚠️ 所有 ${importedUsers.length} 个用户的登录账号都已存在，无需导入\n\n已存在的用户：\n${duplicateUsers.slice(0, 5).map(u => `• ${u.username} (${u.name})`).join('\n')}${duplicateCount > 5 ? `\n... 还有 ${duplicateCount - 5} 个` : ''}`);
+          return;
+        }
+        
+        // 构建确认消息
+        let confirmMessage = `✅ 共解析出 ${importedUsers.length} 个有效用户\n`;
+        if (duplicateCount > 0) {
+          confirmMessage += `📌 其中 ${duplicateCount} 个登录账号已存在（已自动去除）\n`;
+          confirmMessage += `   已存在: ${duplicateUsers.slice(0, 3).map(u => u.username).join(', ')}${duplicateCount > 3 ? '...' : ''}\n`;
+        }
+        confirmMessage += `➕ 将导入 ${newUsers.length} 个新用户\n`;
+        if (parseErrors.length > 0) {
+          confirmMessage += `⚠️ 解析问题: ${parseErrors.length} 条\n`;
+        }
+        confirmMessage += `\n是否继续导入？`;
+        
         // 批量创建用户
-        if (confirm(`✅ 共解析出 ${importedUsers.length} 个有效用户\n${parseErrors.length > 0 ? `⚠️ 其中 ${parseErrors.length} 条有问题\n` : ''}\n是否继续导入？`)) {
+        if (confirm(confirmMessage)) {
           let successCount = 0;
           const failedUsers: Array<{user: any, reason: string}> = [];
           
-          for (const user of importedUsers) {
+          for (const user of newUsers) {
             try {
               const res = await fetch('/api/users', {
                 method: 'POST',
@@ -267,7 +290,10 @@ export default function AccountManagement() {
           }
           
           // 生成详细报告
-          let message = `📊 导入完成！\n\n✅ 成功: ${successCount}\n❌ 失败: ${failedUsers.length}`;
+          let message = `📊 导入完成！\n\n✅ 成功创建: ${successCount}\n❌ 失败: ${failedUsers.length}`;
+          if (duplicateCount > 0) {
+            message += `\n🔄 已存在(跳过): ${duplicateCount}`;
+          }
           
           if (failedUsers.length > 0) {
             message += '\n\n失败详情：\n';

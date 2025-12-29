@@ -8,7 +8,8 @@ import {
   ArrowRight,
   ShieldCheck,
   FolderOpen,
-  Settings
+  Settings,
+  GraduationCap
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -43,6 +44,15 @@ export default function Dashboard() {
       icon: <FolderOpen size={24} />,
       color: "bg-indigo-50 text-indigo-600 border-indigo-100",
       hover: "hover:border-indigo-300 hover:shadow-indigo-100"
+    },
+    {
+      key: "training", // ✅ 对应 mockDb.ts 里的 training
+      title: "培训管理系统",
+      description: "在线培训、考试管理与学习进度跟踪",
+      href: "/training/my-tasks", 
+      icon: <GraduationCap size={24} />,
+      color: "bg-green-50 text-green-600 border-green-100",
+      hover: "hover:border-green-300 hover:shadow-green-100"
     },
     {
       key: "data_dashboard", // ✅ 对应 mockDb.ts 里的 data_dashboard (若 mockDb 中没有此 key，普通用户将不可见)

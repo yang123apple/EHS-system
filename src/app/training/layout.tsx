@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { BookOpen, Upload, Calendar, BarChart } from 'lucide-react';
+import { BookOpen, Upload, Calendar, BarChart, Settings, Library } from 'lucide-react';
 
 export default function TrainingLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -17,6 +17,11 @@ export default function TrainingLayout({ children }: { children: React.ReactNode
           <Link href="/training/my-tasks" className="flex items-center gap-3 p-2 text-slate-700 hover:bg-slate-100 rounded-lg">
              <BookOpen size={18}/> 我的任务
           </Link>
+          
+          <div className="text-xs font-bold text-slate-400 uppercase mt-6 mb-2 px-2">知识库</div>
+          <Link href="/training/knowledge-base" className="flex items-center gap-3 p-2 text-slate-700 hover:bg-slate-100 rounded-lg">
+             <Library size={18}/> 公共知识库
+          </Link>
 
           <div className="text-xs font-bold text-slate-400 uppercase mt-6 mb-2 px-2">管理中心</div>
           <Link href="/training/materials" className="flex items-center gap-3 p-2 text-slate-700 hover:bg-slate-100 rounded-lg">
@@ -24,6 +29,9 @@ export default function TrainingLayout({ children }: { children: React.ReactNode
           </Link>
           <Link href="/training/tasks" className="flex items-center gap-3 p-2 text-slate-700 hover:bg-slate-100 rounded-lg">
              <Calendar size={18}/> 任务发布
+          </Link>
+          <Link href="/training/settings" className="flex items-center gap-3 p-2 text-slate-700 hover:bg-slate-100 rounded-lg">
+             <Settings size={18}/> 系统设置
           </Link>
         </nav>
       </div>

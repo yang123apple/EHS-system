@@ -183,19 +183,58 @@ export default function OrgStructurePage() {
         return;
       }
         
-      if (!confirm(`✅ 共解析出 ${deptPaths.length} 个部门路径\n\n是否继续导入？\n\n注意：这将创建不存在的部门`)) {
+      // 🟢 检查已存在的部门并自动去重
+      const existingDepts = new Set<string>();
+      const flattenTree = (nodes: OrgNode[], parentPath: string = '') => {
+        nodes.forEach(node => {
+          const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+          existingDepts.add(fullPath);
+          if (node.children) {
+            flattenTree(node.children, fullPath);
+          }
+        });
+      };
+      flattenTree(tree);
+      
+      // 过滤掉已存在的部门
+      const newDeptPaths = deptPaths.filter(({path}) => !existingDepts.has(path));
+      const duplicateCount = deptPaths.length - newDeptPaths.length;
+      
+      if (newDeptPaths.length === 0) {
+        alert(`⚠️ 所有 ${deptPaths.length} 个部门都已存在，无需导入`);
+        return;
+      }
+      
+      const message = duplicateCount > 0 
+        ? `✅ 共解析出 ${deptPaths.length} 个部门路径\n📌 其中 ${duplicateCount} 个已存在（已自动去除）\n➕ 将导入 ${newDeptPaths.length} 个新部门\n\n是否继续导入？`
+        : `✅ 共解析出 ${deptPaths.length} 个部门路径\n\n是否继续导入？`;
+      
+      if (!confirm(message)) {
         return;
       }
         
         // 🟢 核心：构建部门树并批量创建
         const createdDepts = new Map<string, string>(); // path -> id
+        
+        // 先将已存在的部门路径添加到映射中
+        const mapExistingDepts = (nodes: OrgNode[], parentPath: string = '') => {
+          nodes.forEach(node => {
+            const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+            createdDepts.set(fullPath, node.id);
+            if (node.children) {
+              mapExistingDepts(node.children, fullPath);
+            }
+          });
+        };
+        mapExistingDepts(tree);
+        
         let successCount = 0;
         const failedItems: Array<{path: string, reason: string}> = [];
         
         // 按路径深度排序，先创建父级部门
-        deptPaths.sort((a, b) => a.path.split('/').length - b.path.split('/').length);
+        newDeptPaths.sort((a, b) => a.path.split('/').length - b.path.split('/').length);
         
-        for (const {path, managerUsername} of deptPaths) {
+        for (const {path, managerUsername} of newDeptPaths) {
           try {
             const parts = path.split('/').map(p => p.trim()).filter(p => p);
             if (parts.length === 0) continue;
@@ -240,19 +279,22 @@ export default function OrgStructurePage() {
         }
         
         // 生成报告
-        let message = `📊 导入完成！\n\n✅ 成功: ${successCount}\n❌ 失败: ${failedItems.length}`;
+        let reportMessage = `📊 导入完成！\n\n✅ 成功创建: ${successCount}\n❌ 失败: ${failedItems.length}`;
+        if (duplicateCount > 0) {
+          reportMessage += `\n🔄 已存在(跳过): ${duplicateCount}`;
+        }
         
         if (failedItems.length > 0) {
-          message += '\n\n失败详情：\n';
+          reportMessage += '\n\n失败详情：\n';
           failedItems.slice(0, 5).forEach(({path, reason}) => {
-            message += `• ${path}: ${reason}\n`;
+            reportMessage += `• ${path}: ${reason}\n`;
           });
           if (failedItems.length > 5) {
-            message += `... 还有 ${failedItems.length - 5} 条失败记录`;
+            reportMessage += `... 还有 ${failedItems.length - 5} 条失败记录`;
           }
         }
         
-      alert(message);
+      alert(reportMessage);
       fetchData();
     } catch (error) {
       console.error(error);

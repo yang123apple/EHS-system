@@ -1,39 +1,31 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import FileViewer from '@/components/training/FileViewer';
 import { ArrowLeft, CheckCircle } from 'lucide-react';
 
-export default function LearnPage({ params }: { params: { taskId: string } }) {
+export default function LearnPage({ params }: { params: Promise<{ taskId: string }> }) {
   const router = useRouter();
+  const { taskId } = use(params);
   const [assignment, setAssignment] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [completed, setCompleted] = useState(false);
 
   useEffect(() => {
-    // Fetch assignment details (reuse my-tasks logic or new endpoint)
-    // Actually I need assignment ID. params.taskId here refers to the dynamic route param [taskId] which might be assignment ID based on my Link.
-    // Let's verify: Link href={`/training/learn/${t.id}`}. t.id is Assignment ID. Correct.
-
-    // I need an endpoint to get single assignment.
-    // I can reuse `/api/training/my-tasks` with filter or just list all and find (inefficient) or add detail endpoint.
-    // I added `/api/training/assignment/[id]` for POST. I should add GET there too?
-    // Let's assume I can get it. I'll quickly patch the API if needed.
-    // Actually, I didn't add GET to `src/app/api/training/assignment/[id]/route.ts`.
-    // I will fetch the list and find locally for now to save a step, or better, add GET.
-    // I'll add GET to `src/app/api/training/assignment/[id]/route.ts`.
-
-    fetch(`/api/training/assignment/${params.taskId}`)
+    fetch(`/api/training/assignment/${taskId}`)
         .then(res => res.json())
         .then(data => {
             setAssignment(data);
-            if (data.isPassed || (data.progress === 100 && !data.task.material.isExamRequired)) {
+            if (data?.isPassed || (data?.progress === 100 && !data?.task?.material?.isExamRequired)) {
                 setCompleted(true);
             }
         })
+        .catch(err => {
+            console.error('Failed to load assignment:', err);
+        })
         .finally(() => setLoading(false));
 
-  }, [params.taskId]);
+  }, [taskId]);
 
   const handleProgress = (progress: number) => {
       // Throttle updates?

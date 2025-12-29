@@ -16,20 +16,41 @@ export default function UploadPage() {
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const [type, setType] = useState('video');
+  const [category, setCategory] = useState('');
+  const [isPublic, setIsPublic] = useState(true);
   const [isExam, setIsExam] = useState(false);
   const [passingScore, setPassingScore] = useState(60);
   const [questions, setQuestions] = useState<any[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
 
   useEffect(() => {
     if (!user) {
         // Handle redirect if needed, or rely on layout
         // router.push('/login');
     }
+    // Load categories from settings
+    fetch('/api/training/settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data.categories) {
+          setCategories(data.categories);
+        }
+      })
+      .catch(console.error);
   }, [user]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
           const f = e.target.files[0];
+          
+          // 检查文件大小（500MB限制）
+          const maxSize = 500 * 1024 * 1024;
+          if (f.size > maxSize) {
+              alert('文件大小超过500MB限制，请选择较小的文件');
+              e.target.value = '';
+              return;
+          }
+          
           setFile(f);
           // Auto detect type
           if (f.type.includes('video')) setType('video');
@@ -61,10 +82,12 @@ export default function UploadPage() {
               title,
               description: desc,
               type,
+              category,
               url,
               duration: type === 'video' ? 300 : null, // Placeholder duration
               isExamRequired: isExam,
               passingScore,
+              isPublic,
               questions: isExam ? questions : [],
               uploaderId: user.id
           };
@@ -103,6 +126,20 @@ export default function UploadPage() {
                     <label className="block font-bold mb-2">描述</label>
                     <textarea className="w-full border rounded p-2" value={desc} onChange={e => setDesc(e.target.value)} />
                 </div>
+                
+                <div>
+                    <label className="block font-bold mb-2">学习类型</label>
+                    <select 
+                        className="w-full border rounded p-2" 
+                        value={category} 
+                        onChange={e => setCategory(e.target.value)}
+                    >
+                        <option value="">请选择类型</option>
+                        {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                    </select>
+                </div>
                 <div>
                     <label className="block font-bold mb-2">文件 (MP4, PDF, DOCX, PPTX)</label>
                     <input type="file" onChange={handleFileChange} className="block w-full text-sm text-slate-500
@@ -112,21 +149,53 @@ export default function UploadPage() {
                         file:bg-blue-50 file:text-blue-700
                         hover:file:bg-blue-100
                     "/>
-                    {file && <div className="mt-2 text-sm text-blue-600">已识别类型: {type}</div>}
+                    {file && (
+                        <div className="mt-2 space-y-1">
+                            <div className="text-sm text-blue-600">已识别类型: {type}</div>
+                            <div className="text-sm text-slate-600">
+                                文件大小: {(file.size / 1024 / 1024).toFixed(2)} MB
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                <div className="flex items-center gap-4">
-                     <label className="flex items-center gap-2 cursor-pointer">
-                         <input type="checkbox" checked={isExam} onChange={e => setIsExam(e.target.checked)} className="w-5 h-5"/>
-                         <span className="font-bold">需要考试</span>
-                     </label>
+                <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                        <input 
+                            type="checkbox" 
+                            id="isPublic"
+                            checked={isPublic} 
+                            onChange={e => setIsPublic(e.target.checked)} 
+                            className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            style={{
+                                appearance: 'none',
+                                WebkitAppearance: 'none',
+                                width: '22px',
+                                height: '22px',
+                                border: '2px solid #d1d5db',
+                                borderRadius: '6px',
+                                outline: 'none',
+                                cursor: 'pointer',
+                                position: 'relative',
+                                backgroundColor: isPublic ? '#3b82f6' : 'white'
+                            }}
+                        />
+                        <label htmlFor="isPublic" className="font-bold cursor-pointer">放入公共知识库</label>
+                    </div>
+                    
+                    <div className="flex items-center gap-4">
+                         <label className="flex items-center gap-2 cursor-pointer">
+                             <input type="checkbox" checked={isExam} onChange={e => setIsExam(e.target.checked)} className="w-5 h-5"/>
+                             <span className="font-bold">需要考试</span>
+                         </label>
 
-                     {isExam && (
-                         <div className="flex items-center gap-2">
-                             <span className="text-sm">及格分数:</span>
-                             <input type="number" value={passingScore} onChange={e => setPassingScore(parseInt(e.target.value))} className="border rounded w-20 p-1"/>
-                         </div>
-                     )}
+                         {isExam && (
+                             <div className="flex items-center gap-2">
+                                 <span className="text-sm">及格分数:</span>
+                                 <input type="number" value={passingScore} onChange={e => setPassingScore(parseInt(e.target.value))} className="border rounded w-20 p-1"/>
+                             </div>
+                         )}
+                    </div>
                 </div>
 
                 <div className="flex justify-end pt-6">

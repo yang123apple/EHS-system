@@ -1,9 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Plus, BarChart2, Users } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Plus, BarChart2, Users, Eye } from 'lucide-react';
 
 export default function TasksPage() {
+  const router = useRouter();
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,6 +35,7 @@ export default function TasksPage() {
               <th className="p-4">期限</th>
               <th className="p-4">完成情况</th>
               <th className="p-4">状态</th>
+              <th className="p-4">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -67,6 +70,15 @@ export default function TasksPage() {
                                     <span className="text-red-500 text-xs font-bold">已结束</span> :
                                     <span className="text-green-600 text-xs font-bold">进行中</span>
                                 }
+                            </td>
+                            <td className="p-4">
+                                <button
+                                    onClick={() => router.push(`/training/tasks/${t.id}`)}
+                                    className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium text-sm"
+                                >
+                                    <Eye size={16} />
+                                    查看详情
+                                </button>
                             </td>
                         </tr>
                     )

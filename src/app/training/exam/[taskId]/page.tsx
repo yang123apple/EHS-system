@@ -1,10 +1,11 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle, XCircle } from 'lucide-react';
 
-export default function ExamPage({ params }: { params: { taskId: string } }) {
+export default function ExamPage({ params }: { params: Promise<{ taskId: string }> }) {
   const router = useRouter();
+  const { taskId } = use(params);
   const [assignment, setAssignment] = useState<any>(null);
   const [questions, setQuestions] = useState<any[]>([]);
   const [answers, setAnswers] = useState<Record<string, string[]>>({}); // qId -> ['A']
@@ -12,23 +13,9 @@ export default function ExamPage({ params }: { params: { taskId: string } }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Fetch assignment to check if allowed
-    // 2. Fetch questions
-    // Using a combined endpoint or separate?
-    // I need the questions. The material endpoint returns them.
-    // I need to fetch assignment first to get materialId.
-
-    // I'll assume I can fetch assignment with material & questions.
-    // I need to update the GET route for assignment to include questions? No, security.
-    // Ideally questions should be fetched separately and answers verified on server.
-    // But for this MVP (and typical simple training systems), checking on client or sending answers to server is fine.
-    // Plan: Fetch assignment -> material -> questions.
-    // Wait, `material.questions` might not be included in the nested `task.material` query in `my-tasks`.
-    // I will use `GET /api/training/materials/[id]` to get questions.
-
     async function load() {
         try {
-            const assignRes = await fetch(`/api/training/assignment/${params.taskId}`); // Need to add GET support here first!
+            const assignRes = await fetch(`/api/training/assignment/${taskId}`);
             const assignData = await assignRes.json();
             setAssignment(assignData);
 
@@ -50,7 +37,7 @@ export default function ExamPage({ params }: { params: { taskId: string } }) {
         }
     }
     load();
-  }, [params.taskId]);
+  }, [taskId]);
 
   const toggleAnswer = (qId: string, label: string, type: string) => {
       const current = answers[qId] || [];

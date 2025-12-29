@@ -42,5 +42,19 @@ export const SYSTEM_MODULES = [
       { key: 'edit', name: '编辑文件信息' },
       { key: 'edit_watermark', name: '编辑预览水印' }
     ]
+  },
+  {
+    key: 'training',
+    name: '培训管理系统',
+    permissions: [
+      { key: 'create_material', name: '创建培训资料' },
+      { key: 'edit_material', name: '编辑培训资料' },
+      { key: 'delete_material', name: '删除培训资料' },
+      { key: 'create_task', name: '创建培训任务' },
+      { key: 'assign_task', name: '分配培训任务' },
+      { key: 'view_stats', name: '查看培训统计' },
+      { key: 'manage_exam', name: '管理考试试卷' },
+      { key: 'review_exam', name: '审核考试结果' },
+    ]
   }
 ];

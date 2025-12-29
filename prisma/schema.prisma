@@ -193,11 +193,13 @@ model TrainingMaterial {
   title         String
   description   String?
   type          String   // video, pdf, pptx, docx
+  category      String?  // 学习类型分类
   url           String
   convertedUrl  String?  // PDF version of pptx/docx
   duration      Int?     // seconds, for video
   isExamRequired Boolean @default(false)
   passingScore  Int?
+  isPublic      Boolean  @default(true) // 是否放入公共知识库
   uploaderId    String
   uploader      User     @relation(fields: [uploaderId], references: [id])
   createdAt     DateTime @default(now())
