@@ -29,14 +29,29 @@ export default function NotificationPanel() {
     
     setLoading(true);
     try {
-      const res = await fetch(`/api/notifications?userId=${user.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(data.notifications || []);
-        setUnreadCount(data.unreadCount || 0);
+      const res = await fetch(`/api/notifications?userId=${user.id}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      });
+      
+      if (!res.ok) {
+        console.error('获取通知失败，状态码:', res.status);
+        const errorText = await res.text();
+        console.error('错误详情:', errorText);
+        return;
       }
+      
+      const data = await res.json();
+      setNotifications(data.notifications || []);
+      setUnreadCount(data.unreadCount || 0);
     } catch (error) {
       console.error('获取通知失败:', error);
+      // 网络错误或其他异常，静默处理，不影响用户体验
+      setNotifications([]);
+      setUnreadCount(0);
     } finally {
       setLoading(false);
     }

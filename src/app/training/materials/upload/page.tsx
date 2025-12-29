@@ -56,7 +56,6 @@ export default function UploadPage() {
           if (f.type.includes('video')) setType('video');
           else if (f.type.includes('pdf')) setType('pdf');
           else if (f.name.endsWith('.docx')) setType('docx');
-          else if (f.name.endsWith('.pptx')) setType('pptx');
       }
   };
 
@@ -141,7 +140,7 @@ export default function UploadPage() {
                     </select>
                 </div>
                 <div>
-                    <label className="block font-bold mb-2">文件 (MP4, PDF, DOCX, PPTX)</label>
+                    <label className="block font-bold mb-2">文件 (MP4, PDF, DOCX)</label>
                     <input type="file" onChange={handleFileChange} className="block w-full text-sm text-slate-500
                         file:mr-4 file:py-2 file:px-4
                         file:rounded-full file:border-0

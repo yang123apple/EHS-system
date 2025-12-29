@@ -9,8 +9,11 @@ export async function GET(request: NextRequest) {
     const unreadOnly = searchParams.get('unreadOnly') === 'true';
     
     if (!userId) {
+      console.error('[Notifications API] 缺少用户ID参数');
       return NextResponse.json({ error: '缺少用户ID' }, { status: 400 });
     }
+
+    console.log(`[Notifications API] 获取用户 ${userId} 的通知`);
 
     // 构建查询条件
     const where: any = { userId };
@@ -33,13 +36,18 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    console.log(`[Notifications API] 成功获取 ${notifications.length} 条通知，未读 ${unreadCount} 条`);
+
     return NextResponse.json({ 
       notifications, 
       unreadCount 
     });
   } catch (error) {
-    console.error('获取通知失败:', error);
-    return NextResponse.json({ error: '获取通知失败' }, { status: 500 });
+    console.error('[Notifications API] 获取通知失败:', error);
+    return NextResponse.json({ 
+      error: '获取通知失败',
+      details: error instanceof Error ? error.message : String(error)
+    }, { status: 500 });
   }
 }
 

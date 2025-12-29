@@ -1,10 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Settings, Plus, X } from 'lucide-react';
+import { Settings, Plus, X, Droplet } from 'lucide-react';
 
 export default function TrainingSettingsPage() {
   const [categories, setCategories] = useState<string[]>([]);
   const [newCategory, setNewCategory] = useState('');
+  const [watermarkText, setWatermarkText] = useState('');
+  const [watermarkEnabled, setWatermarkEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -13,6 +15,8 @@ export default function TrainingSettingsPage() {
       .then(res => res.json())
       .then(data => {
         setCategories(data.categories || []);
+        setWatermarkText(data.watermarkText || '');
+        setWatermarkEnabled(data.watermarkEnabled !== false);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -37,7 +41,11 @@ export default function TrainingSettingsPage() {
       const res = await fetch('/api/training/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ categories })
+        body: JSON.stringify({ 
+          categories,
+          watermarkText,
+          watermarkEnabled
+        })
       });
 
       if (res.ok) {
@@ -60,6 +68,56 @@ export default function TrainingSettingsPage() {
         <h2 className="text-2xl font-bold text-slate-800">培训系统设置</h2>
       </div>
 
+      {/* 水印设置 */}
+      <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Droplet className="text-blue-600" size={24} />
+          <h3 className="text-lg font-bold">水印设置</h3>
+        </div>
+        <p className="text-sm text-slate-600 mb-6">
+          配置学习内容的水印文本和显示状态。
+        </p>
+
+        {loading ? (
+          <div className="text-center py-8 text-slate-400">加载中...</div>
+        ) : (
+          <>
+            <div className="space-y-4 mb-6">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="watermarkEnabled"
+                  checked={watermarkEnabled}
+                  onChange={e => setWatermarkEnabled(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <label htmlFor="watermarkEnabled" className="font-medium text-slate-700">
+                  启用水印
+                </label>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  水印文本
+                </label>
+                <input
+                  type="text"
+                  value={watermarkText}
+                  onChange={e => setWatermarkText(e.target.value)}
+                  placeholder="输入水印文本（支持 {username} 和 {name} 变量）"
+                  className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={!watermarkEnabled}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  提示：可使用 {'{username}'} 显示用户名，{'{name}'} 显示姓名
+                </p>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* 学习类型管理 */}
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="text-lg font-bold mb-4">学习类型管理</h3>
         <p className="text-sm text-slate-600 mb-6">

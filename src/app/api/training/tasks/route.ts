@@ -3,6 +3,24 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get('userId');
+
+    if (userId) {
+      // 获取用户的任务分配
+      const assignments = await prisma.trainingAssignment.findMany({
+        where: { userId },
+        include: {
+          task: {
+            include: {
+              material: true
+            }
+          }
+        }
+      });
+      return NextResponse.json(assignments);
+    }
+
     const tasks = await prisma.trainingTask.findMany({
       orderBy: { createdAt: 'desc' },
       include: {

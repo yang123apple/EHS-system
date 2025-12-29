@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "postinstall": "prisma generate",
     "db:export": "node scripts/export-to-json.js",
     "db:import": "node scripts/import-from-json.js",
     "db:backup": "node scripts/export-to-json.js",
@@ -14,7 +15,7 @@
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.1.0",
-    "@prisma/client": "^5.10.0",
+    "@prisma/client": "^5.22.0",
     "autoprefixer": "^10.4.23",
     "caniuse-lite": "^1.0.30001761",
     "clsx": "^2.1.1",
@@ -42,7 +43,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.0.8",
     "postcss": "^8.5.6",
-    "prisma": "^5.10.0",
+    "prisma": "^5.22.0",
     "tailwindcss": "^4.1.17",
     "typescript": "^5"
   }

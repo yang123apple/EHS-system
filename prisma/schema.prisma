@@ -82,6 +82,7 @@ model User {
   uploadedMaterials TrainingMaterial[]
   publishedTasks    TrainingTask[] @relation("TaskPublisher")
   trainingAssignments TrainingAssignment[]
+  learnedRecords  MaterialLearnedRecord[]
 }
 
 model Department {
@@ -192,10 +193,10 @@ model TrainingMaterial {
   id            String   @id @default(cuid())
   title         String
   description   String?
-  type          String   // video, pdf, pptx, docx
+  type          String   // video, pdf, docx
   category      String?  // 学习类型分类
   url           String
-  convertedUrl  String?  // PDF version of pptx/docx
+  convertedUrl  String?  // PDF version of docx
   duration      Int?     // seconds, for video
   isExamRequired Boolean @default(false)
   passingScore  Int?
@@ -206,6 +207,7 @@ model TrainingMaterial {
   updatedAt     DateTime @updatedAt
   questions     ExamQuestion[]
   tasks         TrainingTask[]
+  learnedRecords MaterialLearnedRecord[]
 }
 
 model ExamQuestion {
@@ -253,4 +255,15 @@ model TrainingAssignment {
   updatedAt     DateTime @updatedAt
 
   @@unique([taskId, userId])
+}
+
+model MaterialLearnedRecord {
+  id          String   @id @default(cuid())
+  materialId  String
+  material    TrainingMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learnedAt   DateTime @default(now())
+
+  @@unique([materialId, userId])
 }

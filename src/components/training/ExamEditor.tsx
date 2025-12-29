@@ -111,7 +111,7 @@ export default function ExamEditor({ questions, onChange }: Props) {
                    {q.options.map((opt, oIdx) => {
                        const isCorrect = q.answer.includes(opt.label);
                        return (
-                           <div key={opt.label} className="flex items-center gap-2">
+                           <div key={oIdx} className="flex items-center gap-2">
                                <button
                                    onClick={() => toggleAnswer(i, opt.label)}
                                    className={`w-6 h-6 rounded-full border flex items-center justify-center font-bold text-xs transition-colors
