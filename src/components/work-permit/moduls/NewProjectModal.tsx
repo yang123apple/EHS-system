@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { Hash, Paperclip, X, Briefcase } from 'lucide-react';
 import { ProjectService } from '@/services/workPermitService';
-import DepartmentSelectModal from './DepartmentSelectModal';
+import PeopleSelector from '@/components/common/PeopleSelector';
 
 interface Props {
   isOpen: boolean;
@@ -228,14 +228,18 @@ export default function NewProjectModal({ isOpen, onClose, onSuccess }: Props) {
       </div>
 
       {/* 🟢 部门选择弹窗 */}
-      <DepartmentSelectModal
+      <PeopleSelector
         isOpen={showDeptModal}
         onClose={() => setShowDeptModal(false)}
-        onSelect={(deptId, deptName) => {
-            setFormData(prev => ({ ...prev, requestDept: deptName, requestDeptId: deptId }));
-            setShowDeptModal(false);
+        mode="dept"
+        onConfirm={(selection) => {
+            if (Array.isArray(selection) && selection.length > 0) {
+                // @ts-ignore - selection is OrgNode[] in dept mode
+                const dept = selection[0];
+                setFormData(prev => ({ ...prev, requestDept: dept.name, requestDeptId: dept.id }));
+            }
         }}
-        selectedDeptId={formData.requestDeptId}
+        title="选择申请部门"
       />
     </div>
   );

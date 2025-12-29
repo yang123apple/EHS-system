@@ -3,7 +3,7 @@ import { Plus, Save, X, Trash2, RefreshCw, Users, User, GitBranch, Briefcase, Us
 import { Template, WorkflowStep, ParsedField, WorkflowPart, ApproverStrategyItem } from '@/types/work-permit';
 import { TemplateService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
-import DepartmentSelectModal from './DepartmentSelectModal';
+import PeopleSelector from '@/components/common/PeopleSelector';
 import ApproverStrategyConfig from './ApproverStrategyConfig';
 import { flattenDepartments } from '@/utils/departmentUtils';
 
@@ -1218,17 +1218,17 @@ export default function WorkflowEditorModal({
         </div>
       </div>
 
-      <DepartmentSelectModal
+      <PeopleSelector
         isOpen={!!selectorTarget}
         onClose={() => setSelectorTarget(null)}
-        onSelect={handleDeptSelect}
-        selectedDeptId={
-          selectorTarget
-            ? selectorTarget.type === 'approver'
-              ? workflowSteps[selectorTarget.stepIdx].approvers[selectorTarget.approverIdx!]?.deptId
-              : workflowSteps[selectorTarget.stepIdx].strategyConfig?.targetDeptId
-            : undefined
-        }
+        mode="dept"
+        onConfirm={(selection) => {
+             if (Array.isArray(selection) && selection.length > 0) {
+                 // @ts-ignore
+                 handleDeptSelect(selection[0].id, selection[0].name);
+             }
+        }}
+        title="选择部门"
       />
     </div>
   );

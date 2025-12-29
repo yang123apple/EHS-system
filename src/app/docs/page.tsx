@@ -27,6 +27,15 @@ export default function DocSystemPage() {
   const [files, setFiles] = useState<DocFile[]>([]);
   const [loading, setLoading] = useState(true);
   
+  // Pagination State (Root Level or Search)
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const limit = 50;
+
+  // Track loaded folders to avoid refetching
+  const [loadedFolders, setLoadedFolders] = useState<Set<string>>(new Set());
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+
   // === 筛选状态 ===
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
@@ -68,16 +77,61 @@ export default function DocSystemPage() {
     return user.permissions['doc_sys']?.includes('down_docx_l123');
   };
 
-  useEffect(() => { loadFiles(); }, []);
+  useEffect(() => { loadFiles(1); }, []);
 
-  const loadFiles = async () => {
+  const loadFiles = async (pageNum = 1) => {
     try {
-      const res = await fetch('/api/docs');
+      setLoading(true);
+      // Default: load roots (parentId=null) with pagination
+      const res = await fetch(`/api/docs?page=${pageNum}&limit=${limit}&parentId=null`);
       const data = await res.json();
-      setFiles(data);
-      const depts = Array.from(new Set(data.map((f: DocFile) => f.dept))).filter(Boolean) as string[];
-      setAllDepts(depts);
+
+      if (data.data) {
+          // If paging roots, we replace 'files' but we need to keep loaded children if we want to preserve state?
+          // For simplicity, root pagination replaces root files. Children of expanded nodes might be lost if we reset `files`.
+          // To do this robustly, we should merge.
+          // But merging might duplicate.
+          // Let's reset for root pagination change.
+          setFiles(data.data);
+          setTotalPages(data.meta.totalPages);
+          setPage(pageNum);
+
+          // Also fetch all depts for filter? (Might need separate API)
+          // For now, extract from current page
+          const depts = Array.from(new Set(data.data.map((f: DocFile) => f.dept))).filter(Boolean) as string[];
+          setAllDepts(depts);
+      } else {
+          setFiles(data); // Fallback
+      }
     } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+
+  const fetchChildren = async (parentId: string) => {
+      if (loadedFolders.has(parentId)) return;
+      try {
+          const res = await fetch(`/api/docs?parentId=${parentId}`); // Fetch all children (no paging for subfolders for now)
+          const data = await res.json();
+          const newFiles = data.data || data; // Handle paginated or list response
+          setFiles(prev => {
+              // Avoid duplicates
+              const ids = new Set(prev.map(f => f.id));
+              const uniqueNew = newFiles.filter((f: any) => !ids.has(f.id));
+              return [...prev, ...uniqueNew];
+          });
+          setLoadedFolders(prev => new Set(prev).add(parentId));
+      } catch(e) { console.error(e); }
+  };
+
+  const toggleFolder = (file: DocFile) => {
+      const isExpanded = expandedFolders.has(file.id);
+      if (isExpanded) {
+          const next = new Set(expandedFolders);
+          next.delete(file.id);
+          setExpandedFolders(next);
+      } else {
+          setExpandedFolders(prev => new Set(prev).add(file.id));
+          fetchChildren(file.id);
+      }
   };
 
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -194,13 +248,17 @@ export default function DocSystemPage() {
     return snippet.replace(regex, '<span class="bg-yellow-200 font-bold text-slate-900">$1</span>');
   };
 
-  const renderFileItem = (file: DocFile, depth: number, recursive: boolean, highlightContent?: string | null) => (
+  const renderFileItem = (file: DocFile, depth: number, recursive: boolean, highlightContent?: string | null) => {
+    const isFolder = file.level < 4; // Assuming < 4 are folders/categories
+    const isExpanded = expandedFolders.has(file.id);
+
+    return (
     <div key={file.id}>
         <div className={`flex flex-col bg-white p-3 md:p-3 rounded-lg border border-slate-200 hover:shadow-sm hover:border-blue-300 transition-all group ${depth > 0 && !highlightContent ? 'ml-3 md:ml-8 relative' : ''}`}>
             {depth > 0 && !highlightContent && <div className="absolute -left-2 md:-left-6 top-1/2 -translate-y-1/2 w-2 md:w-4 h-px bg-slate-300"></div>}
             <div className="flex items-start justify-between gap-2">
                 {/* 左侧：图标 + 文件信息 */}
-                <div className="flex items-start gap-2 flex-1 min-w-0 cursor-pointer" onClick={() => handlePreview(file)}>
+                <div className="flex items-start gap-2 flex-1 min-w-0 cursor-pointer" onClick={() => isFolder ? toggleFolder(file) : handlePreview(file)}>
                     {/* 文件图标 */}
                     <div className={`p-1.5 md:p-2 rounded-lg shrink-0 ${file.level === 1 ? 'bg-blue-100 text-blue-600' : file.level === 4 ? ((file.type || 'docx') === 'xlsx' ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600') : 'bg-slate-100 text-slate-600'}`}>
                         {file.level === 1 ? <FolderOpen size={16} className="md:w-5 md:h-5" /> : (file.type || 'docx') === 'xlsx' ? <Sheet size={16} className="md:w-5 md:h-5" /> : file.level === 4 ? <FileIcon size={16} className="md:w-5 md:h-5" /> : <FileText size={16} className="md:w-5 md:h-5" />}
@@ -284,9 +342,9 @@ export default function DocSystemPage() {
                 </div>
             )}
         </div>
-        {recursive && renderTree(file.id, depth + 1)}
+        {recursive && isExpanded && renderTree(file.id, depth + 1)}
     </div>
-  );
+  )};
 
   const renderTree = (parentId: string | null, depth: number = 0) => {
     // === 核心逻辑修改：是否处于“筛选/搜索模式” ===
@@ -551,8 +609,31 @@ export default function DocSystemPage() {
            </div>
          </div>
          {/* 内容区域 */}
-         <div className="flex-1 bg-slate-50/50 rounded-lg md:rounded-xl border border-slate-200 p-3 md:p-6 overflow-y-auto custom-scrollbar">
-           {loading ? <div className="text-center py-10 text-sm">加载中...</div> : renderTree(null)}
+         <div className="flex-1 bg-slate-50/50 rounded-lg md:rounded-xl border border-slate-200 p-3 md:p-6 overflow-y-auto custom-scrollbar flex flex-col">
+           <div className="flex-1">
+               {loading ? <div className="text-center py-10 text-sm">加载中...</div> : renderTree(null)}
+           </div>
+
+           {/* Pagination Controls (Only for Root/List) */}
+           {!searchTerm && !startDate && !deptFilter && totalPages > 1 && (
+               <div className="mt-4 flex justify-center items-center gap-4">
+                   <button
+                      onClick={() => loadFiles(page - 1)}
+                      disabled={page === 1}
+                      className="px-3 py-1 bg-white border rounded disabled:opacity-50 hover:bg-slate-50 text-sm"
+                   >
+                       上一页
+                   </button>
+                   <span className="text-sm text-slate-600">第 {page} 页 / 共 {totalPages} 页</span>
+                   <button
+                      onClick={() => loadFiles(page + 1)}
+                      disabled={page === totalPages}
+                      className="px-3 py-1 bg-white border rounded disabled:opacity-50 hover:bg-slate-50 text-sm"
+                   >
+                       下一页
+                   </button>
+               </div>
+           )}
          </div>
       </div>
 

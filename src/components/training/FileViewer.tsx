@@ -26,8 +26,8 @@ export default function FileViewer({ url, type, onProgress, onComplete }: Props)
           const percent = (video.currentTime / video.duration) * 100;
           onProgress?.(percent);
 
-          // Rule: Last 30 seconds = pass
-          if (video.duration - video.currentTime <= 30) {
+          // Rule: 95% watched = pass
+          if (percent >= 95) {
             onComplete?.();
           }
         }
@@ -57,9 +57,10 @@ export default function FileViewer({ url, type, onProgress, onComplete }: Props)
 
   // Scroll Handling for Docs (Bottom Detection)
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-     if (type === 'docx' || type === 'pdf') {
+     if (type === 'docx') {
          const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
          // Give some buffer (e.g., 50px)
+         // 浏览到最后一页 (scrolled to bottom)
          if (scrollHeight - scrollTop - clientHeight < 50) {
              onComplete?.();
          }
@@ -85,12 +86,19 @@ export default function FileViewer({ url, type, onProgress, onComplete }: Props)
 
   if (type === 'pdf') {
      return (
-        <div className="w-full h-full relative">
+        <div className="w-full h-full relative flex flex-col">
             <Watermark text={user?.name || '培训系统'} />
             <iframe 
               src={`${url as string}#toolbar=0&navpanes=0`} 
-              className="w-full h-full border-0 relative z-10" 
+              className="w-full flex-1 border-0 relative z-10"
             />
+            {/* Fallback for PDF progress: Manual button if scroll tracking is impossible in iframe */}
+            <div className="bg-slate-800 text-white p-2 text-center text-xs z-20">
+                请阅读完文档内容 (PDF阅读进度需手动确认或等待系统检测)
+                <button onClick={() => onComplete?.()} className="ml-4 bg-blue-600 px-2 py-1 rounded hover:bg-blue-500">
+                    我已阅读完毕
+                </button>
+            </div>
         </div>
      );
   }

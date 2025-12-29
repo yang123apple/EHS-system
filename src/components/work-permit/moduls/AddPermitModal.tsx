@@ -4,7 +4,7 @@ import { Project, Template } from '@/types/work-permit';
 import { PermitService } from '@/services/workPermitService';
 import ExcelRenderer from '../ExcelRenderer';
 import SectionFormModal from './SectionFormModal';
-import DepartmentSelectModal from './DepartmentSelectModal';
+import PeopleSelector from '@/components/common/PeopleSelector';
 import MobileFormRenderer from '../views/MobileFormRenderer';
 import PrintStyle from '../PrintStyle';
 import { findDeptRecursive } from '@/utils/departmentUtils';
@@ -283,17 +283,23 @@ export default function AddPermitModal({
 
       {/* 声明式子弹窗渲染：避免 IIFE 导致的重挂载 */}
       {deptModalOpen && activeInputKey && (
-        <DepartmentSelectModal
+        <PeopleSelector
           isOpen={true}
           onClose={() => { setDeptModalOpen(false); setActiveInputKey(null); }}
-          onSelect={(id, name) => { 
+          mode="dept"
+          onConfirm={(selection) => {
             const targetKey = activeInputKey;
             if (!targetKey) return;
             
-            setPermitFormData(prev => ({ ...prev, [targetKey]: name }));
+            if (Array.isArray(selection) && selection.length > 0) {
+               // @ts-ignore
+               const name = selection[0].name;
+               setPermitFormData(prev => ({ ...prev, [targetKey]: name }));
+            }
             setDeptModalOpen(false); 
             setActiveInputKey(null);
           }}
+          title="选择部门"
         />
       )}
 

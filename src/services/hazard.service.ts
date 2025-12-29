@@ -2,8 +2,24 @@
 import { HazardRecord, HazardConfig } from '@/types/hidden-danger';
 
 export const hazardService = {
-  async getHazards(): Promise<HazardRecord[]> {
-    const res = await fetch('/api/hazards');
+  async getHazards(page?: number, limit?: number, filters?: any): Promise<any> {
+    const params = new URLSearchParams();
+    if (page) params.append('page', page.toString());
+    if (limit) params.append('limit', limit.toString());
+
+    if (filters) {
+        if (filters.type) params.append('filterType', filters.type);
+        if (filters.area) params.append('area', filters.area);
+        if (filters.status) params.append('status', filters.status);
+        if (filters.risk) params.append('risk', filters.risk);
+        if (filters.viewMode) params.append('viewMode', filters.viewMode);
+        if (filters.userId) params.append('userId', filters.userId);
+    }
+
+    const queryString = params.toString();
+    const url = queryString ? `/api/hazards?${queryString}` : '/api/hazards';
+
+    const res = await fetch(url);
     return res.json();
   },
 

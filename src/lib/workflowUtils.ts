@@ -1,6 +1,8 @@
 // src/lib/workflowUtils.ts
-import { db, User, DepartmentNode } from './mockDb';
+import { User } from '@prisma/client';
 import { WorkflowStep, ParsedField } from '@/types/work-permit';
+import { PeopleFinder } from './peopleFinder';
+import { prisma } from '@/lib/prisma';
 
 /**
  * 核心：审批人解析器 (Resolver)
@@ -20,45 +22,48 @@ export async function resolveApprovers(
   // 1. 指定固定人员
   if (approverStrategy === 'fixed' && approvers?.length) {
     const userIds = approvers.map((a: any) => a.userId).filter(Boolean);
-    const users = await db.getUsers();
-    return users.filter(u => userIds.includes(u.id));
+    // Use PeopleFinder to fetch users efficiently
+    const users = await Promise.all(userIds.map((id: string) => PeopleFinder.findUserById(id)));
+    return users.filter(Boolean) as User[];
   }
 
   // 2. 当前部门负责人
   if (approverStrategy === 'current_dept_manager') {
-    console.log('🔍 [resolveApprovers] 策略: current_dept_manager');
-    console.log('🔍 [resolveApprovers] applicantDept:', applicantDept);
+    // Attempt to resolve applicantDept (could be ID or Name)
     
-    // 🟢 直接从组织架构数据中查找该部门的 managerId
-    const departments = await db.getDepartments();
-    console.log('🔍 [resolveApprovers] 部门总数:', departments.length);
-    
-    const targetDept = departments.find(d => d.id === applicantDept || d.name === applicantDept);
-    console.log('🔍 [resolveApprovers] 找到的部门:', targetDept ? `${targetDept.name} (${targetDept.id})` : '未找到');
-    
-    if (targetDept?.managerId) {
-      console.log('🔍 [resolveApprovers] 部门经理ID:', targetDept.managerId);
-      const manager = await db.getUserById(targetDept.managerId);
-      console.log('🔍 [resolveApprovers] 查找到的部门经理:', manager ? `${manager.name} (${manager.id})` : '未找到');
-      return manager ? [manager] : [];
+    // Check if it looks like a CUID or if we need to lookup by name
+    const dept = await prisma.department.findFirst({
+       where: {
+           OR: [
+               { id: applicantDept },
+               { name: applicantDept }
+           ]
+       }
+    });
+
+    if (dept) {
+         const manager = await PeopleFinder.findDeptManager(dept.id);
+         return manager ? [manager] : [];
     }
     
-    console.log('⚠️ [resolveApprovers] 未找到部门或部门没有设置经理');
     return [];
   }
 
   // 3. 指定部门的负责人
   if (approverStrategy === 'specific_dept_manager' && strategyConfig?.targetDeptId) {
     const deptId = strategyConfig.targetDeptId;
-    // 🟢 直接从组织架构数据中查找该部门的 managerId
-    const managers = await findDeptManager(deptId);
-    return managers;
+    const manager = await PeopleFinder.findDeptManager(deptId);
+    return manager ? [manager] : [];
   }
 
   // 4. 指定角色 (如EHS经理)
   if (approverStrategy === 'role' && strategyConfig?.roleName) {
-    const users = await db.getUsers();
-    return users.filter(u => u.role === strategyConfig.roleName);
+    // Assuming roleName corresponds to jobTitle for now, or 'role' column
+    // The previous implementation used u.role === strategyConfig.roleName
+    const users = await prisma.user.findMany({
+        where: { role: strategyConfig.roleName }
+    });
+    return users;
   }
 
   // 5. 从模板内容匹配：按解析字段找到部门名 -> 部门负责人
@@ -84,7 +89,7 @@ export async function resolveApprovers(
         const key = `${r0}-${c0}`;
         const deptName = String(formData[key] || '').trim();
         if (deptName) {
-          const managerList = await findDeptManagerByName(deptName);
+          const managerList = await PeopleFinder.findDeptManagerByName(deptName);
           if (managerList.length) return managerList;
         }
       }
@@ -118,9 +123,9 @@ export async function resolveApprovers(
           
           // 如果字段值包含指定的文本，则返回对应部门的负责人
           if (fieldValue.includes(match.containsText)) {
-            const managers = await findDeptManager(match.targetDeptId);
-            if (managers.length > 0) {
-              return managers;
+            const manager = await PeopleFinder.findDeptManager(match.targetDeptId);
+            if (manager) {
+              return [manager];
             }
           }
         }
@@ -142,7 +147,6 @@ export async function resolveApprovers(
       targetDeptName?: string;
     }>;
 
-    const allUsers = await db.getUsers();
     const result: User[] = [];
 
     for (const match of optionMatches) {
@@ -173,12 +177,12 @@ export async function resolveApprovers(
           if (isChecked) {
             if (match.approverType === 'person' && match.approverUserId) {
               // 直接指定的人员
-              const user = allUsers.find(u => u.id === match.approverUserId);
+              const user = await PeopleFinder.findUserById(match.approverUserId);
               if (user) result.push(user);
             } else if (match.approverType === 'dept_manager' && match.targetDeptId) {
               // 部门负责人
-              const managers = await findDeptManager(match.targetDeptId);
-              result.push(...managers);
+              const manager = await PeopleFinder.findDeptManager(match.targetDeptId);
+              if (manager) result.push(manager);
             }
           }
         }
@@ -200,33 +204,7 @@ export async function resolveApprovers(
  * 查找直属上级（Point-to-Point + 部门树兜底）
  */
 export async function findSupervisor(userId: string): Promise<User | null> {
-  const user = await db.getUserById(userId);
-  if (!user) return null;
-
-  // 1. 直属上级优先
-  if (user.directManagerId) {
-    const directManager = await db.getUserById(user.directManagerId);
-    if (directManager) return directManager;
-  }
-
-  // 2. 部门架构兜底
-  if (!user.departmentId) return null;
-  const depts = await db.getDepartments();
-  let currentDeptId: string | null = user.departmentId;
-
-  while (currentDeptId) {
-    const currentDept = depts.find(d => d.id === currentDeptId);
-    if (!currentDept) break;
-
-    if (currentDept.managerId && currentDept.managerId !== userId) {
-      const manager = await db.getUserById(currentDept.managerId);
-      if (manager) return manager;
-    }
-
-    currentDeptId = currentDept.parentId;
-  }
-
-  return null;
+  return PeopleFinder.findSupervisor(userId);
 }
 
 /**
@@ -237,56 +215,26 @@ export async function findApproverByRole(
   applicantId: string,
   targetRoleName: string
 ): Promise<User | null> {
-  const applicant = await db.getUserById(applicantId);
+  const applicant = await PeopleFinder.findUserById(applicantId);
   if (!applicant || !applicant.departmentId) return null;
 
-  const allUsers = await db.getUsers();
-  const depts = await db.getDepartments();
+  // Optimized approach: Traverse up checking departments rather than fetching all users
   let currentDeptId: string | null = applicant.departmentId;
 
   while (currentDeptId) {
-    const approver = allUsers.find(
-      (u) =>
-        u.departmentId === currentDeptId &&
-        u.id !== applicantId &&
-        u.jobTitle?.includes(targetRoleName)
-    );
+    const dept: any = await prisma.department.findUnique({ where: { id: currentDeptId } });
+    if (!dept) break;
 
-    if (approver) return approver;
+    // Check users in this department with the role
+    const approvers = await PeopleFinder.findByJobTitle(currentDeptId, targetRoleName);
+    const validApprover = approvers.find(u => u.id !== applicantId);
 
-    const currentDept = depts.find(d => d.id === currentDeptId);
-    if (!currentDept?.parentId) break;
-    currentDeptId = currentDept.parentId;
+    if (validApprover) return validApprover;
+
+    currentDeptId = dept.parentId;
   }
 
   return null;
 }
 
-/**
- * 辅助函数：根据部门 ID 获取部门负责人（单人）
- */
-async function findDeptManager(deptId: string): Promise<User[]> {
-  const depts = await db.getDepartments();
-  const dept = depts.find(d => d.id === deptId);
-  if (dept?.managerId) {
-    const manager = await db.getUserById(dept.managerId);
-    return manager ? [manager] : [];
-  }
-  return [];
-}
-
-/**
- * 根据部门名称查找负责人（封装 name -> id -> manager 流程）
- */
-async function findDeptManagerByName(deptName: string): Promise<User[]> {
-  const depts = await db.getDepartments();
-  const queue: DepartmentNode[] = [...depts];
-  while (queue.length) {
-    const d = queue.shift()!;
-    if (d.name === deptName) {
-      return findDeptManager(d.id);
-    }
-    if (Array.isArray(d.children)) queue.push(...d.children as DepartmentNode[]);
-  }
-  return [];
-}
+// Helper functions (unused exports removed)

@@ -2,46 +2,83 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
 
-// GET: 获取所有用户
-export async function GET() {
-  const users = await db.getUsers();
+// GET: 获取所有用户 (Support Pagination)
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const page = parseInt(searchParams.get('page') || '1');
+  const limit = parseInt(searchParams.get('limit') || '50'); // Default 50 to avoid heavy load
+  const skip = (page - 1) * limit;
+
+  // If limit is -1, return all (use cautiously, maybe restrict to internal use)
+  // Or if no pagination params provided, existing behavior was to return all, but we should probably cap it or check usage.
+  // For backward compatibility if page is not provided, we might return all, but let's encourage pagination.
+  // However, the frontend currently expects all users for client-side filtering.
+  // We'll support both modes. If 'page' is present, paginate. Else return all (for now, until we fully refactor client).
   
-  // 过滤敏感信息 (密码)，只返回前端需要的字段
-  const safeUsers = users.map(u => ({
+  const isPaginated = searchParams.has('page');
+  const q = searchParams.get('q');
+  const dept = searchParams.get('dept'); // This might be department name or ID
+
+  const whereCondition: any = {};
+
+  if (q) {
+      whereCondition.OR = [
+          { name: { contains: q } },
+          { username: { contains: q } }
+      ];
+  }
+
+  if (dept) {
+      // Assuming dept might be name based on legacy usage
+      // Check if it's potentially an ID (CUIDs are usually 25 chars, alphanumeric)
+      // Or just try to match name via relation or direct field
+      // The schema has departmentId relations and 'department' field (which is relation)
+      // We can search by relation name
+      whereCondition.department = {
+          name: { contains: dept }
+      };
+  }
+
+  const queryOptions: any = {
+    where: whereCondition,
+    include: { department: true },
+    orderBy: { createdAt: 'desc' }
+  };
+
+  if (isPaginated) {
+    queryOptions.skip = skip;
+    queryOptions.take = limit;
+  }
+
+  const [rawUsers, total] = await Promise.all([
+      prisma.user.findMany(queryOptions),
+      prisma.user.count({ where: whereCondition })
+  ]);
+
+  const finalUsers = rawUsers.map((u: any) => ({
     id: u.id,
     username: u.username,
     name: u.name,
-    department: u.department, // 这里的 department 字段如果是关联对象，需要处理；如果是 string 则直接用
-    // 兼容之前的 departmentId 字段 (schema 中有 departmentId)
-    departmentId: u.departmentId,
-    role: u.role,
-    avatar: u.avatar,
-    jobTitle: u.jobTitle || '',
-    permissions: u.permissions
-  }));
-
-  // 由于我们在 db.getUsers 中返回的是 mapUser 后的对象（permissions 已是对象），
-  // 但我们注意到 User schema 中 department 变成了 relation。
-  // 我们需要确保 db.getUsers() 获取到了 departmentName 或者前端通过 departmentId 再去查
-  // 之前的 JSON 数据中 department 是个字符串(部门名)，departmentId 是 ID
-  // 我们来优化一下 db.getUsers 的查询，include department
-
-  const rawUsers = await prisma.user.findMany({
-    include: { department: true }
-  });
-
-  const finalUsers = rawUsers.map(u => ({
-    id: u.id,
-    username: u.username,
-    name: u.name,
-    // 如果有关联部门，优先用部门名，否则为空
     department: u.department?.name || '',
     departmentId: u.departmentId,
     role: u.role,
     avatar: u.avatar,
     jobTitle: u.jobTitle || '',
-    permissions: u.permissions ? JSON.parse(u.permissions) : {}
+    permissions: u.permissions ? JSON.parse(u.permissions) : {},
+    directManagerId: u.directManagerId
   }));
+
+  if (isPaginated) {
+      return NextResponse.json({
+          data: finalUsers,
+          meta: {
+              total,
+              page,
+              limit,
+              totalPages: Math.ceil(total / limit)
+          }
+      });
+  }
 
   return NextResponse.json(finalUsers);
 }

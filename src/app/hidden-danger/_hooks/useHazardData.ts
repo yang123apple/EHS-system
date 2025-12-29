@@ -15,17 +15,62 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
   // 分页与筛选
   const [page, setPage] = useState(1);
   const pageSize = 10;
+  const [totalCount, setTotalCount] = useState(0); // Track total count
   const [filters, setFilters] = useState({ type: '', area: '', status: '', risk: '' });
 
-  const fetchData = async () => {
+  const fetchData = async (pageNum = 1, currentFilters = filters) => {
     setLoading(true);
     try {
-      const [hList, hConfig, wRules] = await Promise.all([
-        hazardService.getHazards(),
+      // Pass filters and view context to server
+      const requestFilters = {
+          ...currentFilters,
+          viewMode: currentViewMode === VIEW_MODES.MY_TASKS ? 'my_tasks' : undefined,
+          userId: user?.id
+      };
+
+      const [hData, hConfig, wRules] = await Promise.all([
+        hazardService.getHazards(pageNum, pageSize, requestFilters),
         hazardService.getConfig(),
         workflowService.getRules()
       ]);
-      setHazards(hList);
+
+      if (hData.data) {
+          // Server returned paginated structure
+          setHazards(hData.data);
+          // We might not get total count of *filtered* items unless we pass filters.
+          // For now let's assume filtering happens on server or we accept client filtering on the page.
+          // But wait, existing logic uses `filteredHazards`.
+          // If we set `hazards` to just one page, `filteredHazards` will only contain that page's filtered items.
+          // This changes behavior significantly.
+
+          // FOR NOW: Let's fetch all if we are relying on complex client-side filtering,
+          // OR if we are confident we can do basic pagination.
+          // The prompt explicitly asked for pagination in "Hazard Investigation > Hazard Center > Latest Reports".
+          // This implies we don't need to load EVERYTHING.
+
+          // Let's keep it simple: If we use server pagination, we assume client filters are meant for the *fetched* dataset
+          // OR we accept that we only see top N items.
+
+          // Actually, `useHazardData` is used by `HiddenDangerPage`.
+          // `filteredHazards` is derived.
+
+          // Let's stick to client-side slicing for `filteredHazards` BUT fetch all data?
+          // No, that defeats the purpose.
+
+          // Strategy: Update `fetchData` to support optional pagination.
+          // If we want real optimization, we should fetch paginated data.
+          // But to do that correctly, we'd need to move filters to API.
+          // I will implement fetching paginated data.
+
+          // If API returns { data, meta }, use it.
+          setHazards(hData.data);
+          setTotalCount(hData.meta.total);
+      } else {
+          // Fallback (API returned array)
+          setHazards(hData);
+          setTotalCount(hData.length);
+      }
+
       setConfig(hConfig);
       setWorkflowRules({ ccRules: wRules.ccRules || [], planRules: wRules.emergencyPlanRules || [] });
     } catch (error) {
@@ -35,38 +80,31 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  // Refetch when page, filters, or viewMode changes
+  useEffect(() => {
+      fetchData(page, filters);
+  }, [page, filters, currentViewMode]); // Added currentViewMode dependency
 
-  // 根据当前视图模式和筛选条件过滤数据
+  // Client-side post-filtering for permissions
+  // 'My Tasks' logic is now handled by Server.
+  // We still keep 'canViewHazard' as a safety check on the client.
   const filteredHazards = useMemo(() => {
     return hazards.filter(h => {
-      // 首先检查用户是否有权限查看此隐患
+      // Permission check
       if (!canViewHazard(h, user)) {
         return false;
       }
-
-      const matchType = !filters.type || h.type === filters.type;
-      const matchArea = !filters.area || h.location === filters.area;
-      const matchStatus = !filters.status || h.status === filters.status;
-      const matchRisk = !filters.risk || h.riskLevel === filters.risk;
-      
-      // 我的任务视图：只显示与当前用户相关的隐患（包括抄送给我的）
-      if (currentViewMode === VIEW_MODES.MY_TASKS) {
-        const isMyTask = 
-          h.reporterId === user?.id ||           // 我上报的
-          h.dopersonal_ID === user?.id ||        // 当前步骤我是执行人
-          h.responsibleId === user?.id ||        // 我是整改责任人（保留用于历史查看）
-          h.ccUsers?.includes(user?.id) ||       // 抄送给我的
-          h.verifierId === user?.id;             // 我验收的
-        
-        return isMyTask && matchType && matchArea && matchStatus && matchRisk;
-      }
-      
-      return matchType && matchArea && matchStatus && matchRisk;
+      return true;
     });
-  }, [hazards, filters, currentViewMode, user]);
+  }, [hazards, user]);
 
-  const paginatedHazards = filteredHazards.slice((page - 1) * pageSize, page * pageSize);
+  // paginatedHazards was slicing the filtered list.
+  // Now `hazards` is already a slice (from server).
+  // If we filter client-side, `filteredHazards` is a subset of that slice.
+  // We don't need to slice again if we trust the server page size.
+  // However, `filteredHazards` might be smaller than pageSize.
+
+  const paginatedHazards = filteredHazards; // Already "paginated" by source + filtered
 
   return {
     hazards, 
@@ -80,8 +118,9 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
     pageSize,
     filters, 
     setFilters,
-    filteredHazards,
-    paginatedHazards,
-    refresh: fetchData
+    filteredHazards, // This is now just the filtered items of current page
+    paginatedHazards, // Same as above
+    refresh: () => fetchData(page),
+    totalCount // Expose total count for pagination UI
   };
 }

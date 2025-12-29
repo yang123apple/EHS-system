@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { X, Camera, ChevronRight, User, GitBranch, Mail, CheckCircle } from 'lucide-react';
 import { HazardConfig, RiskLevel } from '@/types/hidden-danger';
 import { RISK_LEVEL_MAP } from '@/constants/hazard';
-import DepartmentSelectModal from '@/components/work-permit/moduls/DepartmentSelectModal';
+import PeopleSelector from '@/components/common/PeopleSelector';
 import { UserSelectModal } from '../workflow/UserSelectModal';
 import { matchHandler } from '../../_utils/handler-matcher';
 import { matchAllCCRules } from '../../_utils/cc-matcher';
@@ -532,11 +532,18 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
         </div>
       </div>
 
-      <DepartmentSelectModal
+      <PeopleSelector
         isOpen={showDeptModal}
         onClose={() => setShowDeptModal(false)}
-        onSelect={handleDeptSelect}
-        selectedDeptId={formData.responsibleDeptId}
+        mode="dept"
+        onConfirm={(selection) => {
+            if (Array.isArray(selection) && selection.length > 0) {
+                // @ts-ignore
+                handleDeptSelect(selection[0].id, selection[0].name);
+            }
+            setShowDeptModal(false);
+        }}
+        title="选择责任部门"
       />
 
       <UserSelectModal

@@ -30,10 +30,32 @@ export default function WorkPermitPage() {
   // === 1. 核心数据状态 ===
   // 🟢 修改状态类型，增加 'logs'
   const [viewMode, setViewMode] = useState<'projects' | 'records' | 'logs'>('projects');
+
+  // Pagination State for Projects
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectPage, setProjectPage] = useState(1);
+  const [projectTotalPages, setProjectTotalPages] = useState(1);
+  const [projectFilters, setProjectFilters] = useState({ text: '', status: '', date: '' });
+  const projectLimit = 20;
+
+  // Pagination State for Templates
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [projectRecords, setProjectRecords] = useState<PermitRecord[]>([]); // 特定项目的记录
+  const [templatePage, setTemplatePage] = useState(1);
+  const [templateTotalPages, setTemplateTotalPages] = useState(1);
+
+  // Project Records (Modal)
+  const [projectRecords, setProjectRecords] = useState<PermitRecord[]>([]);
+  const [projRecPage, setProjRecPage] = useState(1);
+  const [projRecTotalPages, setProjRecTotalPages] = useState(1);
+
+  // Pagination State for All Records
   const [allRecords, setAllRecords] = useState<PermitRecord[]>([]); // 所有记录
+  const [recordPage, setRecordPage] = useState(1);
+  const [recordTotalPages, setRecordTotalPages] = useState(1);
+  const [recordFilters, setRecordFilters] = useState({ project: '', type: '', date: '' });
+  const recordLimit = 50;
+  const [totalRecordsCount, setTotalRecordsCount] = useState(0);
+
   const [departments, setDepartments] = useState<any[]>([]); // 组织架构
   // 🟢 新增：所有人员状态 (用于流程配置时选择人员)
   const [allUsers, setAllUsers] = useState<any[]>([]);
@@ -71,34 +93,78 @@ export default function WorkPermitPage() {
   }, [user]);
 
   // === 5. 数据获取逻辑 ===
-  const fetchProjects = async () => {
+  const fetchProjects = async (page = 1, filters = projectFilters) => {
     try {
-      const res = await fetch('/api/projects', { cache: 'no-store' });
-      if(res.ok) setProjects(await res.json());
+      const params = new URLSearchParams({
+          page: page.toString(),
+          limit: projectLimit.toString(),
+          q: filters.text,
+          status: filters.status === 'all' ? '' : filters.status,
+          date: filters.date
+      });
+      const res = await fetch(`/api/projects?${params.toString()}`, { cache: 'no-store' });
+      if(res.ok) {
+          const data = await res.json();
+          if (data.data) {
+              setProjects(data.data);
+              setProjectTotalPages(data.meta.totalPages);
+              setProjectPage(page);
+          } else {
+              setProjects(data);
+          }
+      }
     } catch (e) {
       console.error(e);
     }
   };
 
-  const fetchTemplates = async () => {
+  const fetchTemplates = async (page = 1) => {
     try {
-      const res = await fetch('/api/templates', { cache: 'no-store' });
-      if(res.ok) setTemplates(await res.json());
+      const res = await fetch(`/api/templates?page=${page}&limit=20`, { cache: 'no-store' });
+      if(res.ok) {
+          const data = await res.json();
+          if (data.data) {
+              setTemplates(data.data);
+              setTemplateTotalPages(data.meta.totalPages);
+              setTemplatePage(page);
+          } else {
+              setTemplates(data);
+          }
+      }
     } catch (e) {
       console.error(e);
     }
   };
 
   // 3. 获取所有记录
-  const fetchAllRecords = async () => {
+  const fetchAllRecords = async (page = 1, filters = recordFilters) => {
     try {
-      const res = await fetch('/api/permits', { cache: 'no-store' });
+      const params = new URLSearchParams({
+          page: page.toString(),
+          limit: recordLimit.toString(),
+          q: filters.project,
+          type: filters.type,
+          date: filters.date
+      });
+      const res = await fetch(`/api/permits?${params.toString()}`, { cache: 'no-store' });
       if(res.ok) {
         const data = await res.json();
-        setAllRecords(data);
+        let records = [];
+        if (data.data) {
+            records = data.data;
+            setAllRecords(data.data);
+            setRecordTotalPages(data.meta.totalPages);
+            setRecordPage(page);
+        } else {
+            records = data;
+            setAllRecords(data);
+        }
+
         // 🟢 新增：如果当前有选中的记录，在新的列表中找到它并更新，防止弹窗数据陈旧
+        // Note: With pagination, the selected record might not be in the current page.
+        // If critical, we should fetch single record detail. For now, best effort.
         if (selectedRecord) {
-          const fresh = data.find((r: any) => r.id === selectedRecord.id);
+          const fresh = records.find((r: any) => r.id === selectedRecord.id);
           // 如果找到了最新版，且确实有变化（比如日志变多了），就更新它
           if (fresh && JSON.stringify(fresh) !== JSON.stringify(selectedRecord)) {
             console.log("🔄 自动同步 selectedRecord 为最新数据");
@@ -112,15 +178,25 @@ export default function WorkPermitPage() {
   };
 
   // 4. 获取特定项目的记录
-  const fetchProjectRecords = async (projectId: string) => {
+  const fetchProjectRecords = async (projectId: string, page = 1) => {
     try {
-      const res = await fetch(`/api/permits?projectId=${projectId}`, { cache: 'no-store' });
+      const res = await fetch(`/api/permits?projectId=${projectId}&page=${page}&limit=10`, { cache: 'no-store' });
       if(res.ok) {
         const data = await res.json();
-        setProjectRecords(data);
+        let records = [];
+        if (data.data) {
+            records = data.data;
+            setProjectRecords(data.data);
+            setProjRecTotalPages(data.meta.totalPages);
+            setProjRecPage(page);
+        } else {
+            records = data;
+            setProjectRecords(data);
+        }
+
         // 🟢 新增：同样在这里也加上同步逻辑
         if (selectedRecord) {
-          const fresh = data.find((r: any) => r.id === selectedRecord.id);
+          const fresh = records.find((r: any) => r.id === selectedRecord.id);
           if (fresh && JSON.stringify(fresh) !== JSON.stringify(selectedRecord)) {
             console.log("🔄 [项目视图] 自动同步 selectedRecord 为最新数据");
             setSelectedRecord(fresh);
@@ -156,12 +232,28 @@ export default function WorkPermitPage() {
 
   // 初始化
   useEffect(() => {
-    fetchProjects();
-    fetchTemplates();
-    fetchAllRecords();
+    fetchProjects(1);
+    fetchTemplates(1);
+    fetchAllRecords(1);
     fetchDepartments();
     fetchAllUsers(); // 🟢 初始化时加载人员
   }, []);
+
+  // Debounce for Projects
+  useEffect(() => {
+      const timer = setTimeout(() => {
+          fetchProjects(1, projectFilters);
+      }, 500);
+      return () => clearTimeout(timer);
+  }, [projectFilters]);
+
+  // Debounce for Records
+  useEffect(() => {
+      const timer = setTimeout(() => {
+          fetchAllRecords(1, recordFilters);
+      }, 500);
+      return () => clearTimeout(timer);
+  }, [recordFilters]);
 
   // 🟢 检测 URL 参数，自动打开记录详情
   useEffect(() => {
@@ -194,15 +286,15 @@ export default function WorkPermitPage() {
     if(!confirm(`确定要删除项目“${name}”吗？`)) return;
     try {
       await fetch(`/api/projects?id=${id}`, { method: 'DELETE' });
-      fetchProjects();
-      fetchAllRecords();
+      fetchProjects(projectPage);
+      fetchAllRecords(recordPage);
     } catch(e) {}
   };
 
   const handleOpenProjectDetail = (project: Project) => {
     setSelectedProject(project);
     setProjectRecords([]); // 先清空旧数据
-    fetchProjectRecords(project.id);
+    fetchProjectRecords(project.id, 1);
     toggleModal('projectDetail', true);
   };
 
@@ -211,8 +303,8 @@ export default function WorkPermitPage() {
     if(!confirm("确定要删除?")) return;
     try {
       await fetch(`/api/permits?id=${id}&userId=${user?.id || ''}&userName=${user?.name || ''}`, { method: 'DELETE' });
-      if(modals.projectDetail && selectedProject) fetchProjectRecords(selectedProject.id);
-      fetchAllRecords();
+      if(modals.projectDetail && selectedProject) fetchProjectRecords(selectedProject.id, projRecPage);
+      fetchAllRecords(recordPage);
       // 如果正在查看该记录，关闭详情弹窗
       if (selectedRecord?.id === id) toggleModal('viewRecord', false);
     } catch(e) {}
@@ -292,6 +384,11 @@ export default function WorkPermitPage() {
                 toggleModal('addPermit', true);
               }}
               onDeleteProject={handleDeleteProject}
+              currentPage={projectPage}
+              totalPages={projectTotalPages}
+              onPageChange={(p) => fetchProjects(p, projectFilters)}
+              filters={projectFilters}
+              onFilterChange={setProjectFilters}
             />
           ) : viewMode === 'records' ? (
             <RecordListView
@@ -302,6 +399,12 @@ export default function WorkPermitPage() {
                 toggleModal('viewRecord', true);
               }}
               onDeleteRecord={handleDeleteRecord}
+              currentPage={recordPage}
+              totalPages={recordTotalPages}
+              onPageChange={(p) => fetchAllRecords(p, recordFilters)}
+              filters={recordFilters}
+              onFilterChange={setRecordFilters}
+              totalCount={totalRecordsCount}
             />
           ) : (
             // 🟢 渲染日志视图 (双重保险：再次校验权限)
@@ -321,7 +424,7 @@ export default function WorkPermitPage() {
         isOpen={modals.newProject}
         onClose={() => toggleModal('newProject', false)}
         onSuccess={() => {
-          fetchProjects();
+          fetchProjects(1); // Refresh to first page on new project
           toggleModal('newProject', false);
         }}
       />
@@ -338,7 +441,7 @@ export default function WorkPermitPage() {
           allUsers={allUsers}
           onSuccess={() => {
             if(modals.projectDetail) fetchProjectRecords(selectedProject.id);
-            fetchAllRecords();
+            fetchAllRecords(1); // Refresh first page of records
             toggleModal('addPermit', false);
           }}
         />
@@ -364,7 +467,7 @@ export default function WorkPermitPage() {
         onClose={() => toggleModal('templateManage', false)}
         templates={templates}
         hasPerm={hasPerm}
-        onRefresh={fetchTemplates}
+        onRefresh={() => fetchTemplates(templatePage)}
         onEdit={(t) => {
           setSelectedTemplate(t);
           toggleModal('editTemplate', true);
@@ -373,6 +476,9 @@ export default function WorkPermitPage() {
           setSelectedTemplate(t);
           toggleModal('workflowEditor', true);
         }}
+        currentPage={templatePage}
+        totalPages={templateTotalPages}
+        onPageChange={fetchTemplates}
       />
 
       {selectedTemplate && (
@@ -386,7 +492,7 @@ export default function WorkPermitPage() {
             fetchDepartments();
             fetchAllUsers();
           }}
-          onSuccess={fetchTemplates}
+          onSuccess={() => fetchTemplates(templatePage)}
         />
       )}
 
@@ -395,7 +501,7 @@ export default function WorkPermitPage() {
           isOpen={modals.editTemplate}
           onClose={() => toggleModal('editTemplate', false)}
           template={selectedTemplate}
-          onSuccess={fetchTemplates}
+          onSuccess={() => fetchTemplates(templatePage)}
           allTemplates={templates}
         />
       )}
@@ -410,7 +516,7 @@ export default function WorkPermitPage() {
           allUsers={allUsers}
           allTemplates={templates}
           onRefresh={() => {
-            fetchAllRecords();
+            fetchAllRecords(recordPage);
             if (selectedProject) fetchProjectRecords(selectedProject.id);
           }}
           onOpenApproval={() => toggleModal('approval', true)}
@@ -427,7 +533,7 @@ export default function WorkPermitPage() {
           onSuccess={() => {
             toggleModal('approval', false);
             //toggleModal('viewRecord', false);
-            fetchAllRecords();
+            fetchAllRecords(recordPage);
             if (selectedProject) fetchProjectRecords(selectedProject.id);
           }}
         />
@@ -439,7 +545,7 @@ export default function WorkPermitPage() {
           onClose={() => toggleModal('adjustDate', false)}
           project={selectedProject}
           onSuccess={() => {
-            fetchProjects();
+            fetchProjects(projectPage);
             toggleModal('adjustDate', false);
           }}
         />

@@ -67,6 +67,10 @@ interface Props {
   onRefresh: () => void;
   onEdit: (t: Template) => void;
   onConfigWorkflow: (t: Template) => void;
+  // Pagination
+  currentPage?: number;
+  totalPages?: number;
+  onPageChange?: (page: number) => void;
 }
 
 export default function TemplateManageModal({
@@ -77,6 +81,9 @@ export default function TemplateManageModal({
   onRefresh,
   onEdit,
   onConfigWorkflow,
+  currentPage = 1,
+  totalPages = 1,
+  onPageChange
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
@@ -292,6 +299,27 @@ export default function TemplateManageModal({
             )}
           </div>
         </div>
+
+        {/* Pagination Controls */}
+        {onPageChange && totalPages > 1 && (
+            <div className="p-4 border-t bg-slate-50 flex justify-center items-center gap-4 rounded-b-xl">
+                <button
+                    onClick={() => onPageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1 bg-white border rounded disabled:opacity-50 hover:bg-slate-50 text-sm"
+                >
+                    上一页
+                </button>
+                <span className="text-sm text-slate-600">第 {currentPage} 页 / 共 {totalPages} 页</span>
+                <button
+                    onClick={() => onPageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1 bg-white border rounded disabled:opacity-50 hover:bg-slate-50 text-sm"
+                >
+                    下一页
+                </button>
+            </div>
+        )}
       </div>
     </div>
   );

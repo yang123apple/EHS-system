@@ -10,17 +10,51 @@ const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-export async function GET() {
-  const docs = await prisma.document.findMany({
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const page = parseInt(searchParams.get('page') || '1');
+  const limit = parseInt(searchParams.get('limit') || '50');
+  const skip = (page - 1) * limit;
+  const isPaginated = searchParams.has('page');
+  const parentId = searchParams.get('parentId');
+
+  const whereCondition: any = {};
+  if (parentId !== null && parentId !== undefined) {
+      whereCondition.parentId = parentId === 'null' ? null : parentId;
+  }
+
+  const queryOptions: any = {
+    where: whereCondition,
     orderBy: { createdAt: 'desc' }
-  });
-  // 转换 uploadTime (bigint/datetime 差异)
-  // 我们的 schema 中 uploadTime 是 DateTime，但原 JSON 中是 timestamp number
-  // 前端可能期望 number，这里我们做个转换或者前端兼容
+  };
+
+  if (isPaginated) {
+      queryOptions.skip = skip;
+      queryOptions.take = limit;
+  }
+
+  const [docs, total] = await Promise.all([
+      prisma.document.findMany(queryOptions),
+      prisma.document.count({ where: whereCondition })
+  ]);
+
   const safeDocs = docs.map(d => ({
     ...d,
-    uploadTime: d.uploadTime.getTime() // 转换为毫秒时间戳兼容前端
+    uploadTime: d.uploadTime.getTime()
   }));
+
+  if (isPaginated) {
+      return NextResponse.json({
+          data: safeDocs,
+          meta: {
+              total,
+              page,
+              limit,
+              totalPages: Math.ceil(total / limit)
+          }
+      });
+  }
+
   return NextResponse.json(safeDocs);
 }
 

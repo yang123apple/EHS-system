@@ -28,6 +28,12 @@ export default function AccountManagement() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const limit = 20;
+
   // 🟢 新增：部门列表用于匹配 departmentId
   const [departments, setDepartments] = useState<any[]>([]);
   const [deptNameToId, setDeptNameToId] = useState<Map<string, string>>(new Map());
@@ -52,18 +58,36 @@ export default function AccountManagement() {
         router.push('/dashboard'); 
         return; 
     }
-    loadUsers();
-  }, [currentUser]);
+    loadUsers(currentPage);
+  }, [currentUser, currentPage]);
 
-  const loadUsers = async () => {
+  const loadUsers = async (page: number, filters: { term: string, dept: string } = { term: searchTerm, dept: deptFilter }) => {
     try {
+      setIsLoading(true);
+      const queryParams = new URLSearchParams({
+          page: page.toString(),
+          limit: limit.toString(),
+          q: filters.term,
+          dept: filters.dept
+      });
+
       const [usersRes, deptsRes] = await Promise.all([
-        fetch('/api/users'),
+        fetch(`/api/users?${queryParams.toString()}`),
         fetch('/api/org')
       ]);
-      const allUsers = await usersRes.json();
-      // 过滤掉 admin 自己，防止误操作
-      const validUsers = allUsers.filter((u: any) => u.username !== 'admin');
+
+      const usersData = await usersRes.json();
+      let validUsers = [];
+
+      if (usersData.data) {
+          validUsers = usersData.data.filter((u: any) => u.username !== 'admin');
+          setTotalPages(usersData.meta.totalPages);
+          setTotalUsers(usersData.meta.total);
+      } else {
+          // Fallback if API returns array
+          validUsers = usersData.filter((u: any) => u.username !== 'admin');
+      }
+
       setUsers(validUsers);
       
       // 🟢 加载部门列表
@@ -83,8 +107,11 @@ export default function AccountManagement() {
       flattenDepts(deptsData);
       setDeptNameToId(mapping);
       
-      const depts = Array.from(new Set(validUsers.map((u: any) => u.department))).filter(Boolean) as string[];
-      setAllDepts(depts);
+      // We might want to fetch all depts just for the filter dropdown,
+      // but for now let's just use what's on the page + full org tree names if needed
+      // Ideally we should have an API for "all unique department names" or just use the org tree
+      const allDeptNames = Array.from(mapping.keys());
+      setAllDepts(allDeptNames);
     } catch(e) { 
       console.error(e); 
     } finally { 
@@ -122,7 +149,7 @@ export default function AccountManagement() {
         if (res.ok) { 
             alert('用户创建成功'); 
             setNewUser({ username: '', name: '', department: '', jobTitle: '', password: '123' }); 
-            loadUsers(); 
+            loadUsers(currentPage);
         } else { 
             const err = await res.json(); 
             alert(err.error || '创建失败'); 
@@ -135,7 +162,7 @@ export default function AccountManagement() {
   const handleDeleteUser = async (id: string) => {
       if (confirm('确定删除该用户？')) { 
           await fetch(`/api/users/${id}`, { method: 'DELETE' }); 
-          loadUsers(); 
+          loadUsers(currentPage);
       }
   };
 
@@ -306,7 +333,7 @@ export default function AccountManagement() {
           }
           
           alert(message);
-          loadUsers();
+          loadUsers(currentPage);
         }
     } catch (error) {
       console.error(error);
@@ -339,7 +366,7 @@ export default function AccountManagement() {
         if (res.ok) { 
             alert('修改成功'); 
             setShowEditModal(false); 
-            loadUsers(); 
+            loadUsers(currentPage);
         } else { 
             alert('修改失败'); 
         }
@@ -355,11 +382,16 @@ export default function AccountManagement() {
       return u ? u.name : '未知ID';
   };
 
-  const filteredUsers = users.filter(u => {
-    const matchesSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.username.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesDept = deptFilter ? u.department === deptFilter : true;
-    return matchesSearch && matchesDept;
-  });
+  // No client-side filtering needed now, use 'users' directly
+  const filteredUsers = users;
+
+  // Debounce search
+  useEffect(() => {
+      const handler = setTimeout(() => {
+          loadUsers(1, { term: searchTerm, dept: deptFilter });
+      }, 500);
+      return () => clearTimeout(handler);
+  }, [searchTerm, deptFilter]);
 
   if (isLoading) return <div className="p-8 text-center text-slate-500">加载中...</div>;
 
@@ -438,7 +470,7 @@ export default function AccountManagement() {
           {/* 搜索栏 */}
           <div className="p-3 md:p-4 border-b border-slate-100 bg-slate-50/50 space-y-2 md:space-y-3">
              <div className="flex justify-between items-center">
-                 <h2 className="text-base md:text-lg font-bold text-slate-800">用户列表 <span className="text-slate-400 text-xs md:text-sm font-normal">({filteredUsers.length})</span></h2>
+                 <h2 className="text-base md:text-lg font-bold text-slate-800">用户列表 <span className="text-slate-400 text-xs md:text-sm font-normal">({totalUsers})</span></h2>
              </div>
              <div className="flex flex-col sm:flex-row gap-2 md:gap-4">
                  <div className="relative flex-1">
@@ -524,6 +556,24 @@ export default function AccountManagement() {
               </tbody>
             </table>
           </div>
+           {/* Pagination Controls */}
+           <div className="p-4 border-t border-slate-100 flex justify-center items-center gap-4">
+               <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-slate-50"
+               >
+                   上一页
+               </button>
+               <span className="text-sm text-slate-600">第 {currentPage} 页 / 共 {totalPages} 页</span>
+               <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-slate-50"
+               >
+                   下一页
+               </button>
+           </div>
         </div>
       </div>
 

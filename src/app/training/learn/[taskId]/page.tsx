@@ -28,20 +28,31 @@ export default function LearnPage({ params }: { params: Promise<{ taskId: string
   }, [taskId]);
 
   const handleProgress = (progress: number) => {
-      // Throttle updates?
       if (!assignment) return;
+      // Only update if progress increased
       if (progress > assignment.progress) {
-          fetch(`/api/training/assignment/${assignment.id}`, {
+          fetch(`/api/training/progress`, {
               method: 'POST',
-              body: JSON.stringify({ action: 'update_progress', progress: Math.floor(progress) })
+              body: JSON.stringify({
+                  assignmentId: assignment.id,
+                  progress: Math.floor(progress)
+              })
           });
       }
   };
 
   const handleComplete = () => {
+      if (completed) return;
       setCompleted(true);
-      // Update backend to 100%
-      handleProgress(100);
+      // Update backend to completed
+      fetch(`/api/training/progress`, {
+          method: 'POST',
+          body: JSON.stringify({
+              assignmentId: assignment.id,
+              progress: 100,
+              status: 'completed'
+          })
+      });
   };
 
   if (loading) return <div className="p-10 text-center">加载中...</div>;

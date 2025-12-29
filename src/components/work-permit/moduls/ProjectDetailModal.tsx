@@ -10,9 +10,15 @@ interface Props {
     hasPerm: (perm: string) => boolean;
     onViewRecord: (r: PermitRecord) => void;
     onDeleteRecord: (id: string) => void;
+    currentPage?: number;
+    totalPages?: number;
+    onPageChange?: (page: number) => void;
 }
 
-export default function ProjectDetailModal({ isOpen, onClose, project, records, hasPerm, onViewRecord, onDeleteRecord }: Props) {
+export default function ProjectDetailModal({
+    isOpen, onClose, project, records, hasPerm, onViewRecord, onDeleteRecord,
+    currentPage = 1, totalPages = 1, onPageChange
+}: Props) {
     const [filterType, setFilterType] = useState('');
     const [filterDate, setFilterDate] = useState('');
     const [isMobile, setIsMobile] = useState(false);
@@ -136,6 +142,26 @@ export default function ProjectDetailModal({ isOpen, onClose, project, records, 
                                 </table>
                             )}
                         </div>
+                        {/* Pagination Controls */}
+                        {onPageChange && totalPages > 1 && (
+                            <div className="bg-white border-t border-slate-200 p-2 flex justify-center items-center gap-4">
+                                <button
+                                    onClick={() => onPageChange(currentPage - 1)}
+                                    disabled={currentPage === 1}
+                                    className="px-2 py-1 text-xs border rounded disabled:opacity-50 hover:bg-slate-50"
+                                >
+                                    上一页
+                                </button>
+                                <span className="text-xs text-slate-600">{currentPage}/{totalPages}</span>
+                                <button
+                                    onClick={() => onPageChange(currentPage + 1)}
+                                    disabled={currentPage === totalPages}
+                                    className="px-2 py-1 text-xs border rounded disabled:opacity-50 hover:bg-slate-50"
+                                >
+                                    下一页
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {/* 🟢 右侧：项目附件列表 - 桌面端固定显示，移动端抽屉 */}

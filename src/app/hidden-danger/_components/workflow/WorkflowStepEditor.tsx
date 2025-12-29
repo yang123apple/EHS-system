@@ -6,7 +6,7 @@ import { HandlerStrategySelector } from './HandlerStrategySelector';
 import { AdvancedHandlerConfig } from './AdvancedHandlerConfig';
 import { UserSelectModal } from './UserSelectModal';
 import { CCRuleEditor } from './CCRuleEditor';
-import DepartmentSelectModal from '@/components/work-permit/moduls/DepartmentSelectModal';
+import PeopleSelector from '@/components/common/PeopleSelector';
 
 interface Props {
   steps: HazardWorkflowStep[];
@@ -503,18 +503,22 @@ export function WorkflowStepEditor({ steps, allUsers, departments, onChange }: P
       })}
 
       {/* 部门选择弹窗 */}
-      <DepartmentSelectModal
+      <PeopleSelector
         isOpen={showDeptModal}
         onClose={() => {
           setShowDeptModal(false);
           setDeptSelectContext(null);
         }}
-        onSelect={handleDeptSelect}
-        selectedDeptId={
-          deptSelectContext 
-            ? steps[deptSelectContext.stepIndex]?.handlerStrategy?.targetDeptId || ''
-            : ''
-        }
+        mode="dept"
+        onConfirm={(selection) => {
+            if (Array.isArray(selection) && selection.length > 0) {
+                // @ts-ignore
+                const dept = selection[0];
+                handleDeptSelect(dept.id, dept.name);
+            }
+            setShowDeptModal(false);
+        }}
+        title="选择部门"
       />
 
       {/* 用户选择弹窗 */}

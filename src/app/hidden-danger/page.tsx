@@ -44,7 +44,8 @@ export default function HiddenDangerPage({
     refresh, 
     config, 
     workflowRules,
-    loading 
+    loading,
+    totalCount // 🟢 Destructure totalCount
   } = useHazardData(user, initialViewMode);
 
   // 处理 URL 参数中的 hazardId，自动打开详情弹窗
@@ -265,7 +266,7 @@ export default function HiddenDangerPage({
         {(viewMode === 'all_list' || viewMode === 'my_tasks') && (
           <HazardDataTable 
             hazards={paginatedHazards}
-            total={filteredHazards.length}
+            total={totalCount || filteredHazards.length}
             page={page}
             pageSize={pageSize}
             onPageChange={setPage}
