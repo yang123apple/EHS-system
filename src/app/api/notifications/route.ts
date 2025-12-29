@@ -97,21 +97,25 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '通知数据缺少必要字段' }, { status: 400 });
       }
 
-      // 批量创建通知
-      const result = await prisma.notification.createMany({
-        data: notifications.map((n: any) => ({
-          userId: n.userId,
-          type: n.type,
-          title: n.title,
-          content: n.content,
-          relatedType: n.relatedType || 'hazard',
-          relatedId: n.relatedId,
-          isRead: false,
-        })),
-      });
+      // 批量创建通知 (Loop as fallback for SQLite < 5.12)
+      let count = 0;
+      await Promise.all(notifications.map(async (n: any) => {
+          await prisma.notification.create({
+            data: {
+              userId: n.userId,
+              type: n.type,
+              title: n.title,
+              content: n.content,
+              relatedType: n.relatedType || 'hazard',
+              relatedId: n.relatedId,
+              isRead: false,
+            }
+          });
+          count++;
+      }));
 
-      console.log(`✅ 批量创建通知成功: ${result.count} 条`);
-      return NextResponse.json({ success: true, count: result.count });
+      console.log(`✅ 批量创建通知成功: ${count} 条`);
+      return NextResponse.json({ success: true, count });
     }
 
     // 支持单个创建（向后兼容）

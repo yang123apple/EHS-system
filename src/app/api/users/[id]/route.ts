@@ -14,7 +14,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params;
   
   // 🟢 使用 db 方法获取
-  const user = db.getUserById(id);
+  const user = await db.getUserById(id);
   
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -27,22 +27,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   
-  const target = db.getUserById(id);
+  const target = await db.getUserById(id);
   
   if (!target) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
   if (target.username === 'admin') return NextResponse.json({ error: '无法删除超级管理员' }, { status: 403 });
 
   // 🟢 使用 db 方法删除
-  // 注意：请确保 src/lib/db.ts 中已实现 deleteUser 方法
-  // 如果尚未实现，请参照 deleteDepartment 添加：
-  // deleteUser: (id: string) => { 
-  //   let list = read<User[]>(FILES.users, DEFAULTS.users);
-  //   list = list.filter(u => u.id !== id);
-  //   write(FILES.users, list);
-  //   return true;
-  // }
   if (typeof db.deleteUser === 'function') {
-      db.deleteUser(id);
+      await db.deleteUser(id);
   } else {
       return NextResponse.json({ error: 'Database method deleteUser not implemented' }, { status: 500 });
   }
@@ -56,7 +48,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const contentType = req.headers.get('content-type') || '';
   
   // 检查用户是否存在
-  const existingUser = db.getUserById(id);
+  const existingUser = await db.getUserById(id);
   if (!existingUser) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
 
   let updateData: any = {};
@@ -98,7 +90,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
 
     // 🟢 使用 db 方法更新
-    const updatedUser = db.updateUser(id, updateData);
+    const updatedUser = await db.updateUser(id, updateData);
 
     if (!updatedUser) {
         return NextResponse.json({ error: '更新失败' }, { status: 500 });

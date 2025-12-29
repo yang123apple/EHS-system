@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db'; 
 
 export async function GET() {
-  const tree = db.getOrgTree(); // 现在是同步读取文件，如果是异步也可以 await
+  const tree = await db.getOrgTree();
   return NextResponse.json(tree);
 }
 
@@ -14,12 +14,12 @@ export async function POST(req: Request) {
   // 计算层级
   let level = 1;
   if (parentId) {
-    const allDepts = db.getDepartments();
+    const allDepts = await db.getDepartments();
     const parent = allDepts.find(d => d.id === parentId);
     if (parent) level = parent.level + 1;
   }
 
-  const newDept = db.createDepartment({
+  const newDept = await db.createDepartment({
     name,
     parentId: parentId || null,
     managerId,
