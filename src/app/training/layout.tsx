@@ -1,7 +1,15 @@
+'use client';
 import Link from 'next/link';
 import { BookOpen, Upload, Calendar, BarChart, Settings, Library } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 export default function TrainingLayout({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  
+  // 检查用户是否有上传学习内容权限
+  const hasUploadPermission = user?.role === 'admin' || 
+    (user?.permissions && JSON.parse(user.permissions).includes('upload_training_content'));
+
   return (
     <div className="flex h-screen bg-slate-50">
       <div className="w-64 bg-white border-r flex flex-col">
@@ -23,16 +31,23 @@ export default function TrainingLayout({ children }: { children: React.ReactNode
              <Library size={18}/> 公共知识库
           </Link>
 
-          <div className="text-xs font-bold text-slate-400 uppercase mt-6 mb-2 px-2">管理中心</div>
-          <Link href="/training/materials" className="flex items-center gap-3 p-2 text-slate-700 hover:bg-slate-100 rounded-lg">
-             <Upload size={18}/> 学习内容库
-          </Link>
-          <Link href="/training/tasks" className="flex items-center gap-3 p-2 text-slate-700 hover:bg-slate-100 rounded-lg">
-             <Calendar size={18}/> 任务发布
-          </Link>
-          <Link href="/training/settings" className="flex items-center gap-3 p-2 text-slate-700 hover:bg-slate-100 rounded-lg">
-             <Settings size={18}/> 系统设置
-          </Link>
+          {(user?.role === 'admin' || hasUploadPermission) && (
+            <>
+              <div className="text-xs font-bold text-slate-400 uppercase mt-6 mb-2 px-2">管理中心</div>
+              <Link href="/training/materials" className="flex items-center gap-3 p-2 text-slate-700 hover:bg-slate-100 rounded-lg">
+                <Upload size={18}/> 学习内容库
+              </Link>
+              <Link href="/training/tasks" className="flex items-center gap-3 p-2 text-slate-700 hover:bg-slate-100 rounded-lg">
+                <Calendar size={18}/> 任务发布
+              </Link>
+            </>
+          )}
+          
+          {user?.role === 'admin' && (
+            <Link href="/training/settings" className="flex items-center gap-3 p-2 text-slate-700 hover:bg-slate-100 rounded-lg">
+              <Settings size={18}/> 系统设置
+            </Link>
+          )}
         </nav>
       </div>
 

@@ -87,17 +87,20 @@ export default function LearnPage({ params }: { params: Promise<{ taskId: string
                         <h2 className="text-2xl font-bold text-slate-800">学习已完成!</h2>
 
                         {material.isExamRequired ? (
-                            <div>
+                            <div className="space-y-3">
                                 <p className="text-slate-600 mb-6">该课程需要通过考试才能结业。</p>
                                 <button onClick={() => router.push(`/training/exam/${assignment.id}`)} className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-200">
                                     进入考试
+                                </button>
+                                <button onClick={() => router.push('/training/my-tasks')} className="w-full py-3 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200">
+                                    返回任务列表
                                 </button>
                             </div>
                         ) : (
                             <div>
                                 <p className="text-slate-600 mb-6">恭喜，您已完成该课程。</p>
-                                <button onClick={() => router.back()} className="w-full py-3 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200">
-                                    返回列表
+                                <button onClick={() => router.push('/training/my-tasks')} className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-200">
+                                    返回任务列表
                                 </button>
                             </div>
                         )}

@@ -90,10 +90,10 @@ export default function FileViewer({ url, type, onProgress, onComplete }: Props)
             <Watermark text={user?.name || '培训系统'} />
             <iframe 
               src={`${url as string}#toolbar=0&navpanes=0`} 
-              className="w-full flex-1 border-0 relative z-10"
+              className="w-full flex-1 border-0"
             />
             {/* Fallback for PDF progress: Manual button if scroll tracking is impossible in iframe */}
-            <div className="bg-slate-800 text-white p-2 text-center text-xs z-20">
+            <div className="bg-slate-800 text-white p-2 text-center text-xs">
                 请阅读完文档内容 (PDF阅读进度需手动确认或等待系统检测)
                 <button onClick={() => onComplete?.()} className="ml-4 bg-blue-600 px-2 py-1 rounded hover:bg-blue-500">
                     我已阅读完毕
@@ -108,7 +108,7 @@ export default function FileViewer({ url, type, onProgress, onComplete }: Props)
       <div className="w-full h-full overflow-y-auto bg-white p-8 relative" onScroll={handleScroll}>
         <Watermark text={user?.name || '培训系统'} />
         {loading ? <div className="text-center py-10">加载文档中...</div> :
-           <div className="prose max-w-none relative z-10" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+           <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: htmlContent }} />
         }
       </div>
     );

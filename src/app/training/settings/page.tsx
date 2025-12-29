@@ -1,8 +1,21 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Settings, Plus, X, Droplet } from 'lucide-react';
+import { Save, RefreshCw, AlertCircle, Settings, Droplet, X, Plus } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
 
 export default function TrainingSettingsPage() {
+  const { user } = useAuth();
+  const router = useRouter();
+  
+  // 权限检查：只有admin可以访问
+  useEffect(() => {
+    if (user && user.role !== 'admin') {
+      alert('您没有权限访问此页面');
+      router.push('/training/my-tasks');
+    }
+  }, [user, router]);
+
   const [categories, setCategories] = useState<string[]>([]);
   const [newCategory, setNewCategory] = useState('');
   const [watermarkText, setWatermarkText] = useState('');

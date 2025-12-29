@@ -3,11 +3,25 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Plus, FileText, Video, Trash, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
 
 const ITEMS_PER_PAGE = 10;
 
 export default function MaterialsPage() {
   const { user } = useAuth();
+  const router = useRouter();
+  
+  // 权限检查：admin或有上传学习内容权限的用户
+  const hasPermission = user?.role === 'admin' || 
+    (user?.permissions && JSON.parse(user.permissions).includes('upload_training_content'));
+  
+  useEffect(() => {
+    if (user && !hasPermission) {
+      alert('您没有权限访问此页面');
+      router.push('/training/my-tasks');
+    }
+  }, [user, hasPermission, router]);
+
   const [materials, setMaterials] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
