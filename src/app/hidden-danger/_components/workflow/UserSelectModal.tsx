@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { X, Search, User, Users, Building2 } from 'lucide-react';
 import { SimpleUser } from '@/types/hidden-danger';
-import DepartmentSelectModal from '@/components/work-permit/moduls/DepartmentSelectModal';
+import PeopleSelector from '@/components/common/PeopleSelector';
 
 interface Props {
   isOpen: boolean;
@@ -285,11 +285,19 @@ export function UserSelectModal({
       </div>
 
       {/* 部门选择弹窗 */}
-      <DepartmentSelectModal
+      <PeopleSelector
         isOpen={showDeptModal}
         onClose={() => setShowDeptModal(false)}
-        onSelect={handleDeptSelect}
-        selectedDeptId={selectedDeptId}
+        mode="dept"
+        onConfirm={(selection) => {
+            if (Array.isArray(selection) && selection.length > 0) {
+                // @ts-ignore
+                const dept = selection[0];
+                handleDeptSelect(dept.id, dept.name);
+            }
+            setShowDeptModal(false);
+        }}
+        title="选择部门"
       />
     </div>
   );

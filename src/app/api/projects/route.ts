@@ -3,14 +3,87 @@ import { prisma } from '@/lib/prisma';
 import { createLog } from '@/lib/logger';
 
 // GET: 获取所有工程/项目列表
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '20');
+    const skip = (page - 1) * limit;
+
+    // Check if pagination is requested
+    const isPaginated = searchParams.has('page');
+    const q = searchParams.get('q');
+    const status = searchParams.get('status'); // 'ongoing', 'upcoming', 'finished'
+    const date = searchParams.get('date');
+
+    const where: any = { deletedAt: null };
+
+    if (q) {
+        where.OR = [
+            { name: { contains: q } },
+            { code: { contains: q } },
+            { location: { contains: q } },
+            { supplierName: { contains: q } },
+            { contractNo: { contains: q } }
+        ];
+    }
+
+    if (date) {
+        // Find projects active on this date
+        // startDate <= date <= endDate
+        const targetDate = new Date(date);
+        if (!isNaN(targetDate.getTime())) {
+             where.startDate = { lte: targetDate };
+             where.endDate = { gte: targetDate };
+        }
+    }
+
+    if (status) {
+        const now = new Date();
+        // Since we can't easily do complex date comparison in SQLite via Prisma for "status" alias
+        // we might have to handle this carefully or just map status to date ranges if possible.
+        // 'ongoing': start <= now <= end
+        // 'upcoming': start > now
+        // 'finished': end < now
+        if (status === 'ongoing') {
+            where.startDate = { lte: now };
+            where.endDate = { gte: now };
+        } else if (status === 'upcoming') {
+            where.startDate = { gt: now };
+        } else if (status === 'finished') {
+            where.endDate = { lt: now };
+        }
+    }
+
     // 🟢 修改：确保查出 deletedAt 为空的
-    const projects = await prisma.project.findMany({
-      where: { deletedAt: null },
+    const queryOptions: any = {
+      where,
       orderBy: { createdAt: 'desc' },
       include: { _count: { select: { permits: true } } }
-    });
+    };
+
+    if (isPaginated) {
+        queryOptions.skip = skip;
+        queryOptions.take = limit;
+    }
+
+    const [projects, total] = await Promise.all([
+        prisma.project.findMany(queryOptions),
+        prisma.project.count({ where })
+    ]);
+
+    if (isPaginated) {
+        return NextResponse.json({
+            data: projects,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    }
+
     return NextResponse.json(projects);
   } catch (error) {
     return NextResponse.json({ error: '获取项目失败' }, { status: 500 });

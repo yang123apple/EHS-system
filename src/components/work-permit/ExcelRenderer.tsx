@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckSquare, Square, Bold, Type, MousePointerClick, Clock, Check, AlertCircle } from 'lucide-react';
-import DepartmentSelectModal from './moduls/DepartmentSelectModal';
+import PeopleSelector from '@/components/common/PeopleSelector';
 import { ParsedField } from '@/types/work-permit';
 
 // 定义样式接口
@@ -1232,11 +1232,17 @@ export default function ExcelRenderer({
         </table>
       </div>
 
-      <DepartmentSelectModal
+      <PeopleSelector
         isOpen={deptModalOpen}
         onClose={() => { setDeptModalOpen(false); setPendingDeptCell(null); }}
-        onSelect={handleDepartmentPick}
-        selectedDeptId={undefined}
+        mode="dept"
+        onConfirm={(selection) => {
+             if (Array.isArray(selection) && selection.length > 0) {
+                 // @ts-ignore
+                 handleDepartmentPick(selection[0].id, selection[0].name);
+             }
+        }}
+        title="选择部门"
       />
     </>
   );

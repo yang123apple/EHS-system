@@ -5,14 +5,41 @@ import { prisma } from '@/lib/prisma';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
-  // 1. 简易权限校验 (实际项目中建议结合 session/token 校验)
-  // 这里假设前端会过滤，后端只做兜底。严谨做法是从 header 获取 user 校验 role === 'admin'
-  
+  const { searchParams } = new URL(req.url);
+  const page = parseInt(searchParams.get('page') || '1');
+  const limit = parseInt(searchParams.get('limit') || '50');
+  const skip = (page - 1) * limit;
+  const isPaginated = searchParams.has('page');
+
   try {
-    const logs = await prisma.systemLog.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 100, // 限制最新的 100 条，或者做分页
-    });
+    const queryOptions: any = {
+      orderBy: { createdAt: 'desc' }
+    };
+
+    if (isPaginated) {
+      queryOptions.skip = skip;
+      queryOptions.take = limit;
+    } else {
+      queryOptions.take = 100; // Default limit if no pagination
+    }
+
+    const [logs, total] = await Promise.all([
+      prisma.systemLog.findMany(queryOptions),
+      prisma.systemLog.count()
+    ]);
+
+    if (isPaginated) {
+        return NextResponse.json({
+            data: logs,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    }
+
     return NextResponse.json(logs);
   } catch (error) {
     return NextResponse.json({ error: '获取日志失败' }, { status: 500 });

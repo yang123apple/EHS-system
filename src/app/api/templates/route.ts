@@ -4,11 +4,40 @@ import { createLog } from '@/lib/logger';
 import { parseTemplateFields, autoCalculateColumnWidths, checkCellLineBreaks } from '@/utils/templateParser';
 export const dynamic = 'force-dynamic';
 // GET: 获取所有作业票模板
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const page = parseInt(searchParams.get('page') || '1');
+  const limit = parseInt(searchParams.get('limit') || '50');
+  const skip = (page - 1) * limit;
+  const isPaginated = searchParams.has('page');
+
   try {
-    const templates = await prisma.workPermitTemplate.findMany({
+    const queryOptions: any = {
       orderBy: { createdAt: 'desc' }
-    });
+    };
+
+    if (isPaginated) {
+        queryOptions.skip = skip;
+        queryOptions.take = limit;
+    }
+
+    const [templates, total] = await Promise.all([
+        prisma.workPermitTemplate.findMany(queryOptions),
+        prisma.workPermitTemplate.count()
+    ]);
+
+    if (isPaginated) {
+        return NextResponse.json({
+            data: templates,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    }
+
     return NextResponse.json(templates);
   } catch (error) {
     return NextResponse.json({ error: '获取模板失败' }, { status: 500 });

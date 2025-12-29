@@ -9,16 +9,34 @@ interface Props {
     onAdjustDate: (p: Project) => void;
     onNewPermit: (p: Project) => void;
     onDeleteProject: (id: string, name: string) => void;
+    // Pagination props
+    currentPage?: number;
+    totalPages?: number;
+    onPageChange?: (page: number) => void;
 }
 
-export default function ProjectListView({ projects, hasPerm, onOpenDetail, onAdjustDate, onNewPermit, onDeleteProject }: Props) {
-    // === 本地筛选状态 ===
-    const [filterText, setFilterText] = useState('');
-    const [searchField, setSearchField] = useState('name');
-    const [filterDate, setFilterDate] = useState('');
-    const [filterStatus, setFilterStatus] = useState('all');
+interface Props {
+    projects: Project[];
+    hasPerm: (perm: string) => boolean;
+    onOpenDetail: (p: Project) => void;
+    onAdjustDate: (p: Project) => void;
+    onNewPermit: (p: Project) => void;
+    onDeleteProject: (id: string, name: string) => void;
+    // Pagination props
+    currentPage?: number;
+    totalPages?: number;
+    onPageChange?: (page: number) => void;
+    // Filter Props
+    filters: { text: string; status: string; date: string };
+    onFilterChange: (newFilters: any) => void;
+}
 
-    // 辅助函数：计算项目状态
+export default function ProjectListView({
+    projects, hasPerm, onOpenDetail, onAdjustDate, onNewPermit, onDeleteProject,
+    currentPage = 1, totalPages = 1, onPageChange,
+    filters, onFilterChange
+}: Props) {
+    // 辅助函数：计算项目状态 (UI Display only)
     const getProjectStatus = (start: string, end: string) => {
         const now = new Date(); now.setHours(0, 0, 0, 0);
         const s = new Date(start); s.setHours(0, 0, 0, 0);
@@ -28,56 +46,17 @@ export default function ProjectListView({ projects, hasPerm, onOpenDetail, onAdj
         return { label: '进行中', color: 'bg-blue-50 text-blue-700 border-blue-100', value: 'ongoing' };
     };
 
-    // 执行筛选
-    const filteredProjects = projects.filter(p => {
-        // 1. 文本搜索
-        const term = filterText.toLowerCase();
-        let matchesText = true;
-        if (term) {
-            if (searchField === 'contractNo') matchesText = (p.contractNo || '').toLowerCase().includes(term);
-            else if (searchField === 'supplierName') matchesText = (p.supplierName || '').toLowerCase().includes(term);
-            else if (searchField === 'location') matchesText = (p.location || '').toLowerCase().includes(term);
-            else matchesText = (p.name.toLowerCase().includes(term) || (p.code ? p.code.toLowerCase().includes(term) : false));
-        }
-
-        // 2. 日期筛选
-        let matchesDate = true;
-        if (filterDate) {
-            const startStr = new Date(p.startDate).toISOString().slice(0, 10);
-            const endStr = new Date(p.endDate).toISOString().slice(0, 10);
-            matchesDate = filterDate >= startStr && filterDate <= endStr;
-        }
-
-        // 3. 状态筛选
-        let matchesStatus = true;
-        if (filterStatus !== 'all') {
-            const currentStatus = getProjectStatus(p.startDate, p.endDate).value;
-            matchesStatus = currentStatus === filterStatus;
-        }
-
-        return matchesText && matchesDate && matchesStatus;
-    });
-
     return (
         <>
             {/* 顶部工具栏 */}
             <div className="bg-white border-b border-slate-200 p-4 flex gap-4 items-center flex-wrap">
                 <div className="flex items-center bg-slate-100 rounded-lg px-3 py-2 flex-1 max-w-lg border border-transparent focus-within:border-blue-300 transition">
                     <Search size={18} className="text-slate-400 mr-2" />
-                    <select
-                        value={searchField}
-                        onChange={e => setSearchField(e.target.value)}
-                        className="bg-transparent text-sm font-medium text-slate-700 outline-none border-r border-slate-300 pr-2 mr-2 cursor-pointer"
-                    >
-                        <option value="name">工程名称</option>
-                        <option value="location">施工地点</option>
-                        <option value="supplierName">供应商</option>
-                    </select>
                     <input
                         type="text"
-                        placeholder="输入搜索关键词..."
-                        value={filterText}
-                        onChange={e => setFilterText(e.target.value)}
+                        placeholder="搜索项目名称、编号、地点..."
+                        value={filters.text}
+                        onChange={e => onFilterChange({ ...filters, text: e.target.value })}
                         className="bg-transparent outline-none text-sm flex-1"
                     />
                 </div>
@@ -86,10 +65,10 @@ export default function ProjectListView({ projects, hasPerm, onOpenDetail, onAdj
                     <Filter size={16} className="text-slate-400 mr-2" />
                     <select
                         className="bg-transparent text-sm text-slate-700 outline-none cursor-pointer"
-                        value={filterStatus}
-                        onChange={e => setFilterStatus(e.target.value)}
+                        value={filters.status}
+                        onChange={e => onFilterChange({ ...filters, status: e.target.value })}
                     >
-                        <option value="all">所有状态</option>
+                        <option value="">所有状态</option>
                         <option value="ongoing">进行中</option>
                         <option value="upcoming">未开始</option>
                         <option value="finished">已结束</option>
@@ -101,17 +80,17 @@ export default function ProjectListView({ projects, hasPerm, onOpenDetail, onAdj
                     <input
                         type="date"
                         className="bg-transparent text-sm text-slate-700 outline-none cursor-pointer"
-                        value={filterDate}
-                        onChange={(e) => setFilterDate(e.target.value)}
+                        value={filters.date}
+                        onChange={(e) => onFilterChange({ ...filters, date: e.target.value })}
                     />
-                    {filterDate && <button onClick={() => setFilterDate('')} className="ml-2 text-xs text-blue-600 hover:underline">重置</button>}
+                    {filters.date && <button onClick={() => onFilterChange({ ...filters, date: '' })} className="ml-2 text-xs text-blue-600 hover:underline">重置</button>}
                 </div>
             </div>
 
             {/* 卡片网格 */}
             <div className="flex-1 overflow-auto p-6 bg-slate-50">
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {filteredProjects.map(project => {
+                    {projects.map(project => {
                         const status = getProjectStatus(project.startDate, project.endDate);
                         return (
                             <div key={project.id} className="bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all flex flex-col">
@@ -159,7 +138,7 @@ export default function ProjectListView({ projects, hasPerm, onOpenDetail, onAdj
                             </div>
                         );
                     })}
-                    {filteredProjects.length === 0 && (
+                    {projects.length === 0 && (
                         <div className="col-span-full text-center py-20 text-slate-400 flex flex-col items-center">
                             <Search size={48} className="mb-4 text-slate-200" />
                             <p>未找到匹配的工程项目</p>
@@ -167,6 +146,26 @@ export default function ProjectListView({ projects, hasPerm, onOpenDetail, onAdj
                     )}
                 </div>
             </div>
+            {/* Pagination Controls */}
+            {onPageChange && totalPages > 1 && (
+                <div className="bg-white border-t border-slate-200 p-3 flex justify-center items-center gap-4">
+                    <button
+                        onClick={() => onPageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-slate-50 text-sm"
+                    >
+                        上一页
+                    </button>
+                    <span className="text-sm text-slate-600">第 {currentPage} 页 / 共 {totalPages} 页</span>
+                    <button
+                        onClick={() => onPageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-slate-50 text-sm"
+                    >
+                        下一页
+                    </button>
+                </div>
+            )}
         </>
     );
 }

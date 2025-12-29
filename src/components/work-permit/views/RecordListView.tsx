@@ -7,23 +7,21 @@ interface Props {
     hasPerm: (perm: string) => boolean;
     onViewRecord: (r: PermitRecord) => void;
     onDeleteRecord: (id: string) => void;
+    currentPage?: number;
+    totalPages?: number;
+    onPageChange?: (page: number) => void;
+    filters: { project: string; type: string; date: string };
+    onFilterChange: (newFilters: any) => void;
+    totalCount?: number;
 }
 
-export default function RecordListView({ records, hasPerm, onViewRecord, onDeleteRecord }: Props) {
-    // === 本地筛选状态 ===
-    const [recFilterProject, setRecFilterProject] = useState('');
-    const [recFilterType, setRecFilterType] = useState('');
-    const [recFilterDate, setRecFilterDate] = useState('');
-
-    const filteredRecords = records.filter(r => {
-        const matchProject = !recFilterProject || (r.project?.name || "").toLowerCase().includes(recFilterProject.toLowerCase());
-        const matchType = !recFilterType || r.template.type === recFilterType;
-        const matchDate = !recFilterDate || new Date(r.createdAt).toISOString().startsWith(recFilterDate);
-        return matchProject && matchType && matchDate;
-    });
-
-    // 提取所有可能的类型用于下拉筛选
-    const allTypes = Array.from(new Set(records.map(r => r.template.type)));
+export default function RecordListView({
+    records, hasPerm, onViewRecord, onDeleteRecord,
+    currentPage = 1, totalPages = 1, onPageChange,
+    filters, onFilterChange, totalCount
+}: Props) {
+    // 静态类型列表 (可扩展)
+    const staticTypes = ['动火', '高处', '受限空间', '吊装', '临时用电', '其他'];
 
     return (
         <>
@@ -38,19 +36,19 @@ export default function RecordListView({ records, hasPerm, onViewRecord, onDelet
                         <input
                             className="bg-transparent outline-none w-full"
                             placeholder="搜索项目名称..."
-                            value={recFilterProject}
-                            onChange={e => setRecFilterProject(e.target.value)}
+                            value={filters.project}
+                            onChange={e => onFilterChange({ ...filters, project: e.target.value })}
                         />
                     </div>
                     <div className="flex items-center gap-2 bg-slate-50 border rounded-lg px-3 py-2">
                         <Filter size={16} className="text-slate-400" />
                         <select
                             className="bg-transparent outline-none text-slate-600 cursor-pointer min-w-[100px]"
-                            value={recFilterType}
-                            onChange={e => setRecFilterType(e.target.value)}
+                            value={filters.type}
+                            onChange={e => onFilterChange({ ...filters, type: e.target.value })}
                         >
                             <option value="">所有类型</option>
-                            {allTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                            {staticTypes.map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
                     </div>
                     <div className="flex items-center gap-2 bg-slate-50 border rounded-lg px-3 py-2">
@@ -58,20 +56,20 @@ export default function RecordListView({ records, hasPerm, onViewRecord, onDelet
                         <input
                             type="date"
                             className="bg-transparent outline-none text-slate-600 cursor-pointer"
-                            value={recFilterDate}
-                            onChange={e => setRecFilterDate(e.target.value)}
+                            value={filters.date}
+                            onChange={e => onFilterChange({ ...filters, date: e.target.value })}
                         />
                     </div>
-                    {(recFilterProject || recFilterType || recFilterDate) && (
+                    {(filters.project || filters.type || filters.date) && (
                         <button
-                            onClick={() => { setRecFilterProject(''); setRecFilterType(''); setRecFilterDate('') }}
+                            onClick={() => onFilterChange({ project: '', type: '', date: '' })}
                             className="text-blue-600 hover:underline px-2"
                         >
                             重置
                         </button>
                     )}
                 </div>
-                <div className="text-xs text-slate-400">共 {filteredRecords.length} 条记录</div>
+                <div className="text-xs text-slate-400">共 {totalCount || records.length} 条记录</div>
             </div>
 
             {/* 列表表格 */}
@@ -89,10 +87,10 @@ export default function RecordListView({ records, hasPerm, onViewRecord, onDelet
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredRecords.length === 0 ? (
+                            {records.length === 0 ? (
                                 <tr><td colSpan={6} className="p-10 text-center text-slate-400">暂无符合条件的记录</td></tr>
                             ) : (
-                                filteredRecords.map(r => (
+                                records.map(r => (
                                     <tr key={r.id} className="border-b hover:bg-slate-50 transition">
                                         <td className="p-4 font-mono text-slate-500 text-xs">{r.project?.code || "-"}</td>
                                         <td className="p-4 font-medium text-slate-800">{r.project?.name || "未知项目"}</td>
@@ -114,6 +112,26 @@ export default function RecordListView({ records, hasPerm, onViewRecord, onDelet
                     </table>
                 </div>
             </div>
+            {/* Pagination Controls */}
+            {onPageChange && totalPages > 1 && (
+                <div className="bg-white border-t border-slate-200 p-3 flex justify-center items-center gap-4">
+                    <button
+                        onClick={() => onPageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-slate-50 text-sm"
+                    >
+                        上一页
+                    </button>
+                    <span className="text-sm text-slate-600">第 {currentPage} 页 / 共 {totalPages} 页</span>
+                    <button
+                        onClick={() => onPageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-slate-50 text-sm"
+                    >
+                        下一页
+                    </button>
+                </div>
+            )}
         </>
     );
 }

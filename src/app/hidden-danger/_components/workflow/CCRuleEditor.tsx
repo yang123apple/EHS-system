@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Plus, Trash2, Mail, Users, MapPin, Tag, Shield, UserCheck, Building2 } from 'lucide-react';
 import { HazardCCRule, CCRuleType, SimpleUser } from '@/types/hidden-danger';
-import DepartmentSelectModal from '@/components/work-permit/moduls/DepartmentSelectModal';
+import PeopleSelector from '@/components/common/PeopleSelector';
 import { UserSelectModal } from './UserSelectModal';
 
 interface Props {
@@ -321,14 +321,22 @@ export function CCRuleEditor({ rules, allUsers, departments, onChange }: Props) 
       </div>
 
       {/* 部门选择弹窗 */}
-      <DepartmentSelectModal
+      <PeopleSelector
         isOpen={deptModalOpen}
         onClose={() => {
           setDeptModalOpen(false);
           setCurrentEditingRule(null);
         }}
-        onSelect={handleDeptSelect}
-        selectedDeptId={currentEditingRule !== null ? rules[currentEditingRule]?.config?.deptId : undefined}
+        mode="dept"
+        onConfirm={(selection) => {
+            if (Array.isArray(selection) && selection.length > 0) {
+                // @ts-ignore
+                const dept = selection[0];
+                handleDeptSelect(dept.id, dept.name);
+            }
+            setDeptModalOpen(false);
+        }}
+        title="选择部门"
       />
 
       {/* 用户选择弹窗 */}

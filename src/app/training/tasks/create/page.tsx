@@ -1,8 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import DepartmentSelectModal from '@/components/work-permit/moduls/DepartmentSelectModal';
-import UserSelectModal from '@/components/training/UserSelectModal';
+import PeopleSelector from '@/components/common/PeopleSelector';
 import { useAuth } from '@/context/AuthContext';
 
 export default function CreateTaskPage() {
@@ -147,28 +146,41 @@ export default function CreateTaskPage() {
       </div>
 
       {/* Dept Modal */}
-      <DepartmentSelectModal
+      <PeopleSelector
           isOpen={showDeptModal}
           onClose={() => setShowDeptModal(false)}
-          onSelect={(id, name) => {
-              if (!targetConfig.includes(id)) {
-                  setTargetConfig([...targetConfig, id]);
-                  setDisplayTargets([...displayTargets, name]);
+          mode="dept"
+          onConfirm={(selection) => {
+              if (Array.isArray(selection) && selection.length > 0) {
+                  // @ts-ignore
+                  const dept = selection[0];
+                   if (!targetConfig.includes(dept.id)) {
+                      setTargetConfig([...targetConfig, dept.id]);
+                      setDisplayTargets([...displayTargets, dept.name]);
+                  }
               }
               setShowDeptModal(false);
           }}
+          title="选择部门"
       />
 
       {/* User Modal */}
-      <UserSelectModal
+      <PeopleSelector
           isOpen={showUserModal}
           onClose={() => setShowUserModal(false)}
-          onConfirm={(users) => {
+          mode="user"
+          multiSelect={true}
+          onConfirm={(selection) => {
+              // @ts-ignore
+              const users = selection as any[];
               const newIds = users.map(u => u.id).filter(id => !targetConfig.includes(id));
               setTargetConfig([...targetConfig, ...newIds]);
-              setDisplayTargets([...displayTargets, ...users.map(u => u.name).filter(n => !displayTargets.includes(n))]); // Simple name filter
+              // Note: Using simple name tracking, might duplicate names but good enough for display
+              const newNames = users.map(u => u.name);
+              setDisplayTargets(prev => Array.from(new Set([...prev, ...newNames])));
               setShowUserModal(false);
           }}
+          title="选择人员"
       />
     </div>
   );

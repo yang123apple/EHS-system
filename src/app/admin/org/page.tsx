@@ -4,7 +4,7 @@ import { Network, ChevronRight, ChevronDown, Plus, Trash2, Edit2, User as UserIc
 import jschardet from 'jschardet';
 import { parseTableFile, pick } from '@/utils/fileImport';
 import * as XLSX from 'xlsx';
-import DepartmentSelectModal from '@/components/work-permit/moduls/DepartmentSelectModal';
+import PeopleSelector from '@/components/common/PeopleSelector';
 import Link from 'next/link';
 
 // 定义接口
@@ -739,14 +739,21 @@ export default function OrgStructurePage() {
 
             {/* 🟢 员工部门调整弹窗 */}
             {showUserDeptModal && adjustingUser && (
-                <DepartmentSelectModal
+                <PeopleSelector
                     isOpen={showUserDeptModal}
                     onClose={() => {
                         setShowUserDeptModal(false);
                         setAdjustingUser(null);
                     }}
-                    onSelect={handleUserDeptSelect}
-                    selectedDeptId={adjustingUser.departmentId}
+                    mode="dept"
+                    onConfirm={(selection) => {
+                        if (Array.isArray(selection) && selection.length > 0) {
+                            // @ts-ignore
+                            handleUserDeptSelect(selection[0].id, selection[0].name);
+                        }
+                        setShowUserDeptModal(false);
+                    }}
+                    title="选择目标部门"
                 />
             )}
 

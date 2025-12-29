@@ -165,6 +165,14 @@ export async function GET(req: Request) {
   const projectId = searchParams.get('projectId');
   const action = searchParams.get('action');
   const templateType = searchParams.get('templateType');
+  const q = searchParams.get('q'); // Search by project name
+  const filterType = searchParams.get('type');
+  const date = searchParams.get('date');
+
+  const page = parseInt(searchParams.get('page') || '1');
+  const limit = parseInt(searchParams.get('limit') || '50');
+  const skip = (page - 1) * limit;
+  const isPaginated = searchParams.has('page');
 
   try {
     // 🟢 新增：预生成编号功能
@@ -174,16 +182,68 @@ export async function GET(req: Request) {
     }
 
     // 原有功能：获取作业票记录
-    const whereCondition = projectId ? { projectId } : {}; // 如果没传 projectId，就查所有
+    const whereCondition: any = {};
 
-    const records = await prisma.workPermitRecord.findMany({
+    if (projectId) {
+        whereCondition.projectId = projectId;
+    }
+
+    if (q) {
+        // Search by project name (relation)
+        whereCondition.project = {
+            name: { contains: q }
+        };
+    }
+
+    if (filterType) {
+        whereCondition.template = {
+            type: filterType
+        };
+    }
+
+    if (date) {
+        const targetDate = new Date(date);
+        if (!isNaN(targetDate.getTime())) {
+            const nextDay = new Date(targetDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            whereCondition.createdAt = {
+                gte: targetDate,
+                lt: nextDay
+            };
+        }
+    }
+
+    const queryOptions: any = {
       where: whereCondition,
       include: { 
         template: true, // 关联模板信息
         project: true   // ✅ 关联项目信息 (查所有记录时需要知道是哪个项目的)
       },
       orderBy: { createdAt: 'desc' }
-    });
+    };
+
+    if (isPaginated) {
+        queryOptions.skip = skip;
+        queryOptions.take = limit;
+    }
+
+    const [records, total] = await Promise.all([
+        prisma.workPermitRecord.findMany(queryOptions),
+        prisma.workPermitRecord.count({ where: whereCondition })
+    ]);
+
+    if (isPaginated) {
+        return NextResponse.json({
+            data: records,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    }
+
     return NextResponse.json(records);
   } catch (error) {
     return NextResponse.json({ error: '获取记录失败' }, { status: 500 });
