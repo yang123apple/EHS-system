@@ -195,6 +195,7 @@ export default function NotificationPanel() {
           if (!isOpen) fetchNotifications();
         }}
         className="relative p-2 rounded-lg hover:bg-slate-100 transition-colors"
+        aria-label="消息通知"
       >
         <Bell className="w-5 h-5 text-slate-600" />
         {unreadCount > 0 && (
