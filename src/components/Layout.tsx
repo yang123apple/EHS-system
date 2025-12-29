@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 // 1. 引入需要的图标：Network (组织架构), Users (账户), LayoutDashboard (工作台)
-import { LogOut, User as UserIcon, ChevronDown, LayoutDashboard, Users, Network, Menu, X } from 'lucide-react';
+import { LogOut, User as UserIcon, ChevronDown, LayoutDashboard, Users, Network, Menu, X, GraduationCap } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import NotificationPanel from '@/components/common/NotificationPanel';
 
@@ -67,6 +67,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     工作台
                 </Link>
 
+                <Link
+                    href="/training"
+                    className={`flex items-center gap-2 text-sm font-medium transition-colors ${
+                        isActive('/training') ? 'text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                >
+                    <GraduationCap size={18} />
+                    EHS培训
+                </Link>
+
                 {/* 仅管理员可见的菜单 */}
                 {user.role === 'admin' && (
                     <>
@@ -89,6 +99,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         >
                             <Network size={18} />
                             组织架构
+                        </Link>
+
+                        <div className="h-6 w-[1px] bg-slate-600 mx-2 hidden lg:block"></div>
+
+                        <Link
+                            href="/training/admin/content"
+                            className={`flex items-center gap-2 text-sm font-medium transition-colors ${
+                                isActive('/training/admin/content') ? 'text-white' : 'text-slate-400 hover:text-white'
+                            }`}
+                        >
+                            培训内容
+                        </Link>
+                         <Link
+                            href="/training/admin/tasks"
+                            className={`flex items-center gap-2 text-sm font-medium transition-colors ${
+                                isActive('/training/admin/tasks') ? 'text-white' : 'text-slate-400 hover:text-white'
+                            }`}
+                        >
+                            培训任务
                         </Link>
                     </>
                 )}
@@ -139,10 +168,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   {/* 移动端菜单补充 (如果屏幕小，上面导航隐藏了，这里可以显示) */}
                   <div className="md:hidden border-b border-slate-100 mb-1">
                       <Link href="/dashboard" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">工作台</Link>
+                      <Link href="/training" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">EHS培训</Link>
                       {user.role === 'admin' && (
                           <>
                               <Link href="/admin/account" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">账户管理</Link>
                               <Link href="/admin/org" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">组织架构</Link>
+                              <Link href="/training/admin/content" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">培训内容(Admin)</Link>
+                              <Link href="/training/admin/tasks" className="flex items-center px-4 py-2 hover:bg-slate-50 text-sm">培训任务(Admin)</Link>
                           </>
                       )}
                   </div>
@@ -183,6 +215,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <LayoutDashboard size={20} />
                   工作台
                 </Link>
+
+                <Link
+                  href="/training"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                    isActive('/training') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <GraduationCap size={20} />
+                  EHS培训
+                </Link>
                 
                 {user.role === 'admin' && (
                   <>
@@ -206,6 +249,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     >
                       <Network size={20} />
                       组织架构
+                    </Link>
+
+                    <Link
+                      href="/training/admin/content"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        isActive('/training/admin/content') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                      }`}
+                    >
+                      培训内容
+                    </Link>
+                     <Link
+                      href="/training/admin/tasks"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        isActive('/training/admin/tasks') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                      }`}
+                    >
+                      培训任务
                     </Link>
                   </>
                 )}
