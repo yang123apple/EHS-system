@@ -110,9 +110,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <p className="text-sm font-medium">{user.name}</p>
                   <p className="text-xs text-slate-400">ID: {user.id}</p>
                 </div>
-                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-hytzer-blue flex items-center justify-center overflow-hidden border-2 border-slate-600">
+                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-hytzer-blue flex items-center justify-center overflow-hidden border-2 border-slate-600 relative">
                   {user.avatar ? (
-                     <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                     <Image
+                       src={user.avatar}
+                       alt="Avatar"
+                       fill
+                       className="object-cover"
+                       sizes="(max-width: 640px) 32px, 40px"
+                     />
                   ) : (
                      <span className="text-base sm:text-lg font-bold">{user.name?.[0]}</span>
                   )}

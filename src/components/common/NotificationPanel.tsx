@@ -142,10 +142,29 @@ export default function NotificationPanel() {
   // 初始加载
   useEffect(() => {
     if (user?.id) {
+      // 首次加载
       fetchNotifications();
-      // 每30秒刷新一次
-      const interval = setInterval(fetchNotifications, 30000);
-      return () => clearInterval(interval);
+
+      // 每30秒刷新一次，但仅当页面可见时
+      const interval = setInterval(() => {
+        if (!document.hidden) {
+          fetchNotifications();
+        }
+      }, 30000);
+
+      // 监听可见性变化，当页面变为可见时立即刷新
+      const handleVisibilityChange = () => {
+        if (!document.hidden) {
+          fetchNotifications();
+        }
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
     }
   }, [user?.id]);
 

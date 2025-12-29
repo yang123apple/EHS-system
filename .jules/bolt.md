@@ -1,0 +1,3 @@
+## 2025-02-18 - [Frontend Polling & Image Optimization]
+**Learning:** `setInterval` continues to run even when the tab is inactive, causing unnecessary network requests and battery drain. Using `document.hidden` inside the interval callback is a simple and effective way to pause polling without complex hooks. Also, `next/image` requires careful handling of local assets (knowing dimensions or using `fill`) but provides significant automatic optimization.
+**Action:** Always wrap polling logic in a visibility check. Prefer `next/image` for all user-uploaded or static images, even if small, to ensure proper format serving and resizing.
