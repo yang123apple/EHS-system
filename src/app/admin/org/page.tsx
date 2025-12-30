@@ -6,6 +6,7 @@ import { parseTableFile, pick } from '@/utils/fileImport';
 import * as XLSX from 'xlsx';
 import PeopleSelector from '@/components/common/PeopleSelector';
 import Link from 'next/link';
+import { apiFetch } from '@/lib/apiClient';
 
 // 定义接口
 interface OrgNode {
@@ -60,13 +61,29 @@ export default function OrgStructurePage() {
   const fetchData = async () => {
     try {
       const [treeRes, usersRes] = await Promise.all([
-        fetch('/api/org'),
-        fetch('/api/users')
+        apiFetch('/api/org'),
+        apiFetch('/api/users')
       ]);
-      setTree(await treeRes.json());
-      setUsers(await usersRes.json());
+      
+      // 检查响应状态
+      if (!treeRes.ok || !usersRes.ok) {
+        console.error("API响应错误", { tree: treeRes.status, users: usersRes.status });
+        setTree([]);
+        setUsers([]);
+        return;
+      }
+      
+      const treeData = await treeRes.json();
+      const usersData = await usersRes.json();
+      
+      // 确保 tree 是数组
+      setTree(Array.isArray(treeData) ? treeData : []);
+      // 确保 users 是数组
+      setUsers(Array.isArray(usersData) ? usersData : []);
     } catch (e) {
       console.error("加载失败", e);
+      setTree([]);
+      setUsers([]);
     } finally {
       setIsLoading(false);
     }
@@ -101,14 +118,14 @@ export default function OrgStructurePage() {
         parentId: isEdit ? editingNode.parentId : parentIdToAdd
     };
 
-    await fetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+    await apiFetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
     setShowDeptModal(false);
     fetchData(); 
   };
 
   const handleDeleteDept = async (id: string) => {
     if (!confirm('确定删除该部门吗？(请确保该部门下无子部门)')) return;
-    await fetch(`/api/org/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/org/${id}`, { method: 'DELETE' });
     fetchData();
   };
 
@@ -255,7 +272,7 @@ export default function OrgStructurePage() {
             }
             
             // 创建部门
-            const res = await fetch('/api/org', {
+            const res = await apiFetch('/api/org', {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({
@@ -325,7 +342,7 @@ export default function OrgStructurePage() {
 
   const updateUserDepartment = async (userId: string, deptId: string | null, deptName: string) => {
     try {
-        const res = await fetch(`/api/users/${userId}`, {
+        const res = await apiFetch(`/api/users/${userId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -376,7 +393,7 @@ export default function OrgStructurePage() {
     });
 
     try {
-      const res = await fetch(`/api/users/${editingUser.id}`, { 
+      const res = await apiFetch(`/api/users/${editingUser.id}`, { 
         method: 'PUT', 
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload)
@@ -399,7 +416,7 @@ export default function OrgStructurePage() {
   const handleDeleteUser = async (user: UserSimple) => {
     if (confirm(`确定删除用户 ${user.name} (${user.username}) 吗？\n\n此操作不可恢复！`)) {
       try {
-        const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/users/${user.id}`, { method: 'DELETE' });
         if (res.ok) {
           alert('删除成功');
           fetchData();

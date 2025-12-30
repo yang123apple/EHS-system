@@ -28,7 +28,7 @@ export const SYSTEM_MODULES = [
       { key: 'assign', name: '指派责任人 (管理)' },
       { key: 'view_stats', name: '查看统计报表' },
       { key: 'manage_config', name: '配置基础数据 (Admin)' },
-      { key: 'delete', name: '删除隐患记录 (Admin)' },
+      { key: 'delete', name: '删除隐患记录' },
       { key: 'edit_cc_workflow', name: '隐患抄送编辑' },
     ]
   },

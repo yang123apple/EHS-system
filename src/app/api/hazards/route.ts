@@ -20,6 +20,48 @@ const generateChanges = (oldData: HazardRecord, newData: Partial<HazardRecord>) 
   return changes.join('; ');
 };
 
+// 辅助：将日期字符串转换为当天的结束时间（23:59:59.999）
+function setEndOfDay(dateString: string): Date {
+  const date = new Date(dateString);
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
+// 转换 Prisma HazardRecord 到前端 HazardRecord 类型
+function mapHazard(pHazard: any): HazardRecord {
+  try {
+    return {
+      ...pHazard,
+      photos: pHazard.photos ? (typeof pHazard.photos === 'string' ? JSON.parse(pHazard.photos) : pHazard.photos) : [],
+      rectifyPhotos: pHazard.rectifyPhotos ? (typeof pHazard.rectifyPhotos === 'string' ? JSON.parse(pHazard.rectifyPhotos) : pHazard.rectifyPhotos) : [],
+      logs: pHazard.logs ? (typeof pHazard.logs === 'string' ? JSON.parse(pHazard.logs) : pHazard.logs) : [],
+      ccDepts: pHazard.ccDepts ? (typeof pHazard.ccDepts === 'string' ? JSON.parse(pHazard.ccDepts) : pHazard.ccDepts) : [],
+      ccUsers: pHazard.ccUsers ? (typeof pHazard.ccUsers === 'string' ? JSON.parse(pHazard.ccUsers) : pHazard.ccUsers) : [],
+      old_personal_ID: pHazard.old_personal_ID ? (typeof pHazard.old_personal_ID === 'string' ? JSON.parse(pHazard.old_personal_ID) : pHazard.old_personal_ID) : [],
+      reportTime: pHazard.reportTime instanceof Date ? pHazard.reportTime.toISOString() : pHazard.reportTime,
+      rectifyTime: pHazard.rectifyTime instanceof Date ? pHazard.rectifyTime.toISOString() : pHazard.rectifyTime,
+      verifyTime: pHazard.verifyTime instanceof Date ? pHazard.verifyTime.toISOString() : pHazard.verifyTime,
+      deadline: pHazard.deadline instanceof Date ? pHazard.deadline.toISOString() : pHazard.deadline,
+      emergencyPlanDeadline: pHazard.emergencyPlanDeadline instanceof Date ? pHazard.emergencyPlanDeadline.toISOString() : pHazard.emergencyPlanDeadline,
+      emergencyPlanSubmitTime: pHazard.emergencyPlanSubmitTime instanceof Date ? pHazard.emergencyPlanSubmitTime.toISOString() : pHazard.emergencyPlanSubmitTime,
+      createdAt: pHazard.createdAt instanceof Date ? pHazard.createdAt.toISOString() : pHazard.createdAt,
+      updatedAt: pHazard.updatedAt instanceof Date ? pHazard.updatedAt.toISOString() : pHazard.updatedAt,
+    };
+  } catch (error) {
+    console.error('[mapHazard] 转换失败:', error, pHazard);
+    // 如果解析失败，返回原始数据但确保 photos 是数组
+    return {
+      ...pHazard,
+      photos: Array.isArray(pHazard.photos) ? pHazard.photos : [],
+      rectifyPhotos: Array.isArray(pHazard.rectifyPhotos) ? pHazard.rectifyPhotos : [],
+      logs: Array.isArray(pHazard.logs) ? pHazard.logs : [],
+      ccDepts: Array.isArray(pHazard.ccDepts) ? pHazard.ccDepts : [],
+      ccUsers: Array.isArray(pHazard.ccUsers) ? pHazard.ccUsers : [],
+      old_personal_ID: Array.isArray(pHazard.old_personal_ID) ? pHazard.old_personal_ID : [],
+    };
+  }
+}
+
 export const GET = withErrorHandling(
   withAuth(async (request: NextRequest, context, user) => {
     const { searchParams } = new URL(request.url);
@@ -104,7 +146,7 @@ export const GET = withErrorHandling(
       ]);
 
       return NextResponse.json({
-        data: hazards,
+        data: hazards.map(mapHazard),
         meta: {
           total,
           page,
@@ -119,33 +161,109 @@ export const GET = withErrorHandling(
       orderBy: { createdAt: 'desc' },
       include: { reporter: true, responsible: true }
     });
-    return NextResponse.json(data);
+    return NextResponse.json(data.map(mapHazard));
   })
 );
 
 export const POST = withErrorHandling(
   withPermission('hidden_danger', 'report', async (request: NextRequest, context, user) => {
     const body = await request.json();
-    const res = await prisma.hazardRecord.create({
-      data: body
-    });
+    
+    // 过滤掉 Prisma schema 中不存在的字段（但保留 currentStepIndex 和 currentStepId）
+    const {
+      dopersonal_ID,
+      dopersonal_Name,
+      responsibleDeptId,
+      responsibleDeptName,
+      reporterDepartmentId,
+      reporterDepartment,
+      isExtensionRequested,
+      rejectReason,
+      ccUserNames,
+      photos: photosInput,
+      ccDepts: ccDeptsInput,
+      ccUsers: ccUsersInput,
+      logs: logsInput,
+      old_personal_ID: oldPersonalIdInput,
+      ...validData
+    } = body;
+    
+    // 处理数组字段：转换为 JSON 字符串
+    // 处理日期字段：转换为 Date 对象
+    const processedData: any = {
+      ...validData,
+      photos: photosInput ? (Array.isArray(photosInput) ? JSON.stringify(photosInput) : photosInput) : null,
+      ccDepts: ccDeptsInput ? (Array.isArray(ccDeptsInput) ? JSON.stringify(ccDeptsInput) : ccDeptsInput) : null,
+      ccUsers: ccUsersInput ? (Array.isArray(ccUsersInput) ? JSON.stringify(ccUsersInput) : ccUsersInput) : null,
+      logs: logsInput ? (Array.isArray(logsInput) ? JSON.stringify(logsInput) : logsInput) : null,
+      old_personal_ID: oldPersonalIdInput ? (Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput) : null,
+    };
+    
+    // 处理日期字段
+    if (processedData.reportTime && typeof processedData.reportTime === 'string') {
+      processedData.reportTime = new Date(processedData.reportTime);
+    }
+    // 整改期限设置为当天的结束时间（23:59:59.999）
+    if (processedData.deadline && typeof processedData.deadline === 'string') {
+      // 如果是 YYYY-MM-DD 格式（来自 date input），设置为当天结束时间
+      if (/^\d{4}-\d{2}-\d{2}$/.test(processedData.deadline)) {
+        processedData.deadline = setEndOfDay(processedData.deadline);
+      } else {
+        // 如果已经是完整的日期时间字符串，也设置为当天结束时间
+        processedData.deadline = setEndOfDay(processedData.deadline.split('T')[0]);
+      }
+    }
+    
+    try {
+      const res = await prisma.hazardRecord.create({
+        data: processedData
+      });
 
-    // 记录操作日志
-    await logApiOperation(user, 'hidden_danger', 'report', {
-      hazardId: res.id,
-      type: res.type,
-      location: res.location,
-      riskLevel: res.riskLevel
-    });
+      // 记录操作日志
+      await logApiOperation(user, 'hidden_danger', 'report', {
+        hazardId: res.id,
+        type: res.type,
+        location: res.location,
+        riskLevel: res.riskLevel
+      });
 
-    return NextResponse.json(res);
+      return NextResponse.json(mapHazard(res));
+    } catch (error: any) {
+      console.error('[Hazard POST] 创建隐患记录失败:', error);
+      console.error('[Hazard POST] 错误详情:', {
+        message: error.message,
+        code: error.code,
+        meta: error.meta,
+        processedData: Object.keys(processedData)
+      });
+      throw error;
+    }
   })
 );
 
 export const PATCH = withErrorHandling(
   withAuth(async (request: NextRequest, context, user) => {
     const body = await request.json();
-    const { id, operatorId, operatorName, actionName, ...updates } = body;
+    const { 
+      id, 
+      operatorId, 
+      operatorName, 
+      actionName,
+      // 过滤掉 Prisma schema 中不存在的字段（但保留 currentStepIndex 和 currentStepId）
+      dopersonal_ID,
+      dopersonal_Name,
+      responsibleDeptId,
+      responsibleDeptName,
+      isExtensionRequested,
+      rejectReason,
+      photos: photosInput,
+      ccDepts: ccDeptsInput,
+      ccUsers: ccUsersInput,
+      logs: logsInput,
+      old_personal_ID: oldPersonalIdInput,
+      ccUserNames,
+      ...updates 
+    } = body;
     
     // 获取旧数据
     const oldRecord: any = await prisma.hazardRecord.findUnique({ where: { id } });
@@ -165,9 +283,9 @@ export const PATCH = withErrorHandling(
     };
 
     // 如果有抄送信息，也记录到日志中
-    if (updates.ccUsers && updates.ccUsers.length > 0) {
-      newLog.ccUsers = updates.ccUsers;
-      newLog.ccUserNames = updates.ccUserNames || [];
+    if (ccUsersInput && Array.isArray(ccUsersInput) && ccUsersInput.length > 0) {
+      newLog.ccUsers = ccUsersInput;
+      newLog.ccUserNames = ccUserNames || [];
     }
 
     let currentLogs = [];
@@ -177,14 +295,35 @@ export const PATCH = withErrorHandling(
 
     const updatedLogs = [newLog, ...currentLogs];
 
-    const finalUpdates = {
+    // 处理数组字段：转换为 JSON 字符串
+    const finalUpdates: any = {
       ...updates,
       logs: JSON.stringify(updatedLogs)
     };
 
-    delete finalUpdates.ccUserNames;
-    if (finalUpdates.ccUsers) {
-      finalUpdates.ccUsers = JSON.stringify(finalUpdates.ccUsers);
+    // 处理数组字段
+    if (photosInput !== undefined) {
+      finalUpdates.photos = Array.isArray(photosInput) ? JSON.stringify(photosInput) : photosInput;
+    }
+    if (ccDeptsInput !== undefined) {
+      finalUpdates.ccDepts = Array.isArray(ccDeptsInput) ? JSON.stringify(ccDeptsInput) : ccDeptsInput;
+    }
+    if (ccUsersInput !== undefined) {
+      finalUpdates.ccUsers = Array.isArray(ccUsersInput) ? JSON.stringify(ccUsersInput) : ccUsersInput;
+    }
+    if (oldPersonalIdInput !== undefined) {
+      finalUpdates.old_personal_ID = Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput;
+    }
+
+    // 处理日期字段：整改期限设置为当天的结束时间（23:59:59.999）
+    if (finalUpdates.deadline && typeof finalUpdates.deadline === 'string') {
+      // 如果是 YYYY-MM-DD 格式（来自 date input），设置为当天结束时间
+      if (/^\d{4}-\d{2}-\d{2}$/.test(finalUpdates.deadline)) {
+        finalUpdates.deadline = setEndOfDay(finalUpdates.deadline);
+      } else {
+        // 如果已经是完整的日期时间字符串，也设置为当天结束时间
+        finalUpdates.deadline = setEndOfDay(finalUpdates.deadline.split('T')[0]);
+      }
     }
 
     const res = await prisma.hazardRecord.update({
@@ -199,7 +338,7 @@ export const PATCH = withErrorHandling(
       changes: changeDesc
     });
 
-    return NextResponse.json(res);
+    return NextResponse.json(mapHazard(res));
   })
 );
 

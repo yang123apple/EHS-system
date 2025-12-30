@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { HazardRecord, SimpleUser, HazardWorkflowConfig } from '@/types/hidden-danger';
 import { CheckCircle, Ban, Wand2, Loader2, Info } from 'lucide-react';
 import { matchHandler } from '@/app/hidden-danger/_utils/handler-matcher';
+import { apiFetch } from '@/lib/apiClient';
 
 interface VerifyFormProps {
   hazard: HazardRecord;
@@ -24,7 +25,7 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
 
   const loadWorkflowConfig = async () => {
     try {
-      const response = await fetch('/api/hazards/workflow');
+      const response = await apiFetch('/api/hazards/workflow');
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {

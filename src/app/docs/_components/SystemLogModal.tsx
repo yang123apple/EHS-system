@@ -59,9 +59,13 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
       const res = await fetch(`/api/logs?${params}`);
       const data = await res.json();
       
-      if (data.success) {
-        setLogs(data.data.logs);
-        setTotal(data.data.total);
+      if (data.success && data.data) {
+        setLogs(data.data.logs || []);
+        setTotal(data.data.total || 0);
+      } else {
+        console.error('加载日志失败:', data.error || '未知错误');
+        setLogs([]);
+        setTotal(0);
       }
     } catch (error) {
       console.error('加载日志失败:', error);
@@ -71,8 +75,15 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
   };
 
   const handleViewSnapshot = (snapshot: any) => {
-    setViewingSnapshot(snapshot);
-    setShowSnapshotModal(true);
+    try {
+      // 确保快照是对象格式
+      const parsedSnapshot = typeof snapshot === 'string' ? JSON.parse(snapshot) : snapshot;
+      setViewingSnapshot(parsedSnapshot);
+      setShowSnapshotModal(true);
+    } catch (e) {
+      console.error('解析快照数据失败:', e);
+      alert('快照数据格式错误，无法显示');
+    }
   };
 
   const getActionLabel = (action: string) => {
@@ -237,7 +248,9 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
                           </span>
                         </div>
                         
-                        <p className="text-sm text-slate-700 mb-2">{log.details}</p>
+                        <p className="text-sm text-slate-700 mb-2" title={log.details || ''}>
+                          {log.details || '-'}
+                        </p>
                         
                         <div className="flex items-center gap-4 text-xs text-slate-500">
                           <div className="flex items-center gap-1">
@@ -251,7 +264,7 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
                         </div>
                       </div>
 
-                      {log.snapshot && (
+                      {log.snapshot && (typeof log.snapshot === 'object' ? Object.keys(log.snapshot).length > 0 : log.snapshot) && (
                         <button
                           onClick={() => handleViewSnapshot(log.snapshot)}
                           className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-xs font-medium flex items-center gap-1 shrink-0"
@@ -375,7 +388,13 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
                 <h4 className="text-sm font-bold text-slate-900 mb-2">完整快照数据</h4>
                 <pre className="text-xs bg-slate-900 text-green-400 p-4 rounded-lg overflow-x-auto font-mono">
-                  {JSON.stringify(viewingSnapshot, null, 2)}
+                  {(() => {
+                    try {
+                      return JSON.stringify(viewingSnapshot, null, 2);
+                    } catch (e) {
+                      return `快照数据格式化失败: ${e instanceof Error ? e.message : '未知错误'}`;
+                    }
+                  })()}
                 </pre>
               </div>
             </div>

@@ -17,34 +17,34 @@ export default function HiddenDangerLayout({ children }: { children: React.React
   // 导航项配置
 const navItems = [
   { 
-    icon: <TrafficCone size={18}/>, 
+    icon: TrafficCone, 
     label: '隐患中心', 
     mode: VIEW_MODES.OVERVIEW,
     show: true 
   },
   { 
-    icon: <ListTodo size={18}/>, 
+    icon: ListTodo, 
     label: '我的任务', 
     mode: VIEW_MODES.MY_TASKS,
     show: true 
   },
   { 
-    icon: <Search size={18}/>, 
+    icon: Search, 
     label: '隐患查询', 
     mode: VIEW_MODES.ALL_LIST,
     show: true 
   },
   { 
-    icon: <BarChart3 size={18}/>, 
+    icon: BarChart3, 
     label: '统计分析', 
     mode: VIEW_MODES.STATS,
     show: hasPerm('view_stats') 
   },
   { 
-    icon: <FileText size={18}/>, 
+    icon: FileText, 
     label: '操作日志', 
     mode: VIEW_MODES.LOGS,
-    show: user?.role === 'admin'
+    show: user?.role === 'admin' 
   },
 ];
 
@@ -56,7 +56,7 @@ return (
   <div className="p-4 flex flex-col h-full">
     {/* 固定头部：Logo / 标题 */}
     <div className="mb-6 flex items-center gap-2 text-slate-800 font-bold px-2">
-      <AlertTriangle className="text-red-500" size={20} />
+      <AlertTriangle size={20} className="text-red-500" />
       <span className="hidden md:inline">隐患排查治理</span>
     </div>
 
@@ -65,7 +65,7 @@ return (
       {navItems.filter(item => item.show).map((item) => (
         <NavItem 
           key={item.mode}
-          icon={item.icon} 
+          Icon={item.icon} 
           label={item.label} 
           active={viewMode === item.mode}
           onClick={() => setViewMode(item.mode)}
@@ -77,7 +77,7 @@ return (
     {hasPerm('manage_config') && (
       <div className="border-t border-slate-200 pt-4 mt-4">
         <NavItem 
-          icon={<Settings size={18}/>} 
+          Icon={Settings} 
           label="设置" 
           active={viewMode === VIEW_MODES.CONFIG}
           onClick={() => setViewMode(VIEW_MODES.CONFIG)}
@@ -97,21 +97,21 @@ return (
 }
 
 interface NavItemProps {
-  icon: ReactNode;
+  Icon: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
   active?: boolean;
   onClick?: () => void;
 }
 
-function NavItem({ icon, label, active = false, onClick }: NavItemProps) {
+function NavItem({ Icon, label, active = false, onClick }: NavItemProps) {
   return (
     <button 
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
+      className={`w-full flex items-center justify-center md:justify-start gap-3 px-2 py-4 md:px-3 md:py-2 rounded-lg transition-all ${
         active ? 'bg-red-50 text-red-700' : 'text-slate-600 hover:bg-slate-100'
       }`}
     >
-      {icon}
+      <Icon size={18} className={`shrink-0 ${active ? 'text-red-700' : 'text-slate-600'}`} />
       <span className="hidden md:inline text-sm font-medium">{label}</span>
     </button>
   );

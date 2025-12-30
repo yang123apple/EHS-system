@@ -131,6 +131,8 @@ model HazardRecord {
   ccUsers               String?
   logs                  String?
   old_personal_ID       String?
+  currentStepIndex      Int?      @default(0)  // 当前步骤索引（用于追踪工作流位置）
+  currentStepId         String?   // 当前步骤ID（用于追踪工作流位置）
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }

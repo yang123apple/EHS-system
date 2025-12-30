@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Save, Settings2, GitBranch, Plus, X, FileText, Tags, Map, Trash2, Info} from 'lucide-react';
 import { HazardConfig, HazardWorkflowConfig, SimpleUser } from '@/types/hidden-danger';
 import { WorkflowStepEditor } from '../workflow/WorkflowStepEditor';
+import { apiFetch } from '@/lib/apiClient';
 
 interface Props {
   config: HazardConfig;
@@ -35,7 +36,7 @@ export function WorkflowConfig({ config, allUsers, departments, onRefresh }: Pro
 
   const loadBasicConfig = async () => {
     try {
-      const response = await fetch('/api/hazards/config');
+      const response = await apiFetch('/api/hazards/config');
       if (response.ok) {
         const data = await response.json();
         setBasicConfig(data);
@@ -47,7 +48,7 @@ export function WorkflowConfig({ config, allUsers, departments, onRefresh }: Pro
 
   const loadWorkflowConfig = async () => {
     try {
-      const response = await fetch('/api/hazards/workflow');
+      const response = await apiFetch('/api/hazards/workflow');
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data && result.data.steps) {
@@ -109,7 +110,7 @@ export function WorkflowConfig({ config, allUsers, departments, onRefresh }: Pro
       // 获取当前用户信息（实际应从上下文获取）
       const currentUser = { id: 'admin', name: 'Admin' };
       
-      const response = await fetch('/api/hazards/workflow', {
+      const response = await apiFetch('/api/hazards/workflow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -141,7 +142,7 @@ export function WorkflowConfig({ config, allUsers, departments, onRefresh }: Pro
   const handleSaveBasicConfig = async () => {
     setIsSaving(true);
     try {
-      const response = await fetch('/api/hazards/config', {
+      const response = await apiFetch('/api/hazards/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(basicConfig),

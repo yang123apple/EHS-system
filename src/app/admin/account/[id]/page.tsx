@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { SYSTEM_MODULES } from '@/lib/constants'; 
 import { Save, ArrowLeft, Shield, CheckSquare, Info } from 'lucide-react';
 import Link from 'next/link';
+import { apiFetch } from '@/lib/apiClient';
 
 // 定义接口
 interface User {
@@ -28,23 +29,28 @@ export default function PermissionConfigPage() {
     const loadData = async () => {
       if (!userId) return;
       try {
-        const res = await fetch(`/api/users/${userId}`);
+        const res = await apiFetch(`/api/users/${userId}`);
         if (res.ok) {
           const userData = await res.json();
           setUser(userData);
           setPermissions(JSON.parse(JSON.stringify(userData.permissions || {})));
         } else {
-          alert("未找到该用户");
+          if (res.status === 401) {
+            alert("未授权访问，请先登录");
+          } else {
+            alert("未找到该用户");
+          }
           router.push('/admin/account');
         }
       } catch (error) {
         console.error(error);
+        alert("加载用户信息失败");
       } finally {
         setIsLoading(false);
       }
     };
     loadData();
-  }, [userId]);
+  }, [userId, router]);
 
   // 1. 切换模块总开关
   const toggleModule = (moduleKey: string) => {
@@ -89,11 +95,11 @@ export default function PermissionConfigPage() {
     });
   };
 
-  // 使用 fetch PUT 保存权限
+  // 使用 apiFetch PUT 保存权限
   const handleSave = async () => {
     if (!user) return;
     try {
-      const res = await fetch(`/api/users/${user.id}`, {
+      const res = await apiFetch(`/api/users/${user.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permissions })
@@ -102,9 +108,16 @@ export default function PermissionConfigPage() {
         alert(`[${user.name}] 的权限配置已保存`);
         router.push('/admin/account');
       } else {
-        alert('保存失败');
+        if (res.status === 401) {
+          alert('未授权访问，请先登录');
+        } else if (res.status === 403) {
+          alert('权限不足，需要管理员权限');
+        } else {
+          alert('保存失败');
+        }
       }
     } catch (error) {
+      console.error(error);
       alert('网络错误');
     }
   };

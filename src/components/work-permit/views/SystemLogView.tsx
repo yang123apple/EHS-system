@@ -32,13 +32,19 @@ export default function SystemLogView() {
       const res = await fetch(`/api/logs?${params.toString()}`);
       if (res.ok) {
           const data = await res.json();
-          if (data.data) {
-              setLogs(data.data);
-              setTotalPages(data.meta.totalPages);
+          if (data.success && data.data) {
+              setLogs(data.data.logs || []);
+              setTotalPages(data.meta?.totalPages || 1);
               setPage(pageNum);
           } else {
-              setLogs(data); // Fallback
+              console.error('获取日志失败:', data.error || '未知错误');
+              setLogs([]);
+              setTotalPages(1);
           }
+      } else {
+          console.error('获取日志失败: HTTP', res.status);
+          setLogs([]);
+          setTotalPages(1);
       }
     } finally {
       setLoading(false);
@@ -168,11 +174,11 @@ export default function SystemLogView() {
                   <td className="p-4 text-slate-400 text-xs font-mono select-all">
                     {log.targetId || '-'}
                   </td>
-                  <td className="p-4 text-slate-600">
-                    {log.details}
+                  <td className="p-4 text-slate-600" title={log.details || ''}>
+                    <span className="line-clamp-2">{log.details || '-'}</span>
                   </td>
                   <td className="p-4">
-                    {log.snapshot && (
+                    {log.snapshot && (typeof log.snapshot === 'object' ? Object.keys(log.snapshot).length > 0 : log.snapshot) && (
                       <button
                         onClick={() => setSelectedLog(log)}
                         className="p-1.5 hover:bg-blue-50 rounded text-blue-600 transition-colors"
@@ -287,7 +293,16 @@ export default function SystemLogView() {
                     <label className="text-xs font-medium text-slate-500 mb-2 block">流程快照</label>
                     <div className="p-4 bg-slate-900 rounded-lg overflow-auto max-h-96">
                       <pre className="text-xs text-green-400 font-mono">
-                        {JSON.stringify(JSON.parse(selectedLog.snapshot), null, 2)}
+                        {(() => {
+                          try {
+                            const snapshot = typeof selectedLog.snapshot === 'string' 
+                              ? JSON.parse(selectedLog.snapshot) 
+                              : selectedLog.snapshot;
+                            return JSON.stringify(snapshot, null, 2);
+                          } catch (e) {
+                            return `快照数据解析失败: ${e instanceof Error ? e.message : '未知错误'}\n原始数据: ${selectedLog.snapshot}`;
+                          }
+                        })()}
                       </pre>
                     </div>
                     <p className="text-xs text-slate-400 mt-2">

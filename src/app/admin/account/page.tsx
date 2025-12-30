@@ -11,7 +11,6 @@ import { Trash2, UserPlus, Settings, Search, Filter, Edit, UploadCloud, User as 
 import Link from 'next/link';
 import BatchPermissionModal from './_components/BatchPermissionModal';
 import { apiFetch } from '@/lib/apiClient';
-import { apiFetch } from '@/lib/apiClient';
 
 interface User {
   id: string;

@@ -29,16 +29,19 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
+  // 确保 photos 始终是数组
+  const photos = Array.isArray(hazard.photos) ? hazard.photos : (hazard.photos ? [hazard.photos] : []);
+
   const handleImageClick = (photo: string, index: number) => {
     setPreviewImage(photo);
     setCurrentImageIndex(index);
   };
 
   const handleNextImage = () => {
-    if (currentImageIndex < hazard.photos.length - 1) {
+    if (currentImageIndex < photos.length - 1) {
       const nextIndex = currentImageIndex + 1;
       setCurrentImageIndex(nextIndex);
-      setPreviewImage(hazard.photos[nextIndex]);
+      setPreviewImage(photos[nextIndex]);
     }
   };
 
@@ -46,7 +49,7 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
     if (currentImageIndex > 0) {
       const prevIndex = currentImageIndex - 1;
       setCurrentImageIndex(prevIndex);
-      setPreviewImage(hazard.photos[prevIndex]);
+      setPreviewImage(photos[prevIndex]);
     }
   };
 
@@ -115,7 +118,7 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                 )}
               </div>
               <div className="flex gap-2 mt-6">
-                {hazard.photos.map((p: string, i: number) => (
+                {photos.map((p: string, i: number) => (
                   <div 
                     key={i} 
                     className="relative group cursor-pointer"
@@ -258,7 +261,7 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
           </button>
 
           {/* 左右切换按钮 */}
-          {hazard.photos.length > 1 && (
+          {photos.length > 1 && (
             <>
               <button
                 onClick={handlePrevImage}
@@ -271,9 +274,9 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
               </button>
               <button
                 onClick={handleNextImage}
-                disabled={currentImageIndex === hazard.photos.length - 1}
+                disabled={currentImageIndex === photos.length - 1}
                 className={`absolute right-4 text-white hover:bg-white/20 p-3 rounded-lg transition-colors ${
-                  currentImageIndex === hazard.photos.length - 1 ? 'opacity-50 cursor-not-allowed' : ''
+                  currentImageIndex === photos.length - 1 ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
                 <ChevronRight size={32} />
@@ -288,9 +291,9 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
               alt="预览" 
               className="max-h-[85vh] max-w-full object-contain rounded-lg"
             />
-            {hazard.photos.length > 1 && (
+            {photos.length > 1 && (
               <div className="mt-4 text-white text-sm bg-black/50 px-4 py-2 rounded-full">
-                {currentImageIndex + 1} / {hazard.photos.length}
+                {currentImageIndex + 1} / {photos.length}
               </div>
             )}
           </div>

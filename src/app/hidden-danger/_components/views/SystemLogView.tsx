@@ -52,9 +52,13 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
       const res = await fetch(`/api/logs?${params}`);
       const data = await res.json();
       
-      if (data.success) {
-        setLogs(data.data.logs);
-        setTotal(data.data.total);
+      if (data.success && data.data) {
+        setLogs(data.data.logs || []);
+        setTotal(data.data.total || 0);
+      } else {
+        console.error('获取日志失败:', data.error || '未知错误');
+        setLogs([]);
+        setTotal(0);
       }
     } catch (error) {
       console.error('获取日志失败:', error);
@@ -271,11 +275,13 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 text-sm text-slate-600">
                         <FileText size={14} className="text-slate-400 flex-shrink-0" />
-                        <span className="line-clamp-2">{log.details}</span>
+                        <span className="line-clamp-2" title={log.details || ''}>
+                          {log.details || '-'}
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      {log.snapshot ? (
+                      {log.snapshot && Object.keys(log.snapshot).length > 0 ? (
                         <button
                           onClick={() => setSelectedSnapshot(log.snapshot)}
                           className="flex items-center gap-1 text-blue-600 hover:text-blue-700 text-sm"
@@ -388,7 +394,13 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
                 <div>
                   <div className="text-sm font-medium text-slate-700 mb-2">完整快照数据</div>
                   <pre className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs overflow-x-auto">
-                    {JSON.stringify(selectedSnapshot, null, 2)}
+                    {(() => {
+                      try {
+                        return JSON.stringify(selectedSnapshot, null, 2);
+                      } catch (e) {
+                        return `快照数据格式化失败: ${e instanceof Error ? e.message : '未知错误'}`;
+                      }
+                    })()}
                   </pre>
                 </div>
               </div>

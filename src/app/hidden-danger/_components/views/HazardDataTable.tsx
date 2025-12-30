@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
+import { canDeleteHazard } from '../../_utils/permissions';
 
 interface Props {
   hazards: HazardRecord[];
@@ -20,6 +21,7 @@ interface Props {
   onDelete: (id: string) => void;
   loading?: boolean;
   viewMode: ViewMode;
+  user?: any; // 用户信息，用于权限检查
 }
 
 export function HazardDataTable({ 
@@ -31,7 +33,8 @@ export function HazardDataTable({
   onSelect, 
   onDelete, 
   loading = false,
-  viewMode 
+  viewMode,
+  user 
 }: Props) {
   
   const handleExport = () => {
@@ -132,13 +135,15 @@ export function HazardDataTable({
                     ) : <span className="text-slate-300 text-xs italic">待指派</span>}
                   </td>
                   <td className="p-4 align-top text-right">
-                    <button 
-                      onClick={(e) => {e.stopPropagation(); onDelete(h.id);}} 
-                      className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
-                      title="删除记录"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {canDeleteHazard(h, user) && (
+                      <button 
+                        onClick={(e) => {e.stopPropagation(); onDelete(h.id);}} 
+                        className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        title="删除记录"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

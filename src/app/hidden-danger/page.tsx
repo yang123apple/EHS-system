@@ -188,9 +188,10 @@ export default function HiddenDangerPage({
           const sequence = String(filteredHazards.length + successCount + 1).padStart(3, '0');
           const hazardCode = `Hazard${today}${sequence}`;
 
-          // 计算截止日期
+          // 计算截止日期（设置为当天的结束时间 23:59:59.999）
           const deadline = new Date();
           deadline.setDate(deadline.getDate() + (item.deadlineDays || 7));
+          deadline.setHours(23, 59, 59, 999);
 
           // 创建隐患记录
           const newHazard = await hazardService.createHazard({
@@ -273,6 +274,7 @@ export default function HiddenDangerPage({
             onDelete={handleDelete}
             loading={loading}
             viewMode={viewMode}
+            user={user}
           />
         )}
 
