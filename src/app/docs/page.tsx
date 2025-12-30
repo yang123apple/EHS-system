@@ -12,6 +12,7 @@ import Link from 'next/link';
 import Watermark from '@/components/common/Watermark';
 import SystemLogModal from './_components/SystemLogModal';
 import { SystemLogService } from '@/services/systemLog.service';
+import { apiFetch } from '@/lib/apiClient';
 
 interface HistoryRecord {
   id: string; type: 'docx' | 'xlsx' | 'pdf'; name: string; path: string; uploadTime: number; uploader: string;
@@ -86,7 +87,7 @@ export default function DocSystemPage() {
     try {
       setLoading(true);
       // Default: load roots (parentId=null) with pagination
-      const res = await fetch(`/api/docs?page=${pageNum}&limit=${limit}&parentId=null`);
+      const res = await apiFetch(`/api/docs?page=${pageNum}&limit=${limit}&parentId=null`);
       const data = await res.json();
 
       if (data.data) {
@@ -112,7 +113,7 @@ export default function DocSystemPage() {
   const fetchChildren = async (parentId: string) => {
       if (loadedFolders.has(parentId)) return;
       try {
-          const res = await fetch(`/api/docs?parentId=${parentId}`); // Fetch all children (no paging for subfolders for now)
+          const res = await apiFetch(`/api/docs?parentId=${parentId}`); // Fetch all children (no paging for subfolders for now)
           const data = await res.json();
           const newFiles = data.data || data; // Handle paginated or list response
           setFiles(prev => {
@@ -156,7 +157,7 @@ export default function DocSystemPage() {
     }
 
     try {
-      const res = await fetch('/api/docs', { method: 'POST', body: formData });
+      const res = await apiFetch('/api/docs', { method: 'POST', body: formData });
       if (res.ok) {
         const data = await res.json();
         setShowUploadModal(false);
@@ -199,7 +200,7 @@ export default function DocSystemPage() {
     const fileToDelete = files.find(f => f.id === id);
     
     try {
-      const res = await fetch(`/api/docs/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/docs/${id}`, { method: 'DELETE' });
       if (res.ok) {
         loadFiles();
         if (currentFile?.id === id) {
@@ -246,7 +247,7 @@ export default function DocSystemPage() {
     const historyRecord = currentFile?.history?.find(h => h.id === historyId);
     
     try {
-        const res = await fetch(`/api/docs/${docId}?historyId=${historyId}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/docs/${docId}?historyId=${historyId}`, { method: 'DELETE' });
         if (res.ok) {
             alert('历史版本已删除');
             loadFiles(); 
@@ -315,7 +316,7 @@ export default function DocSystemPage() {
     const newFile = formData.get('mainFile') as File;
     
     try {
-        const res = await fetch(`/api/docs/${currentFile.id}`, { method: 'PUT', body: formData });
+        const res = await apiFetch(`/api/docs/${currentFile.id}`, { method: 'PUT', body: formData });
         if (res.ok) {
           setShowUpdateModal(false);
           loadFiles();
@@ -365,7 +366,7 @@ export default function DocSystemPage() {
     const newDept = formData.get('dept') as string;
     
     try {
-        const res = await fetch(`/api/docs/${currentFile.id}`, { method: 'PUT', body: formData });
+        const res = await apiFetch(`/api/docs/${currentFile.id}`, { method: 'PUT', body: formData });
         if (res.ok) {
           setShowEditModal(false);
           loadFiles();

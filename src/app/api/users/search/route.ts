@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PeopleFinder } from '@/lib/peopleFinder';
+import { withAuth } from '@/middleware/auth';
 
-export async function GET(req: NextRequest) {
+export const GET = withAuth(async (req, context, user) => {
   const { searchParams } = new URL(req.url);
   const query = searchParams.get('q');
   const deptId = searchParams.get('deptId') || undefined;
@@ -22,4 +23,4 @@ export async function GET(req: NextRequest) {
     console.error(error);
     return NextResponse.json({ error: 'Failed to search users' }, { status: 500 });
   }
-}
+});

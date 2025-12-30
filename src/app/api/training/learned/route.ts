@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { withAuth } from '@/middleware/auth';
 
 // 获取已学习材料的ID列表
-export async function GET(req: NextRequest) {
+export const GET = withAuth(async (req: NextRequest, context, user) => {
   try {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('userId');
@@ -30,13 +31,13 @@ export async function GET(req: NextRequest) {
     const learnedMaterialIds = records.map(r => r.materialId);
     return NextResponse.json({ learnedMaterialIds });
   } catch (error) {
-    console.error('Error fetching learned records:', error);
+    console.error('获取已学习记录失败:', error);
     return NextResponse.json({ error: 'Failed to fetch learned records' }, { status: 500 });
   }
-}
+});
 
 // 标记材料为已学习
-export async function POST(req: NextRequest) {
+export const POST = withAuth(async (req: NextRequest, context, user) => {
   try {
     const body = await req.json();
     const { userId, materialId } = body;
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error creating learned record:', error);
+    console.error('创建已学习记录失败:', error);
     return NextResponse.json({ error: 'Failed to create learned record' }, { status: 500 });
   }
-}
+});

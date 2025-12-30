@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckSquare, Square, Bold, Type, MousePointerClick, Clock, Check, AlertCircle } from 'lucide-react';
+import { CheckSquare, Square, Bold, Type, MousePointerClick, Clock, Check, AlertCircle, X } from 'lucide-react';
 import PeopleSelector from '@/components/common/PeopleSelector';
+import HandwrittenSignature from './HandwrittenSignature';
+import SignatureImage from './SignatureImage';
+import MultiSignatureDisplay from './MultiSignatureDisplay';
 import { ParsedField } from '@/types/work-permit';
 
 // 定义样式接口
@@ -240,13 +243,14 @@ export default function ExcelRenderer({
   sectionBindings = {},
   onSectionClick
 }: ExcelRendererProps) {
-  // 🔵 调试：检查parsedFields中是否有section字段
+  // 🔵 调试：检查parsedFields中是否有section字段（仅在开发环境输出）
   useEffect(() => {
-    const sectionFields = parsedFields.filter(f => f.fieldType === 'section');
-    if (sectionFields.length > 0) {
-      console.log('🟣 Found section fields in parsedFields:', sectionFields);
-    } else {
-      console.log('⚠️ No section fields found in parsedFields. Total fields:', parsedFields.length);
+    if (process.env.NODE_ENV === 'development') {
+      const sectionFields = parsedFields.filter(f => f.fieldType === 'section');
+      if (sectionFields.length > 0) {
+        console.log('🟣 Found section fields in parsedFields:', sectionFields);
+      }
+      // 移除无 section 字段时的警告日志，减少控制台噪音
     }
   }, [parsedFields]);
   
@@ -293,6 +297,10 @@ export default function ExcelRenderer({
 
   const [deptModalOpen, setDeptModalOpen] = useState(false);
   const [pendingDeptCell, setPendingDeptCell] = useState<{ r: number; c: number } | null>(null);
+  
+  // 手写签名模态框状态
+  const [signatureModalOpen, setSignatureModalOpen] = useState(false);
+  const [pendingSignatureCell, setPendingSignatureCell] = useState<{ r: number; c: number } | null>(null);
 
   // 用 ref 保存最新的 formData，便于在 effect 中比较并避免把 formData 添加到依赖里
   const formDataRef = useRef<Record<string, any>>(formData);
@@ -659,6 +667,67 @@ export default function ExcelRenderer({
               <span className="text-[10px] text-amber-500">签核后自动写入意见/签名/日期</span>
             </>
           )}
+        </div>
+      );
+    }
+
+    // 手写签名字段处理（支持多人签名）
+    if (parsedField?.fieldType === 'handwritten') {
+      // 兼容旧数据：如果是字符串，转换为数组；如果是数组，直接使用
+      const signatureArray = Array.isArray(filledValue) 
+        ? filledValue 
+        : (filledValue && typeof filledValue === 'string' && filledValue.length > 0 ? [filledValue] : []);
+      const hasSignature = signatureArray.length > 0;
+      
+      if (mode === 'view') {
+        // 查看模式：显示多个签名
+        return (
+          <div className="w-full h-full flex items-center justify-center p-1" style={styleObj}>
+            {hasSignature ? (
+              <MultiSignatureDisplay
+                signatures={signatureArray}
+                onAddSignature={() => {}}
+                readonly={true}
+                maxWidth={Math.min(styleObj.width as number || 200, 200)}
+                maxHeight={Math.min(styleObj.height as number || 100, 100)}
+              />
+            ) : (
+              <span className="text-slate-300 text-xs">/</span>
+            )}
+          </div>
+        );
+      }
+      
+      if (mode === 'edit') {
+        // 编辑模式：显示多个签名和"+"按钮
+        return (
+          <div 
+            className="w-full h-full flex items-center justify-center p-1" 
+            style={styleObj}
+          >
+            <MultiSignatureDisplay
+              signatures={signatureArray}
+              onAddSignature={() => {
+                setPendingSignatureCell({ r: rIndex, c: cIndex });
+                setSignatureModalOpen(true);
+              }}
+              onRemoveSignature={(index) => {
+                const newArray = [...signatureArray];
+                newArray.splice(index, 1);
+                handleInputChange(rIndex, cIndex, newArray.length > 0 ? newArray : '');
+              }}
+              maxWidth={Math.min(styleObj.width as number || 200, 200)}
+              maxHeight={Math.min(styleObj.height as number || 100, 100)}
+              readonly={false}
+            />
+          </div>
+        );
+      }
+      
+      // 设计模式：显示字段提示
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50 border-l-4 border-purple-500 p-1" style={styleObj}>
+          <span className="text-xs text-purple-700 font-bold">手写签名</span>
         </div>
       );
     }
@@ -1046,6 +1115,7 @@ export default function ExcelRenderer({
                 <option value="number">数字</option>
                 <option value="personnel">人员</option>
                 <option value="signature">签字</option>
+                <option value="handwritten">手写签名</option>
                 <option value="option">选项</option>
                 <option value="section">🟣 Section(嵌套表单)</option>
                 <option value="other">其他</option>
@@ -1244,6 +1314,51 @@ export default function ExcelRenderer({
         }}
         title="选择部门"
       />
+
+      {/* 手写签名模态框 */}
+      {signatureModalOpen && pendingSignatureCell && (() => {
+        const cellKey = `R${pendingSignatureCell.r + 1}C${pendingSignatureCell.c + 1}`;
+        const currentValue = formData[cellKey] || '';
+        // 兼容旧数据：如果是字符串，转换为数组；如果是数组，直接使用
+        const signatureArray = Array.isArray(currentValue) 
+          ? currentValue 
+          : (currentValue && typeof currentValue === 'string' && currentValue.length > 0 ? [currentValue] : []);
+        
+        return (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-slate-800">手写签名</h3>
+                <button
+                  onClick={() => {
+                    setSignatureModalOpen(false);
+                    setPendingSignatureCell(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <HandwrittenSignature
+                value={undefined} // 新签名，不传入已有值
+                onChange={(base64) => {
+                  if (pendingSignatureCell && base64) {
+                    // 将新签名添加到数组中
+                    const newArray = [...signatureArray, base64];
+                    handleInputChange(pendingSignatureCell.r, pendingSignatureCell.c, newArray);
+                  }
+                }}
+                onClose={() => {
+                  setSignatureModalOpen(false);
+                  setPendingSignatureCell(null);
+                }}
+                width={600}
+                height={300}
+              />
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }

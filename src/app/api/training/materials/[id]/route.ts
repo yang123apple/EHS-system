@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
+import fs from 'fs';
+import path from 'path';
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  try {
+export const GET = withErrorHandling(
+  withAuth(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }, user) => {
     const { id } = await params;
     const material = await prisma.trainingMaterial.findUnique({
       where: { id },
@@ -11,65 +14,182 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         questions: true
       }
     });
-    if (!material) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (!material) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
     return NextResponse.json(material);
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch material' }, { status: 500 });
+  })
+);
+
+export const PUT = withErrorHandling(
+  withPermission('training', 'edit_material', async (req: NextRequest, { params }: { params: Promise<{ id: string }> }, user) => {
+    const { id } = await params;
+    const body = await req.json();
+    console.log('[Edit Material API] 接收到的数据:', JSON.stringify(body, null, 2));
+    
+    const { title, description, category, isPublic, isExamRequired, passingScore, questions } = body;
+
+    // 更新材料信息
+    const material = await prisma.trainingMaterial.update({
+      where: { id },
+      data: {
+        title,
+        description,
+        category,
+        isPublic,
+        isExamRequired,
+        passingScore
+      }
+    });
+
+    // 删除旧的考试题目
+    await prisma.examQuestion.deleteMany({
+      where: { materialId: id }
+    });
+
+    // 创建新的考试题目
+    if (isExamRequired && questions && questions.length > 0) {
+      console.log('[Edit Material API] 创建考试题目:', questions.length, '道题');
+      await prisma.examQuestion.createMany({
+        data: questions.map((q: any) => ({
+          materialId: id,
+          question: q.question,
+          type: q.type,
+          options: JSON.stringify(q.options),
+          correctAnswer: JSON.stringify(q.correctAnswer || q.answer),
+          score: q.score || 10
+        }))
+      });
+    }
+
+    // 记录操作日志
+    await logApiOperation(user, 'training', 'edit_material', {
+      materialId: id,
+      title: material.title
+    });
+
+    console.log('[Edit Material API] 更新成功');
+    return NextResponse.json(material);
+  })
+);
+
+// 安全删除文件的辅助函数
+const safeDeleteFile = (urlPath: string | null | undefined): { success: boolean; error?: string } => {
+  if (!urlPath) {
+    return { success: true };
   }
-}
-
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    try {
-        const { id } = await params;
-        const body = await req.json();
-        const { title, description, category, isPublic, isExamRequired, passingScore, questions } = body;
-
-        // 更新材料信息
-        const material = await prisma.trainingMaterial.update({
-            where: { id },
-            data: {
-                title,
-                description,
-                category,
-                isPublic,
-                isExamRequired,
-                passingScore
-            }
-        });
-
-        // 删除旧的考试题目
-        await prisma.examQuestion.deleteMany({
-            where: { materialId: id }
-        });
-
-        // 创建新的考试题目
-        if (isExamRequired && questions && questions.length > 0) {
-            await prisma.examQuestion.createMany({
-                data: questions.map((q: any) => ({
-                    materialId: id,
-                    question: q.question,
-                    type: q.type,
-                    options: JSON.stringify(q.options),
-                    correctAnswer: JSON.stringify(q.correctAnswer)
-                }))
-            });
-        }
-
-        return NextResponse.json(material);
-    } catch (error) {
-        console.error('更新学习内容失败:', error);
-        return NextResponse.json({ error: 'Failed to update' }, { status: 500 });
+  
+  try {
+    const publicDir = path.join(process.cwd(), 'public');
+    const relativePath = urlPath.startsWith('/') ? urlPath.slice(1) : urlPath;
+    const filePath = path.join(publicDir, relativePath);
+    
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log('[Delete Material API] 已删除文件:', filePath);
+      return { success: true };
+    } else {
+      console.log('[Delete Material API] 文件不存在，跳过删除:', filePath);
+      return { success: true };
     }
-}
+  } catch (e: any) {
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    console.error('[Delete Material API] 删除文件失败:', urlPath, errorMsg);
+    return { success: false, error: errorMsg };
+  }
+};
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    try {
-        const { id } = await params;
-        await prisma.trainingMaterial.delete({
-            where: { id }
-        });
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        return NextResponse.json({ error: 'Failed to delete' }, { status: 500 });
+export const DELETE = withErrorHandling(
+  withPermission('training', 'delete_material', async (req: NextRequest, context: { params: Promise<{ id: string }> }, user) => {
+    const { id } = await context.params;
+    
+    console.log('[Delete Material API] 开始删除学习内容:', id);
+    
+    // 获取材料信息（包括文件路径）
+    const material = await prisma.trainingMaterial.findUnique({
+      where: { id },
+      select: { 
+        title: true,
+        url: true,
+        convertedUrl: true,
+        thumbnail: true
+      }
+    });
+    
+    if (!material) {
+      console.log('[Delete Material API] 学习内容不存在:', id);
+      return NextResponse.json({ error: '学习内容不存在' }, { status: 404 });
     }
-}
+    
+    console.log('[Delete Material API] 找到学习内容:', {
+      title: material.title,
+      url: material.url,
+      convertedUrl: material.convertedUrl,
+      thumbnail: material.thumbnail
+    });
+    
+    // 删除相关文件（即使失败也继续）
+    const fileDeleteResults = {
+      url: safeDeleteFile(material.url),
+      convertedUrl: safeDeleteFile(material.convertedUrl),
+      thumbnail: safeDeleteFile(material.thumbnail)
+    };
+    
+    const fileDeleteErrors = Object.entries(fileDeleteResults)
+      .filter(([_, result]) => !result.success)
+      .map(([key, result]) => `${key}: ${result.error}`);
+    
+    if (fileDeleteErrors.length > 0) {
+      console.warn('[Delete Material API] 部分文件删除失败:', fileDeleteErrors);
+    }
+    
+    // 先删除关联的培训任务（TrainingTask 有 RESTRICT 约束，必须先删除）
+    try {
+      const relatedTasks = await prisma.trainingTask.findMany({
+        where: { materialId: id },
+        select: { id: true }
+      });
+      
+      if (relatedTasks.length > 0) {
+        console.log(`[Delete Material API] 发现 ${relatedTasks.length} 个关联的培训任务，正在删除...`);
+        // 删除任务会自动级联删除相关的 TrainingAssignment
+        await prisma.trainingTask.deleteMany({
+          where: { materialId: id }
+        });
+        console.log('[Delete Material API] 关联的培训任务已删除');
+      }
+    } catch (taskError: any) {
+      console.error('[Delete Material API] 删除关联任务失败:', taskError);
+      throw new Error(`删除关联的培训任务失败: ${taskError instanceof Error ? taskError.message : String(taskError)}`);
+    }
+    
+    // 删除数据库记录（即使文件删除失败也继续）
+    try {
+      await prisma.trainingMaterial.delete({
+        where: { id }
+      });
+      console.log('[Delete Material API] 数据库记录已删除');
+    } catch (dbError: any) {
+      console.error('[Delete Material API] 删除数据库记录失败:', dbError);
+      throw new Error(`删除数据库记录失败: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
+    }
+    
+    // 记录操作日志
+    try {
+      await logApiOperation(user, 'training', 'delete_material', {
+        materialId: id,
+        title: material.title,
+        fileDeleteResults: fileDeleteErrors.length > 0 ? { errors: fileDeleteErrors } : 'success'
+      });
+    } catch (logError) {
+      console.error('[Delete Material API] 记录操作日志失败:', logError);
+      // 日志失败不影响删除操作
+    }
+    
+    console.log('[Delete Material API] 删除完成');
+    return NextResponse.json({ 
+      success: true,
+      fileDeleteWarnings: fileDeleteErrors.length > 0 ? fileDeleteErrors : undefined
+    });
+  })
+);

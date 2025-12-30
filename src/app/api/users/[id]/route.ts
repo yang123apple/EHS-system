@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 // 🟢 关键修改：引用持久化 DB
 import { db } from '@/lib/db';
+import { withAuth, withAdmin } from '@/middleware/auth';
 
 // 确保头像目录存在
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
@@ -10,21 +11,23 @@ const AVATAR_DIR = path.join(PUBLIC_DIR, 'uploads', 'avatars');
 if (!fs.existsSync(AVATAR_DIR)) fs.mkdirSync(AVATAR_DIR, { recursive: true });
 
 // GET: 获取单个用户
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withAuth<{ params: Promise<{ id: string }> }>(async (req, context, currentUser) => {
+  const { params } = context;
   const { id } = await params;
   
   // 🟢 使用 db 方法获取
-  const user = await db.getUserById(id);
+  const targetUser = await db.getUserById(id);
   
-  if (!user) {
+  if (!targetUser) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
   
-  return NextResponse.json(user);
-}
+  return NextResponse.json(targetUser);
+});
 
 // DELETE: 删除用户
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withAdmin<{ params: Promise<{ id: string }> }>(async (req, context, currentUser) => {
+  const { params } = context;
   const { id } = await params;
   
   const target = await db.getUserById(id);
@@ -40,10 +43,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 
   return NextResponse.json({ success: true });
-}
+});
 
 // PUT: 更新用户 (支持 头像 + 信息 + 职务)
-export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const PUT = withAdmin<{ params: Promise<{ id: string }> }>(async (req, context, currentUser) => {
+  const { params } = context;
   const { id } = await params;
   const contentType = req.headers.get('content-type') || '';
   
@@ -101,4 +105,4 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     console.error(error);
     return NextResponse.json({ error: '更新失败' }, { status: 500 });
   }
-}
+});

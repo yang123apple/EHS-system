@@ -10,6 +10,8 @@ import * as XLSX from 'xlsx';
 import { Trash2, UserPlus, Settings, Search, Filter, Edit, UploadCloud, User as UserIcon, Briefcase, GitFork, FileSpreadsheet, Download, Shield } from 'lucide-react';
 import Link from 'next/link';
 import BatchPermissionModal from './_components/BatchPermissionModal';
+import { apiFetch } from '@/lib/apiClient';
+import { apiFetch } from '@/lib/apiClient';
 
 interface User {
   id: string;
@@ -79,8 +81,8 @@ export default function AccountManagement() {
       });
 
       const [usersRes, deptsRes] = await Promise.all([
-        fetch(`/api/users?${queryParams.toString()}`),
-        fetch('/api/org')
+        apiFetch(`/api/users?${queryParams.toString()}`),
+        apiFetch('/api/org')
       ]);
 
       const usersData = await usersRes.json();
@@ -144,7 +146,7 @@ export default function AccountManagement() {
       }
       
       try {
-        const res = await fetch('/api/users', { 
+        const res = await apiFetch('/api/users', { 
             method: 'POST', 
             headers: {'Content-Type': 'application/json'}, 
             body: JSON.stringify({
@@ -168,7 +170,7 @@ export default function AccountManagement() {
 
   const handleDeleteUser = async (id: string) => {
       if (confirm('确定删除该用户？')) { 
-          await fetch(`/api/users/${id}`, { method: 'DELETE' }); 
+          await apiFetch(`/api/users/${id}`, { method: 'DELETE' }); 
           loadUsers(currentPage);
       }
   };
@@ -215,7 +217,7 @@ export default function AccountManagement() {
       // 🟢 获取所有部门信息以匹配 departmentId
         let departments: any[] = [];
         try {
-          const deptRes = await fetch('/api/org');
+          const deptRes = await apiFetch('/api/org');
           departments = await deptRes.json();
         } catch {
           console.warn('无法加载部门列表，将只使用部门名称');
@@ -300,7 +302,7 @@ export default function AccountManagement() {
           
           for (const user of newUsers) {
             try {
-              const res = await fetch('/api/users', {
+              const res = await apiFetch('/api/users', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(user)
@@ -364,7 +366,7 @@ export default function AccountManagement() {
     });
 
     try {
-        const res = await fetch(`/api/users/${editingUser.id}`, { 
+        const res = await apiFetch(`/api/users/${editingUser.id}`, { 
             method: 'PUT', 
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
@@ -397,7 +399,7 @@ export default function AccountManagement() {
     setIsLoadingAllUsers(true);
     try {
       // 不使用分页，获取所有用户
-      const res = await fetch('/api/users?limit=9999');
+      const res = await apiFetch('/api/users?limit=9999');
       const data = await res.json();
       
       let allUsers = [];

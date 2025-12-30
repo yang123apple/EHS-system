@@ -1,71 +1,42 @@
 // src/services/hazard.service.ts
 import { HazardRecord, HazardConfig } from '@/types/hidden-danger';
+import { api } from '@/lib/apiClient';
 
 export const hazardService = {
   async getHazards(page?: number, limit?: number, filters?: any): Promise<any> {
-    const params = new URLSearchParams();
-    if (page) params.append('page', page.toString());
-    if (limit) params.append('limit', limit.toString());
+    const params: Record<string, string> = {};
+    if (page) params.page = page.toString();
+    if (limit) params.limit = limit.toString();
 
     if (filters) {
-        if (filters.type) params.append('filterType', filters.type);
-        if (filters.area) params.append('area', filters.area);
-        if (filters.status) params.append('status', filters.status);
-        if (filters.risk) params.append('risk', filters.risk);
-        if (filters.viewMode) params.append('viewMode', filters.viewMode);
-        if (filters.userId) params.append('userId', filters.userId);
+        if (filters.type) params.filterType = filters.type;
+        if (filters.area) params.area = filters.area;
+        if (filters.status) params.status = filters.status;
+        if (filters.risk) params.risk = filters.risk;
+        if (filters.viewMode) params.viewMode = filters.viewMode;
+        if (filters.userId) params.userId = filters.userId;
     }
 
-    const queryString = params.toString();
-    const url = queryString ? `/api/hazards?${queryString}` : '/api/hazards';
-
-    const res = await fetch(url);
-    return res.json();
+    return api.get('/api/hazards', params);
   },
 
   async getStats() {
-    const res = await fetch('/api/hazards?type=stats');
-    return res.json();
+    return api.get('/api/hazards', { type: 'stats' });
   },
 
   async getConfig(): Promise<HazardConfig> {
-    const res = await fetch('/api/hazards/config');
-    return res.json();
+    return api.get('/api/hazards/config');
   },
 
   async updateHazard(payload: Partial<HazardRecord> & { id: string }) {
-    const res = await fetch('/api/hazards', {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) {
-      const error = await res.text();
-      console.error('更新失败:', res.status, error);
-      throw new Error(`更新失败: ${res.status} ${error}`);
-    }
-    return res.json();
+    return api.patch('/api/hazards', payload);
   },
 
   async createHazard(payload: any) {
-    const res = await fetch('/api/hazards', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error('创建失败');
-    return res.json();
+    return api.post('/api/hazards', payload);
   },
 
   async deleteHazard(id: string) {
-    const res = await fetch(`/api/hazards?id=${id}`, { 
-      method: 'DELETE' 
-    });
-    if (!res.ok) throw new Error('删除失败');
-    return res.json();
+    return api.delete('/api/hazards', { id });
   }
 };

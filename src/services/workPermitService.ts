@@ -5,9 +5,29 @@ import { Project, Template, PermitRecord, Department, DeptUser } from '@/types/w
 const API_BASE = '/api';
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const defaultHeaders = {
+  // 从 localStorage 获取用户信息并添加认证 header
+  let userId: string | undefined;
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('ehs_user');
+      if (stored) {
+        const user = JSON.parse(stored);
+        userId = user?.id;
+      }
+    } catch (e) {
+      console.error('Failed to parse user from localStorage:', e);
+    }
+  }
+  
+  const defaultHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
   };
+  
+  // 添加认证 header
+  if (userId) {
+    defaultHeaders['x-user-id'] = userId;
+  }
+  
   const config = {
     ...options,
     headers: {
@@ -15,6 +35,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
       ...options.headers,
     },
   };
+  
   const response = await fetch(`${API_BASE}${url}`, config);
   if (!response.ok) {
     const errorText = await response.text();

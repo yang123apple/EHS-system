@@ -55,6 +55,7 @@ export const SYSTEM_MODULES = [
       { key: 'edit_material', name: '编辑培训资料' },
       { key: 'delete_material', name: '删除培训资料' },
       { key: 'create_task', name: '创建培训任务' },
+      { key: 'edit_task', name: '修改培训任务' },
       { key: 'assign_task', name: '分配培训任务' },
       { key: 'view_stats', name: '查看培训统计' },
       { key: 'manage_exam', name: '管理考试试卷' },

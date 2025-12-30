@@ -3,8 +3,10 @@ import { prisma } from '@/lib/prisma';
 import { createLog } from '@/lib/logger';
 import { resolveApprovers } from '@/lib/workflowUtils';
 import { db } from '@/lib/mockDb';
+import { withPermission, logApiOperation } from '@/middleware/auth';
 export const dynamic = 'force-dynamic';
-export async function POST(req: Request) {
+
+export const POST = withPermission('work_permit', 'approve', async (req: Request, context, user) => {
   try {
     const body = await req.json();
     const { recordId, opinion, action, userName, userId, operatorId, nextStepApprovers } = body;
@@ -178,6 +180,19 @@ export async function POST(req: Request) {
       `审批意见: ${opinion}`
     );
 
+    // 记录权限系统审计日志
+    await logApiOperation(
+      user,
+      'work_permit',
+      action === 'pass' ? 'approve_permit' : 'reject_permit',
+      { 
+        permitId: recordId,
+        step: currentStepIndex,
+        stepName: currentStepConfig?.name,
+        opinion 
+      }
+    );
+
     // 🟢 创建通知
     try {
       console.log('🔔 [通知调试] 开始检查是否需要创建通知');
@@ -338,4 +353,4 @@ export async function POST(req: Request) {
       details: error instanceof Error ? error.message : String(error) 
     }, { status: 500 });
   }
-}
+});

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { withAuth } from '@/middleware/auth';
 
-export async function GET(req: NextRequest) {
+export const GET = withAuth(async (req, context, user) => {
   try {
     const { searchParams } = new URL(req.url);
     const taskId = searchParams.get('taskId');
@@ -21,4 +22,4 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     return NextResponse.json({ error: 'Stats failed' }, { status: 500 });
   }
-}
+});

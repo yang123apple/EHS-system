@@ -4,10 +4,11 @@ import fs from 'fs';
 import path from 'path';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
+import { withAuth, withPermission, logApiOperation } from '@/middleware/auth';
 
 const DB_FILE = path.join(process.cwd(), 'data', 'docs.json');
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
-const UPLOAD_DIR = path.join(PUBLIC_DIR, 'uploads');
+const UPLOAD_DIR = path.join(PUBLIC_DIR, 'uploads', 'docs');
 
 const getDbData = () => {
   if (!fs.existsSync(DB_FILE)) return [];
@@ -42,16 +43,16 @@ async function extractTextFromFile(buffer: Buffer, isXlsx: boolean): Promise<str
     } catch (e) { return ""; }
 }
 
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export const GET = withAuth<{ params: Promise<{ id: string }> }>(async (req: Request, context, user) => {
+  const { id } = await context.params;
   const files = getDbData();
   const file = files.find((f: any) => f.id === id);
   if (!file) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(file);
-}
+});
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export const DELETE = withPermission<{ params: Promise<{ id: string }> }>('doc_sys', 'delete', async (req: Request, context, user) => {
+  const { id } = await context.params;
   const { searchParams } = new URL(req.url);
   const historyId = searchParams.get('historyId');
 
@@ -79,11 +80,19 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   files = files.filter((f: any) => f.id !== id);
   saveDbData(files);
 
-  return NextResponse.json({ success: true });
-}
+  // 记录删除操作
+  await logApiOperation(
+    user,
+    'doc_sys',
+    'delete_document',
+    { documentId: id, documentName: target.name }
+  );
 
-export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  return NextResponse.json({ success: true });
+});
+
+export const PUT = withPermission<{ params: Promise<{ id: string }> }>('doc_sys', 'edit', async (req: Request, context, user) => {
+  const { id } = await context.params;
   const contentType = req.headers.get('content-type') || '';
   
   let files = getDbData();
@@ -122,7 +131,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const buffer = Buffer.from(await pdfFile.arrayBuffer());
       const uniqueName = `PDF-${Date.now()}-${pdfFile.name}`;
       fs.writeFileSync(path.join(UPLOAD_DIR, uniqueName), buffer);
-      updateData.pdfPath = `/uploads/${uniqueName}`;
+      updateData.pdfPath = `/uploads/docs/${uniqueName}`;
     }
 
     const mainFile = formData.get('mainFile') as File;
@@ -149,7 +158,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             const newSearchText = await extractTextFromFile(buffer, !!isXlsx);
             updateData.searchText = newSearchText;
 
-            updateData.docxPath = `/uploads/${uniqueName}`;
+            updateData.docxPath = `/uploads/docs/${uniqueName}`;
             updateData.type = ext;
             updateData.uploadTime = Date.now(); 
             updateData.uploader = uploader;     
@@ -163,5 +172,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   files[index] = { ...files[index], ...updateData, history: currentDoc.history };
   saveDbData(files);
 
+  // 记录编辑操作
+  await logApiOperation(
+    user,
+    'doc_sys',
+    'edit_document',
+    { 
+      documentId: id, 
+      documentName: files[index].name,
+      changes: Object.keys(updateData)
+    }
+  );
+
   return NextResponse.json({ success: true });
-}
+});

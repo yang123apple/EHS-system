@@ -604,6 +604,7 @@ function generateHint(label: string, fieldType: ParsedField['fieldType']): strin
     department: `请选择${label}`,     // 部门：选择
     personnel: `请输入${label}`,      // 人员：输入
     signature: `请在此签名`,          // 签名：固定提示
+    handwritten: `请手写签名`,        // 手写签名：固定提示
     option: `请选择${label}`,         // 选项：选择
     // ✅ number 类型统一为“请输入{label}”，兼容电话号码/身份证号
     number: `请输入${label}`,        // 数值：输入

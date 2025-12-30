@@ -15,7 +15,8 @@ import { useState, useEffect } from 'react';
 import { HazardRecord } from '@/types/hidden-danger';
 import { hazardService } from '@/services/hazard.service';
 import { ViewMode } from '@/constants/hazard';
-import { useToast, ToastContainer } from '@/components/common/Toast';
+import { useToast } from '@/components/common/Toast';
+import { apiFetch } from '@/lib/apiClient';
 
 interface HiddenDangerPageProps {
   initialViewMode?: ViewMode;
@@ -27,7 +28,7 @@ export default function HiddenDangerPage({
   onViewModeChange 
 }: HiddenDangerPageProps) {
   const { user } = useAuth();
-  const { toasts, removeToast, toast } = useToast();
+  const toast = useToast();
   const [selectedHazard, setSelectedHazard] = useState<HazardRecord | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showBatchUploadModal, setShowBatchUploadModal] = useState(false);
@@ -67,7 +68,7 @@ export default function HiddenDangerPage({
   // 获取所有用户（用于指派）
   const fetchUsers = async () => {
     try {
-      const res = await fetch('/api/users');
+      const res = await apiFetch('/api/users');
       const data = await res.json();
       setAllUsers(data);
     } catch (error) {
@@ -78,7 +79,7 @@ export default function HiddenDangerPage({
   // 获取部门列表
   const fetchDepartments = async () => {
     try {
-      const res = await fetch('/api/org');
+      const res = await apiFetch('/api/org');
       const data = await res.json();
       
       // 扁平化部门树，保留所有字段（包括 managerId）
@@ -107,7 +108,7 @@ export default function HiddenDangerPage({
   // 获取工作流配置
   const fetchWorkflowConfig = async () => {
     try {
-      const res = await fetch('/api/hazards/workflow');
+      const res = await apiFetch('/api/hazards/workflow');
       if (res.ok) {
         const result = await res.json();
         if (result.success && result.data) {
@@ -248,10 +249,7 @@ export default function HiddenDangerPage({
   };
 
   return (
-    <>
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
-      
-      <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden">
       {/* 视图切换器：根据 viewMode 渲染不同视图组件 */}
       <main className="flex-1 overflow-auto p-6">
         {viewMode === 'overview' && (
@@ -358,6 +356,5 @@ export default function HiddenDangerPage({
         </div>
       )}
     </div>
-    </>
   );
 }

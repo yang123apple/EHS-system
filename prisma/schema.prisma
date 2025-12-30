@@ -199,6 +199,7 @@ model TrainingMaterial {
   category      String?  // 学习类型分类
   url           String
   convertedUrl  String?  // PDF version of docx
+  thumbnail     String?  // 缩略图路径
   duration      Int?     // seconds, for video
   isExamRequired Boolean @default(false)
   passingScore  Int?

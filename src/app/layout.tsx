@@ -6,6 +6,8 @@ import "./globals.css";
 
 import { AuthProvider } from "@/context/AuthContext";
 import Layout from "@/components/Layout";
+import { ToastProvider } from "@/components/common/Toast";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -22,11 +24,15 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className={inter.className}>
-        <AuthProvider>
-          <Layout>
-            {children}
-          </Layout>
-        </AuthProvider>
+        <ErrorBoundary>
+          <ToastProvider>
+            <AuthProvider>
+              <Layout>
+                {children}
+              </Layout>
+            </AuthProvider>
+          </ToastProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { withAuth } from '@/middleware/auth';
 
-export async function GET(req: NextRequest) {
+export const GET = withAuth(async (req, context, user) => {
   try {
-    const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('userId');
-
-    if (!userId) {
-        return NextResponse.json({ error: 'User ID required' }, { status: 400 });
-    }
-
+    // Use authenticated user's ID
     const assignments = await prisma.trainingAssignment.findMany({
-      where: { userId },
+      where: { userId: user.id },
       include: {
         task: {
             include: {
@@ -25,4 +20,4 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     return NextResponse.json({ error: 'Failed to fetch tasks' }, { status: 500 });
   }
-}
+});

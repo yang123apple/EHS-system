@@ -1,11 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { withErrorHandling, withAuth, withAdmin } from '@/middleware/auth';
 
 // 默认配置
 const DEFAULT_TYPES = ['火灾', '爆炸', '中毒', '窒息', '触电', '机械伤害'];
 const DEFAULT_AREAS = ['施工现场', '仓库', '办公室', '车间', '其他'];
 
-export async function GET() {
+export const GET = withErrorHandling(
+  withAuth(async (req: NextRequest, context, user) => {
   try {
     // 从数据库获取配置
     const typesConfig = await prisma.hazardConfig.findUnique({
@@ -30,11 +32,12 @@ export async function GET() {
       areas: DEFAULT_AREAS
     });
   }
-}
+  })
+);
 
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
+export const POST = withErrorHandling(
+  withAdmin(async (req: NextRequest, context, user) => {
+    const body = await req.json();
     
     // 保存隐患类型
     if (body.types) {
@@ -72,11 +75,5 @@ export async function POST(request: Request) {
       success: true,
       message: '配置保存成功'
     });
-  } catch (error) {
-    console.error('保存隐患配置失败:', error);
-    return NextResponse.json(
-      { success: false, error: '保存失败，请重试' },
-      { status: 500 }
-    );
-  }
-}
+  })
+);

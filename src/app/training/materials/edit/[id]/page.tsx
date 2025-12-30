@@ -3,6 +3,7 @@ import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import ExamEditor from '@/components/training/ExamEditor';
 import { useAuth } from '@/context/AuthContext';
+import { apiFetch } from '@/lib/apiClient';
 
 export default function EditMaterialPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -12,13 +13,13 @@ export default function EditMaterialPage({ params }: { params: Promise<{ id: str
   const [saving, setSaving] = useState(false);
   const [material, setMaterial] = useState<any>(null);
 
-  // Form Data
-  const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
-  const [category, setCategory] = useState('');
-  const [isPublic, setIsPublic] = useState(true);
-  const [isExam, setIsExam] = useState(false);
-  const [passingScore, setPassingScore] = useState(60);
+  // Form Data - 使用初始值避免undefined -> defined警告
+  const [title, setTitle] = useState<string>('');
+  const [desc, setDesc] = useState<string>('');
+  const [category, setCategory] = useState<string>('');
+  const [isPublic, setIsPublic] = useState<boolean>(true);
+  const [isExam, setIsExam] = useState<boolean>(false);
+  const [passingScore, setPassingScore] = useState<number>(60);
   const [questions, setQuestions] = useState<any[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
 
@@ -30,41 +31,63 @@ export default function EditMaterialPage({ params }: { params: Promise<{ id: str
 
     // Load material and categories
     Promise.all([
-      fetch(`/api/training/materials/${id}`).then(res => res.json()),
-      fetch('/api/training/settings').then(res => res.json())
-    ]).then(([materialData, settingsData]) => {
+      apiFetch(`/api/training/materials/${id}`).then(res => {
+        if (!res.ok) throw new Error('获取材料失败');
+        return res.json();
+      }),
+      apiFetch('/api/training/settings').then(res => {
+        if (!res.ok) throw new Error('获取设置失败');
+        return res.json();
+      })
+    ]).then(([data, settingsData]) => {
+      console.log('[Edit Page] 加载的材料数据:', data);
+      console.log('[Edit Page] 加载的设置数据:', settingsData);
+      
       // Check permission
-      if (user.role !== 'admin' && materialData.uploaderId !== user.id) {
+      if (user.role !== 'admin' && data.uploaderId !== user.id) {
         alert('您没有权限编辑此内容');
-        router.push('/training/knowledge-base');
+        router.push('/training/materials');
         return;
       }
 
-      setMaterial(materialData);
-      setTitle(materialData.title);
-      setDesc(materialData.description || '');
-      setCategory(materialData.category || '');
-      setIsPublic(materialData.isPublic);
-      setIsExam(materialData.isExamRequired);
-      setPassingScore(materialData.passingScore || 60);
+      setMaterial(data);
+      setTitle(data.title || '');
+      setDesc(data.description || '');
+      setCategory(data.category || '');
+      setIsPublic(data.isPublic !== false);
+      setIsExam(data.isExamRequired || false);
+      setPassingScore(data.passingScore || 60);
+      
+      console.log('[Edit Page] 设置的表单数据:', {
+        title: data.title,
+        desc: data.description,
+        category: data.category,
+        isPublic: data.isPublic,
+        isExam: data.isExamRequired,
+        passingScore: data.passingScore
+      });
       
       // Load questions if exist
-      if (materialData.questions && materialData.questions.length > 0) {
-        const loadedQuestions = materialData.questions.map((q: any) => ({
+      if (data.questions && data.questions.length > 0) {
+        console.log('[Edit Page] 原始题目数据:', data.questions);
+        const loadedQuestions = data.questions.map((q: any) => ({
           type: q.type,
           question: q.question,
-          options: JSON.parse(q.options),
-          answer: JSON.parse(q.answer),
-          score: q.score
+          options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options,
+          answer: typeof q.correctAnswer === 'string' ? JSON.parse(q.correctAnswer) : q.correctAnswer,
+          score: q.score || 10
         }));
+        console.log('[Edit Page] 转换后的题目:', loadedQuestions);
         setQuestions(loadedQuestions);
       }
 
-      setCategories(settingsData.categories || []);
+      const availableCategories = settingsData.categories || [];
+      setCategories(availableCategories);
+      console.log('[Edit Page] 可用类别:', availableCategories);
     }).catch(err => {
-      console.error('Failed to load material:', err);
-      alert('加载失败');
-      router.push('/training/knowledge-base');
+      console.error('[Edit Page] 加载失败:', err);
+      alert('加载失败: ' + err.message);
+      router.push('/training/materials');
     }).finally(() => setLoading(false));
   }, [id, user, router]);
 
@@ -76,16 +99,24 @@ export default function EditMaterialPage({ params }: { params: Promise<{ id: str
       const body = {
         title,
         description: desc,
-        category,
+        category: category || null,
         isPublic,
         isExamRequired: isExam,
         passingScore,
-        questions: isExam ? questions : []
+        questions: isExam ? questions.map(q => ({
+          type: q.type,
+          question: q.question,
+          options: q.options,
+          correctAnswer: q.answer,
+          score: q.score || 10
+        })) : []
       };
 
-      const res = await fetch(`/api/training/materials/${id}`, {
+      const res = await apiFetch(`/api/training/materials/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(body)
       });
 

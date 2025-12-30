@@ -1,77 +1,138 @@
-// src/components/common/Toast.tsx
-import { useEffect, useState } from 'react';
-import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
+'use client';
 
-type ToastType = 'success' | 'error' | 'info' | 'warning';
+import React, { createContext, useContext, useState, useCallback } from 'react';
+import { X, CheckCircle, AlertCircle, Info, XCircle } from 'lucide-react';
 
-interface ToastProps {
+type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+interface Toast {
+  id: string;
+  type: ToastType;
   message: string;
-  type?: ToastType;
+  description?: string;
   duration?: number;
-  onClose: () => void;
 }
 
-export function Toast({ message, type = 'info', duration = 3000, onClose }: ToastProps) {
-  useEffect(() => {
-    const timer = setTimeout(onClose, duration);
-    return () => clearTimeout(timer);
-  }, [duration, onClose]);
+interface ToastContextValue {
+  showToast: (toast: Omit<Toast, 'id'>) => void;
+  success: (message: string, description?: string) => void;
+  error: (message: string, description?: string) => void;
+  warning: (message: string, description?: string) => void;
+  info: (message: string, description?: string) => void;
+  permissionDenied: (action?: string) => void;
+}
 
-  const styles = {
-    success: 'bg-green-50 border-green-200 text-green-800',
-    error: 'bg-red-50 border-red-200 text-red-800',
-    warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-    info: 'bg-blue-50 border-blue-200 text-blue-800',
-  };
+const ToastContext = createContext<ToastContextValue | undefined>(undefined);
 
-  const icons = {
-    success: <CheckCircle className="text-green-600" size={20} />,
-    error: <AlertCircle className="text-red-600" size={20} />,
-    warning: <AlertTriangle className="text-yellow-600" size={20} />,
-    info: <Info className="text-blue-600" size={20} />,
-  };
+export function useToast() {
+  const context = useContext(ToastContext);
+  if (!context) {
+    throw new Error('useToast must be used within ToastProvider');
+  }
+  return context;
+}
+
+export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const removeToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  }, []);
+
+  const showToast = useCallback((toast: Omit<Toast, 'id'>) => {
+    const id = Math.random().toString(36).substr(2, 9);
+    const newToast = { ...toast, id };
+    setToasts(prev => [...prev, newToast]);
+
+    const duration = toast.duration || 5000;
+    setTimeout(() => removeToast(id), duration);
+  }, [removeToast]);
+
+  const success = useCallback((message: string, description?: string) => {
+    showToast({ type: 'success', message, description });
+  }, [showToast]);
+
+  const error = useCallback((message: string, description?: string) => {
+    showToast({ type: 'error', message, description, duration: 7000 });
+  }, [showToast]);
+
+  const warning = useCallback((message: string, description?: string) => {
+    showToast({ type: 'warning', message, description });
+  }, [showToast]);
+
+  const info = useCallback((message: string, description?: string) => {
+    showToast({ type: 'info', message, description });
+  }, [showToast]);
+
+  const permissionDenied = useCallback((action?: string) => {
+    const message = action ? `无权限执行: ${action}` : '权限不足';
+    const description = '请联系管理员获取相应权限';
+    showToast({ type: 'error', message, description, duration: 8000 });
+  }, [showToast]);
 
   return (
-    <div className={`fixed top-4 right-4 z-[100] flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg ${styles[type]} animate-slide-in-right`}>
-      {icons[type]}
-      <span className="font-medium">{message}</span>
-      <button onClick={onClose} className="ml-2 hover:opacity-70">
-        <X size={16} />
-      </button>
-    </div>
+    <ToastContext.Provider value={{ showToast, success, error, warning, info, permissionDenied }}>
+      {children}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+    </ToastContext.Provider>
   );
 }
 
-// Toast 容器组件
-export function ToastContainer({ toasts, removeToast }: { toasts: Array<{ id: string; message: string; type: ToastType }>; removeToast: (id: string) => void }) {
+function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: string) => void }) {
   return (
-    <div className="fixed top-4 right-4 z-[100] space-y-2">
-      {toasts.map((toast) => (
-        <Toast key={toast.id} message={toast.message} type={toast.type} onClose={() => removeToast(toast.id)} />
+    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-md">
+      {toasts.map(toast => (
+        <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
       ))}
     </div>
   );
 }
 
-// Toast Hook
-export function useToast() {
-  const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: ToastType }>>([]);
+function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {
+  const { id, type, message, description } = toast;
 
-  const addToast = (message: string, type: ToastType = 'info') => {
-    const id = Date.now().toString();
-    setToasts((prev) => [...prev, { id, message, type }]);
+  const styles = {
+    success: {
+      bg: 'bg-green-50 border-green-200',
+      icon: <CheckCircle className="w-5 h-5 text-green-600" />,
+      text: 'text-green-800'
+    },
+    error: {
+      bg: 'bg-red-50 border-red-200',
+      icon: <XCircle className="w-5 h-5 text-red-600" />,
+      text: 'text-red-800'
+    },
+    warning: {
+      bg: 'bg-yellow-50 border-yellow-200',
+      icon: <AlertCircle className="w-5 h-5 text-yellow-600" />,
+      text: 'text-yellow-800'
+    },
+    info: {
+      bg: 'bg-blue-50 border-blue-200',
+      icon: <Info className="w-5 h-5 text-blue-600" />,
+      text: 'text-blue-800'
+    }
   };
 
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  const style = styles[type];
 
-  const toast = {
-    success: (message: string) => addToast(message, 'success'),
-    error: (message: string) => addToast(message, 'error'),
-    warning: (message: string) => addToast(message, 'warning'),
-    info: (message: string) => addToast(message, 'info'),
-  };
-
-  return { toasts, removeToast, toast };
+  return (
+    <div className={`${style.bg} border rounded-lg shadow-lg p-4 flex items-start gap-3 animate-slide-in-right`}>
+      <div className="flex-shrink-0 mt-0.5">
+        {style.icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`font-medium ${style.text}`}>{message}</p>
+        {description && (
+          <p className={`text-sm mt-1 ${style.text} opacity-90`}>{description}</p>
+        )}
+      </div>
+      <button
+        onClick={() => onRemove(id)}
+        className={`flex-shrink-0 ${style.text} hover:opacity-70 transition-opacity`}
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
 }

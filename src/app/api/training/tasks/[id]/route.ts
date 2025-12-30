@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { withAuth } from '@/middleware/auth';
 
-export async function GET(
+export const GET = withAuth<{ params: Promise<{ id: string }> }>(async (
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  context: { params: Promise<{ id: string }> },
+  user
+) => {
+  const { params } = context;
   try {
     const { id: taskId } = await params;
 
@@ -95,7 +98,7 @@ export async function GET(
       departmentStats: Object.values(deptStats)
     });
   } catch (error) {
-    console.error(error);
+    console.error('获取培训任务详情失败:', error);
     return NextResponse.json({ error: 'Failed to fetch task details' }, { status: 500 });
   }
-}
+});

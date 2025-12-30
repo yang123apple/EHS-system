@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, ChevronRight, ChevronDown, Briefcase, Check, Search, User as UserIcon } from 'lucide-react';
 import { User } from '@prisma/client';
+import { apiFetch } from '@/lib/apiClient';
 
 export type SelectorMode = 'user' | 'dept' | 'dept_then_user';
 
@@ -66,7 +67,7 @@ export default function PeopleSelector({ isOpen, onClose, onConfirm, mode, multi
   const fetchTree = async () => {
     try {
       setIsLoadingTree(true);
-      const res = await fetch('/api/org'); // Assumes existing API
+      const res = await apiFetch('/api/org'); // Assumes existing API
       if (res.ok) setTree(await res.json());
     } catch (e) {
       console.error(e);
@@ -78,7 +79,7 @@ export default function PeopleSelector({ isOpen, onClose, onConfirm, mode, multi
   const fetchUsers = async (deptId: string) => {
     try {
       setIsLoadingUsers(true);
-      const res = await fetch(`/api/users/by-dept?deptId=${deptId}`); // Assumes existing API or needs creation
+      const res = await apiFetch(`/api/users/by-dept?deptId=${deptId}`); // Assumes existing API or needs creation
       if (res.ok) setUsers(await res.json());
     } catch (e) {
       console.error(e);
@@ -100,7 +101,7 @@ export default function PeopleSelector({ isOpen, onClose, onConfirm, mode, multi
            // TODO: Create /api/users/search endpoint if not exists
            // Fallback to filtering current loaded users if in dept mode, or global search?
            // Let's assume global search is better
-           const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`);
+           const res = await apiFetch(`/api/users/search?q=${encodeURIComponent(query)}`);
            if (res.ok) setSearchResults(await res.json());
       } catch(e) {
           console.error(e);

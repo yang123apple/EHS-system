@@ -11,7 +11,7 @@ export interface MobileFormField {
   label: string;
   fieldKey: string; // 对应parsedFields中的fieldName
   cellKey?: string; // 🟢 对应 Excel 单元格 Key (如 R1C1)
-  fieldType: 'text' | 'select' | 'date' | 'number' | 'textarea' | 'signature' | 'department' | 'user' | 'option' | 'match';
+  fieldType: 'text' | 'select' | 'date' | 'number' | 'textarea' | 'signature' | 'handwritten' | 'department' | 'user' | 'option' | 'match';
   placeholder?: string;
   required: boolean;
   options?: string[]; // 用于select类型
@@ -99,7 +99,7 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
   }, [isOpen, currentConfig, parsedFields]);
 
   const autoDetectGroup = (field: ParsedField): string => {
-    if (field.fieldType === 'signature') return '审批意见';
+    if (field.fieldType === 'signature' || field.fieldType === 'handwritten') return '审批意见';
     if (field.isSafetyMeasure) return '安全措施';
     return '基础信息';
   };
@@ -114,6 +114,7 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
       case 'number': return 'number';
       case 'textarea': return 'textarea';
       case 'signature': return 'signature';
+      case 'handwritten': return 'handwritten';
       case 'department': return 'department';
       case 'personnel': return 'user';
       default: return 'text';
@@ -506,6 +507,7 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
                     <option value="department">部门选择</option>
                     <option value="user">人员选择</option>
                     <option value="signature">签名</option>
+                    <option value="handwritten">手写签名</option>
                   </select>
                 </div>
 

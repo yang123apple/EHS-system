@@ -1,5 +1,8 @@
-import React, { useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
-import { Calendar, User, Building, ChevronRight, Hash, AlignLeft, CheckSquare, List, FileText, Users, Building2, Smartphone } from 'lucide-react';
+import React, { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from 'react';
+import { Calendar, User, Building, ChevronRight, Hash, AlignLeft, CheckSquare, List, FileText, Users, Building2, Smartphone, X } from 'lucide-react';
+import HandwrittenSignature from '../HandwrittenSignature';
+import SignatureImage from '../SignatureImage';
+import MultiSignatureDisplay from '../MultiSignatureDisplay';
 
 export interface MobileFormGroup {
   title: string;
@@ -70,6 +73,8 @@ const defaultGetFieldIcon = (fieldType: string) => {
       return <Users size={14} className={`${iconClass} text-pink-500`} />;
     case 'signature':
       return <FileText size={14} className={`${iconClass} text-rose-500`} />;
+    case 'handwritten':
+      return <FileText size={14} className={`${iconClass} text-purple-500`} />;
     default:
       return <FileText size={14} className={`${iconClass} text-slate-400`} />;
   }
@@ -109,6 +114,10 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
   const activeInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const isUserScrolling = useRef(false);
 
+  // 手写签名模态框状态
+  const [signatureModalOpen, setSignatureModalOpen] = useState(false);
+  const [pendingSignatureField, setPendingSignatureField] = useState<any>(null);
+
   // 🟢 监听用户主动滚动
   useEffect(() => {
     let scrollTimeout: NodeJS.Timeout;
@@ -141,6 +150,42 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
       const rawKeys = group.fieldKeys || group.fields || group.keys || [];
       const sourceFields = (config.fields && config.fields.length > 0) ? config.fields : parsedFields;
       
+      // 🟢 修复：优先使用 parsedFields 中的字段类型（确保与模板编辑器中的设置一致）
+      // 创建一个字段类型映射表（cellKey -> ParsedField）
+      const parsedFieldsMap = new Map<string, any>();
+      parsedFields.forEach(f => {
+        if (f.cellKey) {
+          parsedFieldsMap.set(f.cellKey, f);
+        }
+      });
+      
+      // 调试信息：检查 sourceFields 和 parsedFields 中的 handwritten 字段
+      if (process.env.NODE_ENV === 'development') {
+        const handwrittenInSource = sourceFields.filter((f: any) => f.fieldType === 'handwritten' || f.type === 'handwritten');
+        const handwrittenInParsed = Array.from(parsedFieldsMap.values()).filter((f: any) => f.fieldType === 'handwritten');
+        
+        if (handwrittenInParsed.length > 0) {
+          console.log('✅ [MobileFormRenderer] Found handwritten fields in parsedFields:', handwrittenInParsed.map(f => ({
+            cellKey: f.cellKey,
+            fieldName: f.fieldName,
+            fieldType: f.fieldType
+          })));
+        }
+        
+        if (handwrittenInSource.length > 0) {
+          console.log('✅ [MobileFormRenderer] Found handwritten fields in sourceFields:', handwrittenInSource.map(f => ({
+            cellKey: f.cellKey,
+            fieldName: f.fieldName,
+            fieldType: f.fieldType,
+            type: f.type
+          })));
+        }
+        
+        if (handwrittenInParsed.length > 0 && handwrittenInSource.length === 0) {
+          console.warn('⚠️ [MobileFormRenderer] parsedFields 中有 handwritten 字段，但 sourceFields 中没有！');
+        }
+      }
+      
       let groupFields: any[] = [];
       
       if (Array.isArray(rawKeys) && rawKeys.length > 0) {
@@ -148,7 +193,7 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
           const fieldKey = typeof keyOrObj === 'string' ? keyOrObj : (keyOrObj.cellKey || keyOrObj.fieldKey);
           if (!fieldKey) return null;
 
-          return sourceFields.find((f: any) => 
+          const foundField = sourceFields.find((f: any) => 
             f.id === fieldKey || 
             f.cellKey === fieldKey || 
             f.fieldKey === fieldKey ||
@@ -156,6 +201,32 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
             f.label === fieldKey ||
             (typeof fieldKey === 'string' && f.fieldName && f.fieldName.includes(fieldKey))
           );
+          
+          // 确保返回的字段对象包含所有必要的属性
+          if (foundField) {
+            // 🟢 修复：优先使用 parsedFields 中的字段类型（确保与模板编辑器中的设置一致）
+            const parsedField = parsedFieldsMap.get(fieldKey);
+            const finalFieldType = parsedField?.fieldType || foundField.fieldType || foundField.type || 'text';
+            
+            const normalizedField = {
+              ...foundField,
+              fieldType: finalFieldType, // 使用最新的字段类型
+            };
+            
+            // 调试信息：检查 handwritten 字段
+            if (finalFieldType === 'handwritten' && process.env.NODE_ENV === 'development') {
+              console.log('✅ [MobileFormRenderer] Normalized handwritten field:', {
+                cellKey: normalizedField.cellKey,
+                fieldName: normalizedField.fieldName,
+                fieldType: normalizedField.fieldType,
+                source: parsedField ? 'parsedFields' : 'sourceFields'
+              });
+            }
+            
+            return normalizedField;
+          }
+          
+          return null;
         }).filter(Boolean);
       }
       
@@ -265,6 +336,25 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
       case 'signature':
         return <div className="break-words whitespace-pre-wrap max-w-full text-sm">{value}</div>;
       
+      case 'handwritten':
+        // 兼容旧数据：如果是字符串，转换为数组；如果是数组，直接使用
+        const signatureArray = Array.isArray(value) 
+          ? value 
+          : (value && typeof value === 'string' && value.length > 0 ? [value] : []);
+        
+        if (signatureArray.length > 0) {
+          return (
+            <MultiSignatureDisplay
+              signatures={signatureArray}
+              onAddSignature={() => {}}
+              readonly={true}
+              maxWidth={300}
+              maxHeight={200}
+            />
+          );
+        }
+        return <span className="text-slate-300 text-sm">未签名</span>;
+      
       default:
         return <span className="inline-block break-words max-w-full text-sm">{value}</span>;
     }
@@ -275,7 +365,24 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
     const currentValue = getFieldValue(field);
     const isRequired = field.required === true;
     const label = field.fieldName || field.label || '请填写';
-    const fieldType = field.fieldType || 'text';
+    // 确保 fieldType 正确获取（支持多种可能的字段名）
+    const fieldType = field.fieldType || field.type || 'text';
+    
+    // 调试信息（仅在开发环境，对 handwritten 类型输出详细日志）
+    if (process.env.NODE_ENV === 'development' && (fieldType === 'handwritten' || field.fieldType === 'handwritten' || field.type === 'handwritten')) {
+      console.log('🔍 [MobileFormRenderer] Handwritten field detected:', {
+        '最终 fieldType': fieldType,
+        'field.fieldType': field.fieldType,
+        'field.type': field.type,
+        'cellKey': field.cellKey,
+        'fieldKey': field.fieldKey,
+        'fieldName': field.fieldName,
+        'label': label,
+        'mode': mode,
+        'isDisabled': mode === 'readonly' || mode === 'preview',
+        '完整字段对象': field
+      });
+    }
     const isDisabled = mode === 'readonly' || mode === 'preview';
     const isReadonly = mode === 'readonly';
     const isPreview = mode === 'preview';
@@ -289,7 +396,7 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
 
     // 1. 只读模式渲染
     if (isReadonly) {
-      const isInlineField = !['textarea', 'match', 'signature'].includes(fieldType);
+      const isInlineField = !['textarea', 'match', 'signature', 'handwritten'].includes(fieldType);
       const renderValue = renderFieldValue ? renderFieldValue(field, currentValue) : defaultRenderFieldValue(field, currentValue);
       
       return (
@@ -321,8 +428,20 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
       );
     }
 
-    // 2. 编辑模式 - 特殊大字段 (Textarea, Match, Signature)
-    if (fieldType === 'textarea' || fieldType === 'match' || fieldType === 'signature' || (field.hint && field.hint.includes('____'))) {
+    // 2. 编辑模式 - 特殊大字段 (Textarea, Match, Signature, Handwritten)
+    // 调试：检查字段类型判断
+    if (process.env.NODE_ENV === 'development') {
+      const isSpecialField = fieldType === 'textarea' || fieldType === 'match' || fieldType === 'signature' || fieldType === 'handwritten' || (field.hint && field.hint.includes('____'));
+      if (fieldType === 'handwritten') {
+        console.log('[MobileFormRenderer] Handwritten field check:', {
+          fieldType,
+          isSpecialField,
+          willEnterSpecialFieldBlock: isSpecialField
+        });
+      }
+    }
+    
+    if (fieldType === 'textarea' || fieldType === 'match' || fieldType === 'signature' || fieldType === 'handwritten' || (field.hint && field.hint.includes('____'))) {
       // 🟢 Signature 字段特殊处理：编辑模式显示占位符（与桌面端一致）
       if (fieldType === 'signature') {
         const approverHint = field.label || '签核人';
@@ -343,6 +462,90 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
                   <span className="text-[10px] text-amber-500 mt-1 text-center">签核后自动写入意见/签名/日期</span>
                 </>
               )}
+            </div>
+          </div>
+        );
+      }
+
+      // 🟢 Handwritten 字段特殊处理：手写签名（支持多人签名）
+      if (fieldType === 'handwritten') {
+        // 兼容旧数据：如果是字符串，转换为数组；如果是数组，直接使用
+        const signatureArray = Array.isArray(currentValue) 
+          ? currentValue 
+          : (currentValue && typeof currentValue === 'string' && currentValue.length > 0 ? [currentValue] : []);
+        const hasSignature = signatureArray.length > 0;
+        
+        // 调试信息（仅在开发环境）
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ [MobileFormRenderer] Entering handwritten field render block:', {
+            fieldType,
+            cellKey: field.cellKey,
+            fieldName: field.fieldName,
+            label,
+            hasSignature,
+            signatureCount: signatureArray.length,
+            isDisabled,
+            mode,
+            isReadonly
+          });
+        }
+        
+        if (isReadonly) {
+          // 只读模式：显示多个签名
+          return (
+            <div onClick={handleClick} className={`py-3 border-b border-slate-100 last:border-0 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
+                {getFieldIcon(fieldType)}
+                <span className="break-words">{label}</span>
+                {isRequired && <span className="text-red-500 ml-0.5">*</span>}
+              </label>
+              <div className="w-full p-3 bg-white border border-slate-200 rounded-lg min-h-[100px] flex items-center justify-center">
+                {hasSignature ? (
+                  <MultiSignatureDisplay
+                    signatures={signatureArray}
+                    onAddSignature={() => {}}
+                    readonly={true}
+                    maxWidth={300}
+                    maxHeight={200}
+                  />
+                ) : (
+                  <span className="text-slate-300 text-sm">未签名</span>
+                )}
+              </div>
+            </div>
+          );
+        }
+        
+        // 编辑模式：显示多个签名和"+"按钮
+        return (
+          <div className="py-3 border-b border-slate-100 last:border-0">
+            <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
+              {getFieldIcon(fieldType)}
+              <span className="break-words">{label}</span>
+              {isRequired && <span className="text-red-500 ml-0.5">*</span>}
+            </label>
+            <div className="w-full p-3 bg-purple-50 border border-purple-200 rounded-lg min-h-[100px] flex items-center justify-center">
+              <MultiSignatureDisplay
+                signatures={signatureArray}
+                onAddSignature={() => {
+                  if (!isDisabled) {
+                    console.log('[MobileFormRenderer] Opening signature modal for field:', field);
+                    setPendingSignatureField(field);
+                    setSignatureModalOpen(true);
+                  }
+                }}
+                onRemoveSignature={(index) => {
+                  if (!isDisabled && onDataChange) {
+                    const fieldKey = getFieldKey(field);
+                    const newArray = [...signatureArray];
+                    newArray.splice(index, 1);
+                    onDataChange(fieldKey, newArray.length > 0 ? newArray : '');
+                  }
+                }}
+                maxWidth={300}
+                maxHeight={200}
+                readonly={false}
+              />
             </div>
           </div>
         );
@@ -577,6 +780,63 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
           </div>
         );
       })}
+
+      {/* 手写签名模态框 */}
+      {signatureModalOpen && pendingSignatureField && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4"
+          onClick={(e) => {
+            // 点击背景关闭模态框
+            if (e.target === e.currentTarget) {
+              setSignatureModalOpen(false);
+              setPendingSignatureField(null);
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl p-4 max-w-full w-full max-h-[90vh] overflow-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-slate-800">手写签名</h3>
+              <button
+                onClick={() => {
+                  setSignatureModalOpen(false);
+                  setPendingSignatureField(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1"
+                type="button"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <HandwrittenSignature
+              value={undefined} // 新签名，不传入已有值
+              onChange={(base64) => {
+                if (pendingSignatureField && onDataChange && base64) {
+                  const fieldKey = getFieldKey(pendingSignatureField);
+                  const currentValue = getFieldValue(pendingSignatureField);
+                  // 兼容旧数据：如果是字符串，转换为数组；如果是数组，直接使用
+                  const signatureArray = Array.isArray(currentValue) 
+                    ? currentValue 
+                    : (currentValue && typeof currentValue === 'string' && currentValue.length > 0 ? [currentValue] : []);
+                  
+                  // 将新签名添加到数组中
+                  const newArray = [...signatureArray, base64];
+                  console.log('[MobileFormRenderer] Adding new signature to array. Total signatures:', newArray.length);
+                  onDataChange(fieldKey, newArray);
+                }
+              }}
+              onClose={() => {
+                setSignatureModalOpen(false);
+                setPendingSignatureField(null);
+              }}
+              width={Math.min(typeof window !== 'undefined' ? window.innerWidth - 64 : 600, 600)}
+              height={300}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 });

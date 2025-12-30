@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Bell, CheckCheck, X, FileSignature, AlertTriangle, FileText } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { apiFetch } from '@/lib/apiClient';
 
 interface Notification {
   id: string;
@@ -29,7 +30,7 @@ export default function NotificationPanel() {
     
     setLoading(true);
     try {
-      const res = await fetch(`/api/notifications?userId=${user.id}`, {
+      const res = await apiFetch(`/api/notifications?userId=${user.id}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -38,6 +39,13 @@ export default function NotificationPanel() {
       });
       
       if (!res.ok) {
+        // 401 表示未认证，静默处理，不打印错误
+        if (res.status === 401) {
+          setNotifications([]);
+          setUnreadCount(0);
+          return;
+        }
+        // 其他错误才打印到控制台
         console.error('获取通知失败，状态码:', res.status);
         const errorText = await res.text();
         console.error('错误详情:', errorText);
@@ -48,7 +56,6 @@ export default function NotificationPanel() {
       setNotifications(data.notifications || []);
       setUnreadCount(data.unreadCount || 0);
     } catch (error) {
-      console.error('获取通知失败:', error);
       // 网络错误或其他异常，静默处理，不影响用户体验
       setNotifications([]);
       setUnreadCount(0);
@@ -62,7 +69,7 @@ export default function NotificationPanel() {
     if (!user?.id) return;
 
     try {
-      const res = await fetch('/api/notifications', {
+      const res = await apiFetch('/api/notifications', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notificationIds, userId: user.id }),
@@ -194,10 +201,10 @@ export default function NotificationPanel() {
           setIsOpen(!isOpen);
           if (!isOpen) fetchNotifications();
         }}
-        className="relative p-2 rounded-lg hover:bg-slate-100 transition-colors"
+        className="relative p-2 rounded-lg hover:bg-blue-800/50 transition-colors"
         aria-label="消息通知"
       >
-        <Bell className="w-5 h-5 text-slate-600" />
+        <Bell className="w-5 h-5 text-blue-100" />
         {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
             {unreadCount > 99 ? '99+' : unreadCount}
@@ -210,12 +217,12 @@ export default function NotificationPanel() {
         <>
           {/* 背景遮罩 */}
           <div
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-[9998]"
             onClick={() => setIsOpen(false)}
           />
 
           {/* 通知列表 */}
-          <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-slate-200 z-50 max-h-[600px] flex flex-col">
+          <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-slate-200 z-[9999] max-h-[600px] flex flex-col">
             {/* 头部 */}
             <div className="flex items-center justify-between p-4 border-b border-slate-200">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">

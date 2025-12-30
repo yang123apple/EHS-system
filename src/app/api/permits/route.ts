@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createLog } from '@/lib/logger';
+import { withAuth, withPermission, logApiOperation } from '@/middleware/auth';
 export const dynamic = 'force-dynamic';
 
 // 🟢 生成作业单编号（格式：项目日期-项目序号-类型-作业日期-顺序号）
@@ -122,7 +123,7 @@ async function generatePermitCode(projectId: string, templateType: string, propo
 }
 
 // ✅ 新增：PATCH 方法，用于更新部分字段（如追加评论回复、更新附件等）
-export async function PATCH(req: Request) {
+export const PATCH = withPermission('work_permit', 'edit', async (req: Request, context, user) => {
   try {
     const body = await req.json();
     const { id, approvalLogs, attachments, dataJson, userId, userName } = body;
@@ -153,14 +154,22 @@ export async function PATCH(req: Request) {
       );
     }
 
+    // 记录权限系统审计日志
+    await logApiOperation(
+      user,
+      'work_permit',
+      'update_permit',
+      { permitId: id }
+    );
+
     return NextResponse.json(updatedRecord);
   } catch (error) {
     console.error("Update Permit Error:", error);
     return NextResponse.json({ error: '更新失败' }, { status: 500 });
   }
-}
+});
 // GET: 获取作业票记录 或 预生成编号
-export async function GET(req: Request) {
+export const GET = withAuth(async (req: Request, context, user) => {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get('projectId');
   const action = searchParams.get('action');
@@ -248,10 +257,10 @@ export async function GET(req: Request) {
   } catch (error) {
     return NextResponse.json({ error: '获取记录失败' }, { status: 500 });
   }
-}
+});
 
 // POST: 提交作业票
-export async function POST(req: Request) {
+export const POST = withPermission('work_permit', 'create', async (req: Request, context, user) => {
   try {
     const body = await req.json();
     // ✅ 新增：解构 attachments 和 proposedCode
@@ -298,15 +307,23 @@ export async function POST(req: Request) {
       );
     }
 
+    // 记录权限系统审计日志
+    await logApiOperation(
+      user,
+      'work_permit',
+      'create_permit',
+      { permitCode, projectId, templateId }
+    );
+
     return NextResponse.json(newRecord);
   } catch (error) {
     console.error("Create Permit Error:", error);
     return NextResponse.json({ error: '提交失败' }, { status: 500 });
   }
-}
+});
 
 // ✅ DELETE: 删除作业票记录 (新增)
-export async function DELETE(req: Request) {
+export const DELETE = withPermission('work_permit', 'delete', async (req: Request, context, user) => {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
@@ -327,8 +344,16 @@ export async function DELETE(req: Request) {
       );
     }
 
+    // 记录权限系统审计日志
+    await logApiOperation(
+      user,
+      'work_permit',
+      'delete_permit',
+      { permitId: id }
+    );
+
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: '删除失败' }, { status: 500 });
   }
-}
+});

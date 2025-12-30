@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { withAuth } from '@/middleware/auth';
 
-export async function POST(req: NextRequest) {
+export const POST = withAuth(async (req, context, user) => {
   try {
     const { assignmentId, progress, status } = await req.json();
 
@@ -56,4 +57,4 @@ export async function POST(req: NextRequest) {
     console.error('Progress update error:', error);
     return NextResponse.json({ error: 'Failed to update progress' }, { status: 500 });
   }
-}
+});

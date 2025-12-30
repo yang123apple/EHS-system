@@ -1,13 +1,17 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 // 🟢 引用新的持久化 db
 import { db } from '@/lib/db'; 
+import { withErrorHandling, withAuth, withAdmin } from '@/middleware/auth';
 
-export async function GET() {
-  const tree = await db.getOrgTree();
-  return NextResponse.json(tree);
-}
+export const GET = withErrorHandling(
+  withAuth(async (req: NextRequest, context, user) => {
+    const tree = await db.getOrgTree();
+    return NextResponse.json(tree);
+  })
+);
 
-export async function POST(req: Request) {
+export const POST = withErrorHandling(
+  withAdmin(async (req: NextRequest, context, user) => {
   const body = await req.json();
   const { name, managerId, parentId } = body;
 

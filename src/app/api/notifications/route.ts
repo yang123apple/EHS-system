@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { withAuth } from '@/middleware/auth';
 
 // GET /api/notifications - 获取当前用户的通知
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request: NextRequest, context, user) => {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
@@ -49,10 +50,10 @@ export async function GET(request: NextRequest) {
       details: error instanceof Error ? error.message : String(error)
     }, { status: 500 });
   }
-}
+});
 
 // PATCH /api/notifications - 标记通知为已读
-export async function PATCH(request: NextRequest) {
+export const PATCH = withAuth(async (request: NextRequest, context, user) => {
   try {
     const body = await request.json();
     const { notificationIds, userId } = body;
@@ -81,10 +82,10 @@ export async function PATCH(request: NextRequest) {
     console.error('标记已读失败:', error);
     return NextResponse.json({ error: '标记已读失败' }, { status: 500 });
   }
-}
+});
 
 // POST /api/notifications - 创建新通知（支持单个或批量）
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request: NextRequest, context, user) => {
   try {
     const body = await request.json();
     
@@ -151,4 +152,4 @@ export async function POST(request: NextRequest) {
     console.error('创建通知失败:', error);
     return NextResponse.json({ error: '创建通知失败' }, { status: 500 });
   }
-}
+});

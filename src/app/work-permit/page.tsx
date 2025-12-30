@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Project, Template, PermitRecord } from '@/types/work-permit';
 import { UserService, StructureService } from '@/services/workPermitService';
+import { apiFetch } from '@/lib/apiClient';
 import { Menu } from 'lucide-react';
 
 // === 组件引入 ===
@@ -103,7 +104,7 @@ export default function WorkPermitPage() {
           status: filters.status === 'all' ? '' : filters.status,
           date: filters.date
       });
-      const res = await fetch(`/api/projects?${params.toString()}`, { cache: 'no-store' });
+      const res = await apiFetch(`/api/projects?${params.toString()}`, { cache: 'no-store' });
       if(res.ok) {
           const data = await res.json();
           if (data.data) {
@@ -121,7 +122,7 @@ export default function WorkPermitPage() {
 
   const fetchTemplates = async (page = 1) => {
     try {
-      const res = await fetch(`/api/templates?page=${page}&limit=20`, { cache: 'no-store' });
+      const res = await apiFetch(`/api/templates?page=${page}&limit=20`, { cache: 'no-store' });
       if(res.ok) {
           const data = await res.json();
           if (data.data) {
@@ -147,7 +148,7 @@ export default function WorkPermitPage() {
           type: filters.type,
           date: filters.date
       });
-      const res = await fetch(`/api/permits?${params.toString()}`, { cache: 'no-store' });
+      const res = await apiFetch(`/api/permits?${params.toString()}`, { cache: 'no-store' });
       if(res.ok) {
         const data = await res.json();
         let records = [];
@@ -181,7 +182,7 @@ export default function WorkPermitPage() {
   // 4. 获取特定项目的记录
   const fetchProjectRecords = async (projectId: string, page = 1) => {
     try {
-      const res = await fetch(`/api/permits?projectId=${projectId}&page=${page}&limit=10`, { cache: 'no-store' });
+      const res = await apiFetch(`/api/permits?projectId=${projectId}&page=${page}&limit=10`, { cache: 'no-store' });
       if(res.ok) {
         const data = await res.json();
         let records = [];
@@ -286,7 +287,7 @@ export default function WorkPermitPage() {
   const handleDeleteProject = async (id: string, name: string) => {
     if(!confirm(`确定要删除项目“${name}”吗？`)) return;
     try {
-      await fetch(`/api/projects?id=${id}`, { method: 'DELETE' });
+      await apiFetch(`/api/projects?id=${id}`, { method: 'DELETE' });
       fetchProjects(projectPage);
       fetchAllRecords(recordPage);
     } catch(e) {}
@@ -303,7 +304,7 @@ export default function WorkPermitPage() {
   const handleDeleteRecord = async (id: string) => {
     if(!confirm("确定要删除?")) return;
     try {
-      await fetch(`/api/permits?id=${id}&userId=${user?.id || ''}&userName=${user?.name || ''}`, { method: 'DELETE' });
+      await apiFetch(`/api/permits?id=${id}&userId=${user?.id || ''}&userName=${user?.name || ''}`, { method: 'DELETE' });
       if(modals.projectDetail && selectedProject) fetchProjectRecords(selectedProject.id, projRecPage);
       fetchAllRecords(recordPage);
       // 如果正在查看该记录，关闭详情弹窗

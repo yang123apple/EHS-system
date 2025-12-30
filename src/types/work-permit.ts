@@ -26,7 +26,7 @@ export interface ParsedField {
   cellKey: string;        // 单元格坐标 "R1C1"
   label: string;          // 标签内容 (左侧单元格)
   fieldName: string;      // 规范化字段名 "department", "location", "date"
-  fieldType: 'text' | 'department' | 'date' | 'number' | 'personnel' | 'signature' | 'option' | 'match' | 'section' | 'other'; // 🟢 新增 section 类型
+  fieldType: 'text' | 'department' | 'date' | 'number' | 'personnel' | 'signature' | 'option' | 'match' | 'section' | 'handwritten' | 'other'; // 🟢 新增 section 类型，新增 handwritten 类型
   hint: string;           // 提示文本
   editableHint?: string;  // 编辑后的提示（在编辑器中修改）
   options?: string[];     // 🟢 互斥选项列表（如 ["是", "否"]）

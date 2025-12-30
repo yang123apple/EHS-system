@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
+import { withAuth, withAdmin } from '@/middleware/auth';
 
 // GET: 获取所有用户 (Support Pagination)
-export async function GET(req: Request) {
+export const GET = withAuth(async (req, context, user) => {
   const { searchParams } = new URL(req.url);
   const page = parseInt(searchParams.get('page') || '1');
   const limit = parseInt(searchParams.get('limit') || '50'); // Default 50 to avoid heavy load
@@ -81,10 +82,10 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json(finalUsers);
-}
+});
 
 // POST: 创建新用户 (Admin)
-export async function POST(req: Request) {
+export const POST = withAdmin(async (req, context, user) => {
   try {
     const body = await req.json();
 
@@ -116,4 +117,4 @@ export async function POST(req: Request) {
     console.error(e);
     return NextResponse.json({ error: '创建失败' }, { status: 500 });
   }
-}
+});

@@ -8,6 +8,7 @@ import PeopleSelector from '@/components/common/PeopleSelector';
 import MobileFormRenderer from '../views/MobileFormRenderer';
 import PrintStyle from '../PrintStyle';
 import { findDeptRecursive } from '@/utils/departmentUtils';
+import { apiFetch } from '@/lib/apiClient';
 
 interface Props {
   isOpen: boolean;
@@ -107,20 +108,73 @@ export default function AddPermitModal({
     // 基础校验与转换 (略，核心逻辑：如果无配置则基于parsedFields自动生成)
     if (!config || !config.groups || config.groups.length === 0) {
       const sorted = [...selectedParsedFields].sort((a, b) => (a.rowIndex - b.rowIndex) || (a.colIndex - b.colIndex));
+      
+      // 调试信息：检查 handwritten 字段
+      if (process.env.NODE_ENV === 'development') {
+        const handwrittenFields = sorted.filter(f => f.fieldType === 'handwritten');
+        if (handwrittenFields.length > 0) {
+          console.log('[AddPermitModal] Found handwritten fields in parsedFields:', handwrittenFields);
+        } else {
+          console.log('[AddPermitModal] No handwritten fields found. Total fields:', sorted.length, 'Field types:', [...new Set(sorted.map(f => f.fieldType))]);
+        }
+      }
+      
       const autoGroups = new Map<string, any[]>();
       sorted.forEach(f => {
-        const g = f.fieldType === 'signature' ? '审批意见' : (f.isSafetyMeasure ? '安全措施' : (f.group || '基础信息'));
+        const g = (f.fieldType === 'signature' || f.fieldType === 'handwritten') ? '审批意见' : (f.isSafetyMeasure ? '安全措施' : (f.group || '基础信息'));
         if (!autoGroups.has(g)) autoGroups.set(g, []);
         autoGroups.get(g)!.push(f);
       });
+      
+      // 确保字段对象包含所有必要的属性
+      const normalizedFields = sorted.map(f => ({
+        ...f,
+        fieldType: f.fieldType || 'text', // 确保 fieldType 存在
+      }));
+      
       return {
         groups: Array.from(autoGroups.entries()).map(([title, fields]) => ({
           title, fieldKeys: fields.map(f => f.cellKey || f.fieldKey)
         })),
-        fields: sorted,
+        fields: normalizedFields, // 使用规范化后的字段
         title: selectedTemplate.name
       };
     }
+    
+    // 🟢 修复：即使有配置，也要从 parsedFields 中同步最新的字段类型
+    // 这样可以确保字段类型与模板编辑器中的设置保持一致
+    if (config && config.fields && selectedParsedFields.length > 0) {
+      // 创建一个字段类型映射表（cellKey -> fieldType）
+      const fieldTypeMap = new Map<string, string>();
+      selectedParsedFields.forEach(f => {
+        if (f.cellKey && f.fieldType) {
+          fieldTypeMap.set(f.cellKey, f.fieldType);
+        }
+      });
+      
+      // 更新配置中的字段类型
+      const updatedFields = config.fields.map((f: any) => {
+        const cellKey = f.cellKey || f.id || f.fieldKey;
+        if (cellKey && fieldTypeMap.has(cellKey)) {
+          const latestFieldType = fieldTypeMap.get(cellKey);
+          // 调试信息
+          if (process.env.NODE_ENV === 'development' && latestFieldType === 'handwritten' && f.fieldType !== 'handwritten') {
+            console.log(`🔄 [AddPermitModal] Updating field type from ${f.fieldType} to handwritten for ${cellKey}`);
+          }
+          return {
+            ...f,
+            fieldType: latestFieldType, // 使用最新的字段类型
+          };
+        }
+        return f;
+      });
+      
+      return {
+        ...config,
+        fields: updatedFields, // 使用更新后的字段
+      };
+    }
+    
     return config;
   }, [selectedTemplate?.id, selectedTemplate?.mobileFormConfig, selectedParsedFields]);
 
@@ -161,7 +215,7 @@ export default function AddPermitModal({
   // 自动编号生成
   useEffect(() => {
     if (selectedTemplate && project) {
-      fetch(`/api/permits?action=generate-code&projectId=${project.id}&templateType=${encodeURIComponent(selectedTemplate.type)}`)
+      apiFetch(`/api/permits?action=generate-code&projectId=${project.id}&templateType=${encodeURIComponent(selectedTemplate.type)}`)
         .then(res => res.json())
         .then(data => data.code && setPreviewCode(data.code))
         .catch(err => console.error('预生成编号失败:', err));
@@ -230,7 +284,7 @@ export default function AddPermitModal({
           {/* 右侧主表单 */}
           <div className={`${mobileStep === 'fill' ? 'flex' : 'hidden'} lg:flex flex-1 p-4 lg:p-6 overflow-auto bg-slate-100 flex-col`}>
             {selectedTemplate ? (
-              <div className="mx-auto w-full max-w-[210mm] flex flex-col gap-4">
+              <div className="mx-auto w-full flex flex-col gap-4">
                 {/* 移动端渲染器：核心数据流入点 */}
                 <div className="lg:hidden">
                   <MobileFormRenderer
@@ -248,8 +302,16 @@ export default function AddPermitModal({
                   />
                 </div>
 
-                {/* 桌面端渲染器 */}
-                <div className="hidden lg:block bg-white p-8 shadow-lg border">
+                {/* 桌面端渲染器 - A4纸大小 */}
+                <div 
+                  className="hidden lg:block bg-white shadow-lg border mx-auto"
+                  style={{
+                    width: orientation === 'portrait' ? '210mm' : '297mm',
+                    minHeight: orientation === 'portrait' ? '297mm' : '210mm',
+                    maxWidth: '100%',
+                    padding: '2rem'
+                  }}
+                >
                   <ExcelRenderer
                     key={selectedTemplate.id}
                     templateData={selectedTemplateData}

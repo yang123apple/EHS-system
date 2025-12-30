@@ -1,8 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { PlayCircle, CheckCircle, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { PlayCircle, CheckCircle, Clock, ChevronLeft, ChevronRight, Calendar, Award, AlertCircle, Film, FileText } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { api } from '@/lib/apiClient';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -16,9 +17,20 @@ export default function MyTasksPage() {
   useEffect(() => {
     if (!user?.id) return;
 
-    fetch(`/api/training/my-tasks?userId=${user.id}`)
-      .then(res => res.json())
-      .then(setTasks)
+    api.get('/api/training/my-tasks', { userId: user.id })
+      .then(data => {
+        // Ensure we always set an array
+        if (Array.isArray(data)) {
+          setTasks(data);
+        } else {
+          console.warn('API returned non-array response, using empty array');
+          setTasks([]);
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching tasks:', error);
+        setTasks([]);
+      })
       .finally(() => setLoading(false));
   }, [user?.id]);
 
@@ -32,7 +44,7 @@ export default function MyTasksPage() {
     const materialIds = currentPageTasks.map(t => t.task.materialId).join(',');
 
     if (materialIds) {
-      fetch(`/api/training/learned?userId=${user.id}&materialIds=${materialIds}`)
+      apiFetch(`/api/training/learned?userId=${user.id}&materialIds=${materialIds}`)
         .then(res => res.json())
         .then(data => {
           setLearnedMaterialIds(new Set(data.learnedMaterialIds || []));
@@ -56,111 +68,261 @@ export default function MyTasksPage() {
     }
   };
 
+  const getTypeConfig = (type: string) => {
+    const configs: Record<string, { icon: any; label: string; color: string; bgColor: string }> = {
+      video: { 
+        icon: Film, 
+        label: '视频课程', 
+        color: 'text-purple-600', 
+        bgColor: 'bg-purple-50/80 border-purple-100' 
+      },
+      pdf: { 
+        icon: FileText, 
+        label: 'PDF', 
+        color: 'text-rose-600', 
+        bgColor: 'bg-rose-50/80 border-rose-100' 
+      },
+    };
+    return configs[type] || { 
+      icon: FileText, 
+      label: type.toUpperCase(), 
+      color: 'text-slate-600', 
+      bgColor: 'bg-slate-50/80 border-slate-100' 
+    };
+  };
+
+  const formatDeadline = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffDays = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return { text: '已过期', color: 'text-red-600', urgent: true };
+    if (diffDays === 0) return { text: '今天到期', color: 'text-orange-600', urgent: true };
+    if (diffDays === 1) return { text: '明天到期', color: 'text-orange-600', urgent: true };
+    if (diffDays <= 3) return { text: `${diffDays}天后到期`, color: 'text-orange-600', urgent: true };
+    if (diffDays <= 7) return { text: `${diffDays}天后到期`, color: 'text-slate-600', urgent: false };
+    return { text: date.toLocaleDateString(), color: 'text-slate-500', urgent: false };
+  };
+
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <h2 className="text-2xl font-bold mb-8 text-slate-800">我的学习任务</h2>
+    <div className="min-h-screen bg-[#F8FAFC]">
+      <div className="max-w-6xl mx-auto px-8 py-10">
+        {/* Header */}
+        <div className="mb-10">
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight mb-2">我的学习任务</h1>
+          <p className="text-slate-500 text-sm font-medium">完成您的培训任务并追踪学习进度</p>
+        </div>
 
-      {loading ? (
-        <div className="text-center py-10 text-slate-400">加载中...</div>
-      ) : tasks.length === 0 ? (
-        <div className="text-center py-10 text-slate-400">暂无学习任务</div>
-      ) : (
-        <>
-          <div className="grid gap-4 mb-6">
-            {currentPageTasks.map(t => {
-              const isPassed = t.status === 'passed';
-              const isCompleted = t.status === 'completed';
-              const hasExam = t.task.material.isExamRequired;
-              const isLearned = learnedMaterialIds.has(t.task.materialId);
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-24">
+            <div className="w-12 h-12 border-3 border-slate-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+            <p className="text-slate-500 font-medium">加载中...</p>
+          </div>
+        ) : tasks.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 py-24 shadow-sm">
+            <div className="text-center">
+              <Clock className="mx-auto text-slate-300 mb-4" size={64} />
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">暂无学习任务</h3>
+              <p className="text-slate-500 font-medium">当前没有待完成的学习任务</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Tasks List */}
+            <div className="space-y-4 mb-8">
+              {currentPageTasks.map(t => {
+                const isPassed = t.status === 'passed';
+                const isFailed = t.status === 'failed';
+                const hasExam = t.task.material.isExamRequired;
+                const isLearned = learnedMaterialIds.has(t.task.materialId);
+                const typeConfig = getTypeConfig(t.task.material.type);
+                const TypeIcon = typeConfig.icon;
+                const deadline = formatDeadline(t.task.endDate);
 
-              return (
-                <div key={t.id} className="bg-white p-6 rounded-xl border shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
-                  <div>
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className={`px-2 py-0.5 rounded text-xs font-bold border ${
-                        t.task.material.type === 'video' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-orange-50 text-orange-600 border-orange-200'
-                      }`}>
-                        {t.task.material.type.toUpperCase()}
-                      </span>
-                      <h3 className="font-bold text-lg text-slate-800">{t.task.title}</h3>
-                      {isLearned && (
-                        <span title="已学习">
-                          <CheckCircle size={18} className="text-green-600" />
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-sm text-slate-500 flex items-center gap-4">
-                      <span>截止日期: {new Date(t.task.endDate).toLocaleDateString()}</span>
-                      <span>{hasExam ? `需考试 (≥${t.task.material.passingScore}分)` : '无需考试'}</span>
+                return (
+                  <div 
+                    key={t.id} 
+                    className="group bg-white p-6 rounded-2xl border border-slate-200 
+                      hover:shadow-[0_10px_30px_-5px_rgba(0,0,0,0.08)] hover:border-slate-300 
+                      transition-all duration-300"
+                  >
+                    <div className="flex items-start justify-between gap-6">
+                      {/* Left: Content */}
+                      <div className="flex-1 min-w-0">
+                        {/* Title & Badges */}
+                        <div className="flex items-start gap-3 mb-3">
+                          {/* Type Badge */}
+                          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${typeConfig.bgColor} flex-shrink-0`}>
+                            <TypeIcon size={13} className={typeConfig.color} />
+                            <span className={`text-xs font-semibold ${typeConfig.color}`}>
+                              {typeConfig.label}
+                            </span>
+                          </div>
+                          
+                          {/* Title */}
+                          <h3 className="font-bold text-lg text-slate-900 leading-snug flex-1">
+                            {t.task.title}
+                          </h3>
+
+                          {/* Learned Badge */}
+                          {isLearned && (
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-100 flex-shrink-0">
+                              <CheckCircle size={13} />
+                              <span className="text-xs font-semibold">已学习</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Meta Info */}
+                        <div className="flex items-center gap-5 text-sm">
+                          {/* Deadline */}
+                          <div className={`flex items-center gap-1.5 font-medium ${deadline.color}`}>
+                            <Calendar size={14} />
+                            <span>{deadline.text}</span>
+                            {deadline.urgent && (
+                              <AlertCircle size={14} className="text-orange-500" />
+                            )}
+                          </div>
+
+                          {/* Exam Info */}
+                          {hasExam && (
+                            <div className="flex items-center gap-1.5 text-slate-600 font-medium">
+                              <Award size={14} />
+                              <span>需考试 (≥{t.task.material.passingScore}分)</span>
+                            </div>
+                          )}
+
+                          {/* Progress */}
+                          {!isPassed && (
+                            <div className="text-slate-500 font-medium">
+                              进度: {t.progress}%
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Progress Bar */}
+                        {!isPassed && t.progress > 0 && (
+                          <div className="mt-4 w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div 
+                              className="bg-gradient-to-r from-blue-600 to-indigo-600 h-full rounded-full transition-all duration-500"
+                              style={{ width: `${t.progress}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right: Status & Action */}
+                      <div className="flex items-center gap-4 flex-shrink-0">
+                        {/* Status */}
+                        <div className="text-right min-w-[80px]">
+                          <div className={`font-bold text-sm mb-1 ${
+                            isPassed ? 'text-emerald-600' : 
+                            isFailed ? 'text-red-600' : 
+                            'text-slate-600'
+                          }`}>
+                            {isPassed ? '已完成' : isFailed ? '考试未通过' : '进行中'}
+                          </div>
+                        </div>
+
+                        {/* Action Button */}
+                        {isPassed ? (
+                          <button 
+                            disabled 
+                            className="px-5 py-2.5 bg-emerald-50 text-emerald-700 rounded-lg 
+                              font-semibold flex items-center gap-2 cursor-default border border-emerald-200"
+                          >
+                            <CheckCircle size={18} />
+                            <span>已通过</span>
+                          </button>
+                        ) : (
+                          <Link 
+                            href={`/training/learn/${t.id}`} 
+                            className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 
+                              text-white rounded-lg font-semibold flex items-center gap-2 
+                              hover:from-blue-700 hover:to-indigo-700 active:scale-[0.98]
+                              shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30
+                              transition-all duration-200"
+                          >
+                            <PlayCircle size={18} />
+                            <span>{t.progress > 0 ? '继续学习' : '开始学习'}</span>
+                          </Link>
+                        )}
+                      </div>
                     </div>
                   </div>
+                );
+              })}
+            </div>
 
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <div className={`font-bold ${isPassed ? 'text-green-600' : 'text-slate-600'}`}>
-                        {isPassed ? '已完成' : t.status === 'failed' ? '考试未通过' : '进行中'}
-                      </div>
-                      {!isPassed && <div className="text-xs text-slate-400">进度: {t.progress}%</div>}
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-slate-600 font-medium">
+                    显示 <span className="font-bold text-slate-900">{startIndex + 1}</span> - 
+                    <span className="font-bold text-slate-900"> {Math.min(endIndex, tasks.length)}</span> 条，
+                    共 <span className="font-bold text-slate-900">{tasks.length}</span> 条
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => goToPage(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className="p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 
+                        disabled:opacity-40 disabled:cursor-not-allowed transition-all 
+                        active:scale-95 hover:border-slate-300"
+                    >
+                      <ChevronLeft size={18} className="text-slate-600" />
+                    </button>
+                    
+                    <div className="flex gap-1.5">
+                      {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                        let page;
+                        if (totalPages <= 7) {
+                          page = i + 1;
+                        } else if (currentPage <= 4) {
+                          page = i + 1;
+                        } else if (currentPage >= totalPages - 3) {
+                          page = totalPages - 6 + i;
+                        } else {
+                          page = currentPage - 3 + i;
+                        }
+                        
+                        return (
+                          <button
+                            key={page}
+                            onClick={() => goToPage(page)}
+                            className={`
+                              min-w-[38px] px-3.5 py-2 rounded-lg font-semibold text-sm 
+                              transition-all duration-200 border
+                              ${currentPage === page 
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/30 scale-105' 
+                                : 'border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 active:scale-95'
+                              }
+                            `}
+                          >
+                            {page}
+                          </button>
+                        );
+                      })}
                     </div>
-
-                    {isPassed ? (
-                      <button disabled className="px-6 py-2 bg-green-100 text-green-700 rounded-lg font-bold flex items-center gap-2 cursor-default">
-                        <CheckCircle size={20}/> 通过
-                      </button>
-                    ) : (
-                      <Link href={`/training/learn/${t.id}`} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold flex items-center gap-2 hover:bg-blue-700 shadow-lg shadow-blue-200">
-                        <PlayCircle size={20}/> {t.progress > 0 ? '继续学习' : '开始学习'}
-                      </Link>
-                    )}
+                    
+                    <button
+                      onClick={() => goToPage(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      className="p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 
+                        disabled:opacity-40 disabled:cursor-not-allowed transition-all 
+                        active:scale-95 hover:border-slate-300"
+                    >
+                      <ChevronRight size={18} className="text-slate-600" />
+                    </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-
-          {/* 分页控件 */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2">
-              <button
-                onClick={() => goToPage(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="p-2 rounded-lg border hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft size={20} />
-              </button>
-              
-              <div className="flex gap-1">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                  <button
-                    key={page}
-                    onClick={() => goToPage(page)}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      currentPage === page
-                        ? 'bg-blue-600 text-white'
-                        : 'border hover:bg-slate-50'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                ))}
               </div>
-              
-              <button
-                onClick={() => goToPage(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="p-2 rounded-lg border hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ChevronRight size={20} />
-              </button>
-            </div>
-          )}
-
-          {/* 显示当前页信息 */}
-          <div className="text-center text-sm text-slate-500 mt-4">
-            显示 {startIndex + 1}-{Math.min(endIndex, tasks.length)} 条，共 {tasks.length} 条
-          </div>
-        </>
-      )}
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

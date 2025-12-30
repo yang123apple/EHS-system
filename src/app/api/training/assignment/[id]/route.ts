@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { withAuth } from '@/middleware/auth';
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withAuth<{ params: Promise<{ id: string }> }>(async (req, context, user) => {
+  const { params } = context;
   try {
     const { id } = await params;
     const assignment = await prisma.trainingAssignment.findUnique({
@@ -23,9 +25,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   } catch (error) {
     return NextResponse.json({ error: 'Failed' }, { status: 500 });
   }
-}
+});
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withAuth<{ params: Promise<{ id: string }> }>(async (req, context, user) => {
+  const { params } = context;
   try {
     const { id } = await params; // Assignment ID
     const body = await req.json();
@@ -81,4 +84,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     console.error(error);
     return NextResponse.json({ error: 'Update failed' }, { status: 500 });
   }
-}
+});

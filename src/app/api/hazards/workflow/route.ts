@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import type { HazardWorkflowConfig } from '@/types/hidden-danger';
+import { withErrorHandling, withAuth, withAdmin } from '@/middleware/auth';
 
 const WORKFLOW_FILE = path.join(process.cwd(), 'data', 'hazard-workflow.json');
 
@@ -78,8 +79,8 @@ async function ensureWorkflowFile() {
  * GET /api/hazards/workflow
  * 获取工作流配置
  */
-export async function GET() {
-  try {
+export const GET = withErrorHandling(
+  withAuth(async (req: NextRequest, context, user) => {
     await ensureWorkflowFile();
     const data = await fs.readFile(WORKFLOW_FILE, 'utf-8');
     const config: HazardWorkflowConfig = JSON.parse(data);
@@ -88,26 +89,19 @@ export async function GET() {
       success: true,
       data: config
     });
-  } catch (error) {
-    console.error('Failed to load workflow config:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to load workflow configuration'
-      },
-      { status: 500 }
-    );
-  }
-}
+  })
+);
 
 /**
  * POST /api/hazards/workflow
  * 保存工作流配置
  */
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { config, userId, userName } = body;
+export const POST = withErrorHandling(
+  withAdmin(async (req: NextRequest, context, user) => {
+    const body = await req.json();
+    const { config } = body;
+    const userId = user.id;
+    const userName = user.name;
     
     if (!config || !config.steps) {
       return NextResponse.json(
@@ -146,14 +140,5 @@ export async function POST(request: NextRequest) {
       data: validatedConfig,
       message: '工作流配置已保存'
     });
-  } catch (error) {
-    console.error('Failed to save workflow config:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to save workflow configuration'
-      },
-      { status: 500 }
-    );
-  }
-}
+  })
+);

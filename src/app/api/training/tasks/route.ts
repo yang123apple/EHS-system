@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
 
-export async function GET(req: NextRequest) {
-  try {
+export const GET = withErrorHandling(
+  withAuth(async (req: NextRequest, context, user) => {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('userId');
 
@@ -30,13 +31,11 @@ export async function GET(req: NextRequest) {
       }
     });
     return NextResponse.json(tasks);
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch tasks' }, { status: 500 });
-  }
-}
+  })
+);
 
-export async function POST(req: NextRequest) {
-  try {
+export const POST = withErrorHandling(
+  withPermission('training', 'create_task', async (req: NextRequest, context, user) => {
     const body = await req.json();
     const { title, description, startDate, endDate, materialId, publisherId, targetType, targetConfig } = body;
 
@@ -65,9 +64,9 @@ export async function POST(req: NextRequest) {
       const allDepts = await prisma.department.findMany();
 
       const getAllSubDeptIds = (parentIds: string[]): string[] => {
-          const children = allDepts.filter(d => d.parentId && parentIds.includes(d.parentId)).map(d => d.id);
-          if (children.length === 0) return parentIds;
-          return [...parentIds, ...getAllSubDeptIds(children)];
+        const children = allDepts.filter(d => d.parentId && parentIds.includes(d.parentId)).map(d => d.id);
+        if (children.length === 0) return parentIds;
+        return [...parentIds, ...getAllSubDeptIds(children)];
       };
 
       const finalDeptIds = getAllSubDeptIds(targetConfig);
@@ -84,36 +83,41 @@ export async function POST(req: NextRequest) {
 
     // Batch create assignments
     if (userIds.length > 0) {
-       await Promise.all(userIds.map(uid =>
-         prisma.trainingAssignment.create({
-           data: {
-              taskId: task.id,
-              userId: uid,
-              status: 'assigned',
-              progress: 0,
-              isPassed: false
-           }
-         })
-       ));
+      await Promise.all(userIds.map(uid =>
+        prisma.trainingAssignment.create({
+          data: {
+            taskId: task.id,
+            userId: uid,
+            status: 'assigned',
+            progress: 0,
+            isPassed: false
+          }
+        })
+      ));
 
-       // Create Notifications
-       await Promise.all(userIds.map(uid =>
-          prisma.notification.create({
-            data: {
-                userId: uid,
-                type: 'training_assigned',
-                title: '新培训任务',
-                content: `您有新的培训任务：${title}，请及时完成。`,
-                relatedType: 'training_task',
-                relatedId: task.id
-            }
-          })
-       ));
+      // Create Notifications
+      await Promise.all(userIds.map(uid =>
+        prisma.notification.create({
+          data: {
+            userId: uid,
+            type: 'training_assigned',
+            title: '新培训任务',
+            content: `您有新的培训任务：${title}，请及时完成。`,
+            relatedType: 'training_task',
+            relatedId: task.id
+          }
+        })
+      ));
     }
 
+    // 记录操作日志
+    await logApiOperation(user, 'training', 'create_task', {
+      taskId: task.id,
+      title: task.title,
+      targetType,
+      assignedUsers: userIds.length
+    });
+
     return NextResponse.json(task);
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Failed to create task' }, { status: 500 });
-  }
-}
+  })
+);

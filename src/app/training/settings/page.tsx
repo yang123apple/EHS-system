@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Save, RefreshCw, AlertCircle, Settings, Droplet, X, Plus } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
+import { apiFetch } from '@/lib/apiClient';
 
 export default function TrainingSettingsPage() {
   const { user } = useAuth();
@@ -24,7 +25,7 @@ export default function TrainingSettingsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch('/api/training/settings')
+    apiFetch('/api/training/settings')
       .then(res => res.json())
       .then(data => {
         setCategories(data.categories || []);
@@ -51,7 +52,7 @@ export default function TrainingSettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/training/settings', {
+      const res = await apiFetch('/api/training/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -64,7 +65,8 @@ export default function TrainingSettingsPage() {
       if (res.ok) {
         alert('保存成功');
       } else {
-        alert('保存失败');
+        const error = await res.json().catch(() => ({ error: '保存失败' }));
+        alert(error.error || '保存失败');
       }
     } catch (error) {
       console.error(error);
@@ -75,36 +77,50 @@ export default function TrainingSettingsPage() {
   };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <div className="flex items-center gap-3 mb-8">
-        <Settings className="text-blue-600" size={32} />
-        <h2 className="text-2xl font-bold text-slate-800">培训系统设置</h2>
-      </div>
-
-      {/* 水印设置 */}
-      <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Droplet className="text-blue-600" size={24} />
-          <h3 className="text-lg font-bold">水印设置</h3>
+    <div className="min-h-screen bg-[#F8FAFC]">
+      <div className="max-w-7xl mx-auto px-8 py-10">
+        {/* Header */}
+        <div className="mb-10">
+          <div className="flex items-center gap-4 mb-3">
+            <div className="p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg shadow-blue-500/20">
+              <Settings className="text-white" size={26} />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">培训系统设置</h1>
+              <p className="text-slate-500 text-sm mt-1.5 font-medium">配置学习类型和水印设置</p>
+            </div>
+          </div>
         </div>
-        <p className="text-sm text-slate-600 mb-6">
-          配置学习内容的水印文本和显示状态。
-        </p>
+
+        {/* 水印设置 */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-50 rounded-lg">
+              <Droplet className="text-blue-600" size={20} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800">水印设置</h3>
+          </div>
+          <p className="text-sm text-slate-600 mb-6">
+            配置学习内容的水印文本和显示状态。
+          </p>
 
         {loading ? (
-          <div className="text-center py-8 text-slate-400">加载中...</div>
+          <div className="text-center py-12 text-slate-400 flex items-center justify-center gap-2">
+            <RefreshCw size={20} className="animate-spin" />
+            <span>加载中...</span>
+          </div>
         ) : (
           <>
             <div className="space-y-4 mb-6">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 mb-4">
                 <input
                   type="checkbox"
                   id="watermarkEnabled"
                   checked={watermarkEnabled}
                   onChange={e => setWatermarkEnabled(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 border-slate-300"
                 />
-                <label htmlFor="watermarkEnabled" className="font-medium text-slate-700">
+                <label htmlFor="watermarkEnabled" className="font-medium text-slate-700 cursor-pointer">
                   启用水印
                 </label>
               </div>
@@ -118,10 +134,10 @@ export default function TrainingSettingsPage() {
                   value={watermarkText}
                   onChange={e => setWatermarkText(e.target.value)}
                   placeholder="输入水印文本（支持 {username} 和 {name} 变量）"
-                  className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors disabled:bg-slate-100 disabled:cursor-not-allowed"
                   disabled={!watermarkEnabled}
                 />
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-slate-500 mt-2">
                   提示：可使用 {'{username}'} 显示用户名，{'{name}'} 显示姓名
                 </p>
               </div>
@@ -130,27 +146,35 @@ export default function TrainingSettingsPage() {
         )}
       </div>
 
-      {/* 学习类型管理 */}
-      <div className="bg-white rounded-xl shadow-sm border p-6">
-        <h3 className="text-lg font-bold mb-4">学习类型管理</h3>
-        <p className="text-sm text-slate-600 mb-6">
-          设置可用的学习内容类型，这些类型将在上传学习内容时供选择。
-        </p>
+        {/* 学习类型管理 */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-indigo-50 rounded-lg">
+              <Settings className="text-indigo-600" size={20} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800">学习类型管理</h3>
+          </div>
+          <p className="text-sm text-slate-600 mb-6">
+            设置可用的学习内容类型，这些类型将在上传学习内容时供选择。
+          </p>
 
         {loading ? (
-          <div className="text-center py-8 text-slate-400">加载中...</div>
+          <div className="text-center py-12 text-slate-400 flex items-center justify-center gap-2">
+            <RefreshCw size={20} className="animate-spin" />
+            <span>加载中...</span>
+          </div>
         ) : (
           <>
             <div className="space-y-3 mb-6">
               {categories.map(cat => (
                 <div
                   key={cat}
-                  className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
+                  className="flex items-center justify-between p-3.5 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
                 >
                   <span className="font-medium text-slate-700">{cat}</span>
                   <button
                     onClick={() => handleRemoveCategory(cat)}
-                    className="text-red-500 hover:bg-red-50 p-2 rounded transition-colors"
+                    className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors hover:text-red-600"
                     title="删除"
                   >
                     <X size={18} />
@@ -169,27 +193,38 @@ export default function TrainingSettingsPage() {
                 onChange={e => setNewCategory(e.target.value)}
                 onKeyPress={e => e.key === 'Enter' && handleAddCategory()}
                 placeholder="输入新类型名称"
-                className="flex-1 border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               />
               <button
                 onClick={handleAddCategory}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors"
+                className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm hover:shadow-md"
               >
-                <Plus size={20} /> 添加
+                <Plus size={18} /> 添加
               </button>
             </div>
 
-            <div className="flex justify-end pt-6 border-t">
+            <div className="flex justify-end pt-6 border-t border-slate-200">
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 transition-colors disabled:opacity-50"
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-8 py-2.5 rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md flex items-center gap-2"
               >
-                {saving ? '保存中...' : '保存设置'}
+                {saving ? (
+                  <>
+                    <RefreshCw size={18} className="animate-spin" />
+                    保存中...
+                  </>
+                ) : (
+                  <>
+                    <Save size={18} />
+                    保存设置
+                  </>
+                )}
               </button>
             </div>
           </>
         )}
+        </div>
       </div>
     </div>
   );

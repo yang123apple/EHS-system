@@ -34,47 +34,36 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
         workflowService.getRules()
       ]);
 
-      if (hData.data) {
-          // Server returned paginated structure
-          setHazards(hData.data);
-          // We might not get total count of *filtered* items unless we pass filters.
-          // For now let's assume filtering happens on server or we accept client filtering on the page.
-          // But wait, existing logic uses `filteredHazards`.
-          // If we set `hazards` to just one page, `filteredHazards` will only contain that page's filtered items.
-          // This changes behavior significantly.
-
-          // FOR NOW: Let's fetch all if we are relying on complex client-side filtering,
-          // OR if we are confident we can do basic pagination.
-          // The prompt explicitly asked for pagination in "Hazard Investigation > Hazard Center > Latest Reports".
-          // This implies we don't need to load EVERYTHING.
-
-          // Let's keep it simple: If we use server pagination, we assume client filters are meant for the *fetched* dataset
-          // OR we accept that we only see top N items.
-
-          // Actually, `useHazardData` is used by `HiddenDangerPage`.
-          // `filteredHazards` is derived.
-
-          // Let's stick to client-side slicing for `filteredHazards` BUT fetch all data?
-          // No, that defeats the purpose.
-
-          // Strategy: Update `fetchData` to support optional pagination.
-          // If we want real optimization, we should fetch paginated data.
-          // But to do that correctly, we'd need to move filters to API.
-          // I will implement fetching paginated data.
-
-          // If API returns { data, meta }, use it.
-          setHazards(hData.data);
-          setTotalCount(hData.meta.total);
+      // Handle different API response structures
+      if (hData && typeof hData === 'object') {
+          if (hData.data && Array.isArray(hData.data)) {
+              // Paginated response: { data: [], meta: { total, page, ... } }
+              setHazards(hData.data);
+              setTotalCount(hData.meta?.total || hData.data.length);
+          } else if (Array.isArray(hData)) {
+              // Direct array response
+              setHazards(hData);
+              setTotalCount(hData.length);
+          } else {
+              // Unexpected structure (e.g., stats response { riskStats, recurringIssues })
+              // Set empty array to prevent filter errors
+              console.warn('Unexpected API response structure:', hData);
+              setHazards([]);
+              setTotalCount(0);
+          }
       } else {
-          // Fallback (API returned array)
-          setHazards(hData);
-          setTotalCount(hData.length);
+          // Fallback for any other case
+          setHazards([]);
+          setTotalCount(0);
       }
 
       setConfig(hConfig);
       setWorkflowRules({ ccRules: wRules.ccRules || [], planRules: wRules.emergencyPlanRules || [] });
     } catch (error) {
       console.error('获取数据失败:', error);
+      // Ensure hazards is always an array even on error
+      setHazards([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
@@ -89,6 +78,12 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
   // 'My Tasks' logic is now handled by Server.
   // We still keep 'canViewHazard' as a safety check on the client.
   const filteredHazards = useMemo(() => {
+    // Ensure hazards is an array before filtering
+    if (!Array.isArray(hazards)) {
+      console.warn('hazards is not an array:', hazards);
+      return [];
+    }
+    
     return hazards.filter(h => {
       // Permission check
       if (!canViewHazard(h, user)) {
