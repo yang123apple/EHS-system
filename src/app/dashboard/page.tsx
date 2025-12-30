@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
@@ -11,170 +12,213 @@ import {
   Settings,
   GraduationCap
 } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 export default function Dashboard() {
   const { user } = useAuth();
 
-  // 定义工作台模块，注意：每个模块必须增加一个 'key' 字段
-  // 这个 key 必须与 src/lib/mockDb.ts 中的 key 完全一致！
   const modules = [
     {
-      key: "work_permit", // ✅ 对应 mockDb.ts 里的 work_permit
+      key: "work_permit",
       title: "作业许可管理",
       description: "新建工程项目、办理动火/高处/有限空间等电子作业票",
       href: "/work-permit", 
-      icon: <FileSignature size={24} />,
-      color: "bg-orange-50 text-orange-600 border-orange-100",
-      hover: "hover:border-orange-300 hover:shadow-orange-100"
+      icon: <FileSignature size={20} />,
+      colorClass: "bg-orange-50 text-orange-600 border-orange-100",
+      borderHover: "group-hover:border-orange-200",
+      status: "进行中",
+      statusColor: "warning" as const
     },
     {
-      key: "hidden_danger", // ✅ 对应 mockDb.ts 里的 hidden_danger
-      title: "隐患排查治理", // 修改标题，去掉“开发中”
+      key: "hidden_danger",
+      title: "隐患排查治理",
       description: "随手拍隐患，整改全流程闭环管理",
-      href: "/hidden-danger", // ✅ 修改这里：指向真实页面
-      icon: <AlertTriangle size={24} />,
-      color: "bg-red-50 text-red-600 border-red-100",
-      hover: "hover:border-red-300 hover:shadow-red-100"
+      href: "/hidden-danger",
+      icon: <AlertTriangle size={20} />,
+      colorClass: "bg-red-50 text-red-600 border-red-100",
+      borderHover: "group-hover:border-red-200",
+      status: "需关注",
+      statusColor: "danger" as const
     },
     {
-      key: "doc_sys", // ✅ 对应 mockDb.ts 里的 doc_sys
+      key: "doc_sys",
       title: "ESH文档管理系统",
       description: "EHS 手册、程序文件与记录管理",
       href: "/docs", 
-      icon: <FolderOpen size={24} />,
-      color: "bg-indigo-50 text-indigo-600 border-indigo-100",
-      hover: "hover:border-indigo-300 hover:shadow-indigo-100"
+      icon: <FolderOpen size={20} />,
+      colorClass: "bg-indigo-50 text-indigo-600 border-indigo-100",
+      borderHover: "group-hover:border-indigo-200",
+      status: "已同步",
+      statusColor: "info" as const
     },
     {
-      key: "training", // ✅ 对应 mockDb.ts 里的 training
+      key: "training",
       title: "培训管理系统",
       description: "在线培训、考试管理与学习进度跟踪",
       href: "/training/my-tasks", 
-      icon: <GraduationCap size={24} />,
-      color: "bg-green-50 text-green-600 border-green-100",
-      hover: "hover:border-green-300 hover:shadow-green-100"
+      icon: <GraduationCap size={20} />,
+      colorClass: "bg-green-50 text-green-600 border-green-100",
+      borderHover: "group-hover:border-green-200",
+      status: "正常",
+      statusColor: "success" as const
     },
     {
-      key: "data_dashboard", // ✅ 对应 mockDb.ts 里的 data_dashboard (若 mockDb 中没有此 key，普通用户将不可见)
+      key: "data_dashboard",
       title: "EHS 数据看板 (开发中)",
       description: "实时监控安全生产指标与趋势分析",
       href: "#", 
-      icon: <BarChart3 size={24} />,
-      color: "bg-purple-50 text-purple-600 border-purple-100",
-      hover: "hover:border-purple-300 hover:shadow-purple-100"
+      icon: <BarChart3 size={20} />,
+      colorClass: "bg-purple-50 text-purple-600 border-purple-100",
+      borderHover: "group-hover:border-purple-200",
+      status: "Dev",
+      statusColor: "default" as const
     }
   ];
 
-  // ✅ 核心过滤逻辑：决定哪些卡片对当前用户可见
   const visibleModules = modules.filter(item => {
-      // 1. 超级管理员：无条件查看所有
       if (user?.role === 'admin') return true;
-
-      // 2. 普通用户：检查 permissions 对象
-      // 如果 user.permissions['key'] 存在（即使是空数组 []），说明启用了该子系统
-      // 如果 user.permissions['key'] 是 undefined，说明该子系统被禁用（不可见）
       return user?.permissions && user.permissions[item.key] !== undefined;
   });
 
   return (
-    <div className="space-y-6 sm:space-y-8 animate-fade-in">
-      {/* 顶部欢迎区 */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+    <div className="space-y-8 animate-fade-in">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 flex items-center gap-2">
-            <ShieldCheck className="text-hytzer-blue w-6 h-6 sm:w-8 sm:h-8"/> 
-            <span className="hidden sm:inline">EHS 安全管理工作台</span>
-            <span className="sm:hidden">EHS 工作台</span>
+          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
+            <ShieldCheck className="text-blue-700 w-8 h-8"/>
+            <span>EHS 安全管理工作台</span>
           </h1>
-          <p className="text-slate-500 mt-1 text-sm sm:text-base">欢迎回来，{user?.name || '用户'}，请选择您要处理的业务模块</p>
+          <p className="text-slate-500 mt-2 text-base">欢迎回来，{user?.name || '用户'}，请选择您要处理的业务模块</p>
         </div>
-        <div className="text-xs sm:text-sm text-slate-400 font-mono">
+        <div className="text-sm text-slate-400 font-mono bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
            {new Date().toLocaleDateString()}
         </div>
       </div>
 
-      {/* 核心功能入口 Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+      {/* Bento Grid / Module Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         
-        {/* 1. 渲染筛选后的模块 */}
         {visibleModules.map((item) => (
           <Link 
             key={item.key} 
             href={item.href}
-            className={`
-              relative group p-4 sm:p-6 rounded-xl border bg-white shadow-sm transition-all duration-300
-              ${item.hover}
-            `}
+            className="group block h-full"
           >
-            <div className="flex items-start justify-between mb-3 sm:mb-4">
-              <div className={`p-2 sm:p-3 rounded-lg ${item.color}`}>
-                {item.icon}
-              </div>
-              <ArrowRight className="text-slate-300 group-hover:text-slate-500 group-hover:translate-x-1 transition-transform" size={18}/>
-            </div>
-            
-            <h3 className="text-base sm:text-lg font-bold text-slate-800 mb-1 sm:mb-2 group-hover:text-hytzer-blue transition-colors">
-              {item.title}
-            </h3>
-            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
-              {item.description}
-            </p>
+            <Card className={cn(
+                "h-full transition-all duration-300 hover:shadow-lg hover:-translate-y-1 bg-white border-slate-200 relative overflow-hidden",
+                item.borderHover
+            )}>
+                <CardContent className="p-6 flex flex-col h-full">
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-4">
+                        <div className={cn("p-2.5 rounded-lg border", item.colorClass)}>
+                            {item.icon}
+                        </div>
+                        <Badge variant={item.statusColor} className="shadow-none">
+                            {item.status}
+                        </Badge>
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 mb-2 group-hover:text-blue-700 transition-colors">
+                            {item.title}
+                        </h3>
+                        <p className="text-sm text-slate-500 leading-relaxed">
+                            {item.description}
+                        </p>
+                    </div>
+
+                    {/* Footer / Action Hint */}
+                    <div className="mt-6 pt-4 border-t border-slate-50 flex items-center justify-between text-xs font-medium text-slate-400 group-hover:text-slate-600">
+                        <span>进入模块</span>
+                        <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                    </div>
+                </CardContent>
+            </Card>
           </Link>
         ))}
 
-        {/* 如果没有任何模块权限，显示提示 */}
         {visibleModules.length === 0 && user?.role !== 'admin' && (
-            <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300 text-slate-400">
-                暂无任何系统访问权限，请联系管理员分配。
+            <div className="col-span-full py-16 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-300 text-slate-400">
+                <ShieldCheck size={48} className="mx-auto mb-4 text-slate-300" />
+                <p>暂无任何系统访问权限，请联系管理员分配。</p>
             </div>
         )}
 
-        {/* 2. 管理员专属卡片 (硬编码逻辑，始终只对 admin 可见) */}
+        {/* Admin Card */}
         {user?.role === 'admin' && (
-           <Link href="/admin/account" className="group block">
-             <div className="bg-slate-800 rounded-xl shadow-sm border border-slate-700 p-4 sm:p-6 transition-all duration-300 hover:shadow-lg hover:border-hytzer-blue hover:-translate-y-1 h-full relative overflow-hidden">
-               <div className="absolute -right-4 -top-4 w-24 h-24 bg-hytzer-blue/20 rounded-full blur-xl"></div>
+           <Link href="/admin/account" className="group block h-full">
+             <Card className="h-full bg-slate-900 border-slate-800 hover:border-blue-700/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden">
+               {/* Background Glow */}
+               <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
                
-               <div className="flex items-start justify-between relative z-10 mb-3 sm:mb-4">
-                 <div className="bg-slate-700 p-2 sm:p-3 rounded-lg">
-                   <Settings className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-                 </div>
-                 <span className="bg-hytzer-blue text-white text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded font-bold tracking-wider">ADMIN</span>
-               </div>
-               
-               <h3 className="text-base sm:text-lg font-bold text-white group-hover:text-hytzer-blue transition-colors relative z-10 mb-1 sm:mb-2">
-                 账户管理系统
-               </h3>
-               <p className="text-xs sm:text-sm text-slate-400 relative z-10 leading-relaxed">
-                 仅管理员可见：管理员工账号、部门架构及权限配置。
-               </p>
-             </div>
+               <CardContent className="p-6 flex flex-col h-full relative z-10">
+                   <div className="flex items-start justify-between mb-4">
+                     <div className="bg-slate-800 p-2.5 rounded-lg border border-slate-700 text-blue-400">
+                       <Settings size={20} />
+                     </div>
+                     <Badge className="bg-blue-900/50 text-blue-400 border-blue-800 hover:bg-blue-900/70">ADMIN</Badge>
+                   </div>
+
+                   <div className="flex-1">
+                       <h3 className="text-lg font-bold text-white mb-2 group-hover:text-blue-400 transition-colors">
+                         账户管理系统
+                       </h3>
+                       <p className="text-sm text-slate-400 leading-relaxed">
+                         仅管理员可见：管理员工账号、部门架构及权限配置。
+                       </p>
+                   </div>
+
+                    <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between text-xs font-medium text-slate-500 group-hover:text-slate-300">
+                        <span>管理设置</span>
+                        <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                    </div>
+               </CardContent>
+             </Card>
            </Link>
         )}
-
       </div>
 
-      {/* 底部统计 */}
+      {/* Stats Section */}
       <div className="pt-8 border-t border-slate-100">
-        <h3 className="text-sm font-bold text-slate-400 uppercase mb-4">今日概览</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard label="进行中作业" value="3" unit="个" />
-            <StatCard label="待审批单据" value="12" unit="条" color="text-orange-600" />
-            <StatCard label="本月隐患" value="0" unit="起" color="text-green-600" />
-            <StatCard label="在线人员" value="45" unit="人" />
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-6">实时概览</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <StatCard label="进行中作业" value="3" unit="个" icon={<FileSignature size={18} />} trend="+1" />
+            <StatCard label="待审批单据" value="12" unit="条" color="text-orange-600" icon={<AlertTriangle size={18} className="text-orange-500" />} />
+            <StatCard label="本月隐患" value="0" unit="起" color="text-green-600" icon={<ShieldCheck size={18} className="text-green-500" />} />
+            <StatCard label="在线人员" value="45" unit="人" icon={<UsersIcon size={18} className="text-blue-500" />} />
         </div>
       </div>
     </div>
   );
 }
 
-function StatCard({ label, value, unit, color = "text-slate-900" }: any) {
+import { Users as UsersIcon } from 'lucide-react';
+
+function StatCard({ label, value, unit, color = "text-slate-900", icon, trend }: any) {
     return (
-        <div className="bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-100">
-            <div className="text-xs text-slate-500 mb-1">{label}</div>
-            <div className={`text-xl sm:text-2xl font-bold ${color}`}>
-                {value} <span className="text-xs font-normal text-slate-400">{unit}</span>
-            </div>
-        </div>
+        <Card className="border-slate-100 shadow-sm hover:shadow bg-slate-50/50">
+            <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-slate-500">{label}</span>
+                    {icon && <div className="opacity-80">{icon}</div>}
+                </div>
+                <div className="flex items-end gap-2">
+                    <div className={`text-2xl font-bold ${color}`}>
+                        {value}
+                    </div>
+                    <span className="text-xs text-slate-400 mb-1 font-medium">{unit}</span>
+                    {trend && (
+                        <span className="ml-auto text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
+                            {trend}
+                        </span>
+                    )}
+                </div>
+            </CardContent>
+        </Card>
     )
 }

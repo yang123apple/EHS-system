@@ -1,8 +1,12 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/app/hidden-danger/_components/views/OverviewDashboard.tsx
 import { AlertTriangle, Clock, Plus, Inbox, Activity, CheckCircle2, Flame, Upload } from 'lucide-react';
 import { HazardCard } from '../HazardCard';
 import { HazardRecord } from '@/types/hidden-danger';
 import { CardSkeleton } from '@/components/common/Loading';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 interface OverviewDashboardProps {
   hazards: HazardRecord[];
@@ -13,84 +17,87 @@ interface OverviewDashboardProps {
 }
 
 export function OverviewDashboard({ hazards, onSelect, onReport, onBatchUpload, loading }: OverviewDashboardProps) {
-  // 统计逻辑提取
   const highRiskCount = hazards.filter(h => h.status === 'assigned' && (h.riskLevel === 'high' || h.riskLevel === 'major')).length;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 animate-fade-in">
       {/* 统计卡片区 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         <StatCard 
           label="待整改 (高风险)" 
           value={highRiskCount} 
-          icon={<Flame className="w-6 h-6 text-red-600" />}
+          icon={<Flame className="w-5 h-5 text-red-600" />}
           theme="danger"
         />
         <StatCard 
           label="整改中" 
           value={hazards.filter(h => h.status === 'rectifying').length}
-          icon={<Activity className="w-6 h-6 text-blue-600" />}
+          icon={<Activity className="w-5 h-5 text-blue-600" />}
           theme="primary"
         />
         <StatCard 
           label="待验收" 
           value={hazards.filter(h => h.status === 'verified').length}
-          icon={<Clock className="w-6 h-6 text-purple-600" />}
+          icon={<Clock className="w-5 h-5 text-purple-600" />}
           theme="purple"
         />
         <StatCard 
           label="已闭环" 
           value={hazards.filter(h => h.status === 'closed').length}
-          icon={<CheckCircle2 className="w-6 h-6 text-green-600" />}
+          icon={<CheckCircle2 className="w-5 h-5 text-green-600" />}
           theme="success"
         />
       </div>
 
       {/* 快捷操作与列表 */}
-      <div className="mt-4">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-slate-700 flex items-center gap-2">
-            <Clock size={18} /> 最新上报
+      <div className="mt-8">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <Clock size={20} className="text-slate-400" /> 最新上报
           </h3>
-          {/* 修改后的代码：仅在非空或加载中显示 */}
           {(loading || hazards.length > 0) && (
-            <div className="flex gap-2">
-              <button 
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
                 onClick={onBatchUpload} 
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"
+                className="gap-2 bg-white hover:bg-slate-50 border-slate-200 text-slate-700"
               >
-                <Upload size={18} /> 批量上传
-              </button>
-              <button 
+                <Upload size={16} /> 批量上传
+              </Button>
+              <Button
                 onClick={onReport} 
-                className="bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-red-700 transition-colors shadow-sm"
+                className="gap-2 bg-red-600 hover:bg-red-700 text-white shadow-sm border-transparent"
               >
-                <Plus size={18} /> 立即上报
-              </button>
+                <Plus size={16} /> 立即上报
+              </Button>
             </div>
           )}
         </div>
         
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
               <CardSkeleton key={i} />
             ))}
           </div>
         ) : hazards.length === 0 ? (
-          <div className="bg-white rounded-xl border p-12 flex flex-col items-center justify-center text-slate-400">
-            <Inbox size={64} className="mb-4" />
-            <p className="text-lg font-medium">暂无隐患记录</p>
-            <p className="text-sm mt-2 mb-6">开始上报第一条隐患吧</p>
-            <button 
-              onClick={onReport}
-              className="bg-red-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 hover:bg-red-700 transition-colors"
-            >
-              <Plus size={18} /> 立即上报
-            </button>
-          </div>
+          <Card className="border-dashed border-slate-300 bg-slate-50/50">
+             <CardContent className="flex flex-col items-center justify-center py-16 text-slate-400">
+                <div className="bg-white p-4 rounded-full shadow-sm mb-4">
+                    <Inbox size={48} className="text-slate-300" />
+                </div>
+                <p className="text-lg font-medium text-slate-600">暂无隐患记录</p>
+                <p className="text-sm mt-1 mb-6">开始上报第一条隐患吧</p>
+                <Button
+                  onClick={onReport}
+                  className="bg-red-600 hover:bg-red-700 gap-2"
+                >
+                  <Plus size={16} /> 立即上报
+                </Button>
+             </CardContent>
+          </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {hazards.slice(0, 6).map(h => (
               <HazardCard key={h.id} data={h} onClick={() => onSelect(h)} />
             ))}
@@ -111,65 +118,53 @@ interface StatCardProps {
 function StatCard({ label, value, icon, theme = 'primary' }: StatCardProps) {
   const themes = {
    danger: {
-      bg: 'bg-white',
-      text: 'text-slate-800',
-      iconBg: 'bg-red-50',        // 浅红色图标背景
-      labelColor: 'text-slate-500',
-      valueColor: 'text-red-600', // 红色数值突出风险
-      border: 'border border-red-100',
-      decorCircle: 'bg-red-50'    // 浅红色装饰圆环
+      border: 'border-red-100',
+      iconBg: 'bg-red-50',
+      text: 'text-red-600',
+      decor: 'bg-red-500/5'
     },
     primary: {
-      bg: 'bg-white',
-      text: 'text-slate-800',
+      border: 'border-blue-100',
       iconBg: 'bg-blue-50',
-      labelColor: 'text-slate-500',
-      valueColor: 'text-blue-600',
-      border: 'border border-blue-100',
-      decorCircle: 'bg-blue-50'
+      text: 'text-blue-600',
+      decor: 'bg-blue-500/5'
     },
     purple: {
-      bg: 'bg-white',
-      text: 'text-slate-800',
+      border: 'border-purple-100',
       iconBg: 'bg-purple-50',
-      labelColor: 'text-slate-500',
-      valueColor: 'text-purple-600',
-      border: 'border border-purple-100',
-      decorCircle: 'bg-purple-100'
+      text: 'text-purple-600',
+      decor: 'bg-purple-500/5'
     },
     success: {
-      bg: 'bg-white',
-      text: 'text-slate-800',
+      border: 'border-green-100',
       iconBg: 'bg-green-50',
-      labelColor: 'text-slate-500',
-      valueColor: 'text-green-600',
-      border: 'border border-green-100',
-      decorCircle: 'bg-green-50'
+      text: 'text-green-600',
+      decor: 'bg-green-500/5'
     }
   };
 
   const style = themes[theme];
 
   return (
-    <div className={`${style.bg} ${style.border} p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 relative overflow-hidden group`}>
-      {/* 装饰性背景圆环 */}
-      <div className={`absolute -right-6 -top-6 w-32 h-32 ${style.decorCircle} rounded-full opacity-50 group-hover:scale-110 transition-transform duration-500`} />
-      <div className={`absolute -right-2 -bottom-2 w-20 h-20 ${style.decorCircle} rounded-full opacity-30 group-hover:scale-110 transition-transform duration-500`} />
-      
-      {/* 内容区 */}
-      <div className="relative z-10">
-        <div className="flex items-center justify-between mb-4">
-          <div className={`${style.iconBg} p-3 rounded-xl backdrop-blur-sm`}>
-            {icon}
-          </div>
-        </div>
-        <div className={`${style.labelColor} text-sm font-medium mb-2 tracking-wide`}>
-          {label}
-        </div>
-        <div className={`${style.valueColor} text-3xl font-bold tracking-tight`}>
-          {value}
-        </div>
-      </div>
-    </div>
+    <Card className={cn("relative overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1 bg-white border", style.border)}>
+        {/* Background Decor */}
+        <div className={cn("absolute -right-6 -top-6 w-24 h-24 rounded-full pointer-events-none transition-transform duration-500 group-hover:scale-110", style.decor)} />
+
+        <CardContent className="p-6 relative z-10">
+            <div className="flex items-start justify-between mb-4">
+                <div className={cn("p-2.5 rounded-lg", style.iconBg)}>
+                    {icon}
+                </div>
+            </div>
+            <div>
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    {label}
+                </div>
+                <div className={cn("text-3xl font-bold tracking-tight", style.text)}>
+                    {value}
+                </div>
+            </div>
+        </CardContent>
+    </Card>
   );
 }
