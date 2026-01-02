@@ -35,15 +35,59 @@ export const GET = withErrorHandling(
       queryOptions.take = limit;
     }
 
-    const [docs, total] = await Promise.all([
-      prisma.document.findMany(queryOptions),
-      prisma.document.count({ where: whereCondition })
-    ]);
+      const [docs, total] = await Promise.all([
+        prisma.document.findMany({
+          ...queryOptions,
+          include: {
+            history: {
+              orderBy: { uploadTime: 'desc' }
+            }
+          }
+        }),
+        prisma.document.count({ where: whereCondition })
+      ]);
 
-    const safeDocs = docs.map(d => ({
-      ...d,
-      uploadTime: d.uploadTime.getTime()
-    }));
+      // 确保 docs 是数组
+      if (!Array.isArray(docs)) {
+        console.error('Prisma返回的数据不是数组:', docs);
+        throw new Error('数据库查询返回了无效的数据格式');
+      }
+
+      const safeDocs = docs.map((d: any) => {
+      // 转换历史版本格式以匹配前端期望
+      const history = ((d.history as any[]) || []).map((h: any) => ({
+        id: h.id,
+        type: h.type as 'docx' | 'xlsx' | 'pdf',
+        name: h.name || '未命名文件',
+        path: h.path,
+        uploadTime: h.uploadTime instanceof Date ? h.uploadTime.getTime() : new Date(h.uploadTime).getTime(),
+        uploader: h.uploader || ''
+      }));
+
+      // 确保所有字段都有默认值，避免undefined
+      // 清理 dept 字段：如果为 null、undefined 或字符串 "undefined"，则显示为 '未设置'
+      const cleanDept = (d.dept && d.dept !== 'undefined' && d.dept.trim() !== '') ? d.dept : '未设置';
+      
+      return {
+        id: d.id,
+        name: d.name || '未命名文档',
+        type: d.type || 'docx',
+        docxPath: d.docxPath || '',
+        pdfPath: d.pdfPath || null,
+        prefix: d.prefix || null,
+        suffix: d.suffix || null,
+        fullNum: d.fullNum || '',
+        level: d.level,
+        parentId: d.parentId || null,
+        dept: cleanDept,
+        uploader: d.uploader || '',
+        uploadTime: d.uploadTime instanceof Date ? d.uploadTime.getTime() : new Date(d.uploadTime).getTime(),
+        searchText: d.searchText || null,
+        createdAt: d.createdAt instanceof Date ? d.createdAt.getTime() : new Date(d.createdAt).getTime(),
+        updatedAt: d.updatedAt instanceof Date ? d.updatedAt.getTime() : new Date(d.updatedAt).getTime(),
+        history
+      };
+    });
 
     if (isPaginated) {
       return NextResponse.json({
@@ -99,7 +143,9 @@ export const POST = withErrorHandling(
 
     const level = parseInt(formData.get('level') as string);
     const parentId = formData.get('parentId') as string;
-    const dept = formData.get('dept') as string;
+    const deptRaw = formData.get('dept') as string | null;
+    // 清理 dept 字段：如果为 undefined、null 或字符串 "undefined"，则设置为 null
+    const dept = (deptRaw && deptRaw !== 'undefined' && deptRaw.trim() !== '') ? deptRaw : null;
     const uploader = formData.get('uploader') as string;
     const userInputPrefix = formData.get('prefix') as string;
 

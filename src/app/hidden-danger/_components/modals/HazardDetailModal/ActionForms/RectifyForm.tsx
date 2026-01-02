@@ -9,13 +9,24 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        setData(prev => ({ ...prev, photos: [...prev.photos, evt.target?.result as string] }));
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    
+    // 验证文件格式
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+    const fileExtension = file.name.toLowerCase().split('.').pop();
+    const allowedExtensions = ['jpg', 'jpeg', 'png'];
+    
+    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
+      alert('仅支持上传 JPG、PNG、JPEG 格式的照片');
+      e.target.value = ''; // 清空输入
+      return;
     }
+    
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      setData(prev => ({ ...prev, photos: [...prev.photos, evt.target?.result as string] }));
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleReject = () => {
@@ -41,7 +52,13 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
           ))}
           <label className="w-16 h-16 border-2 border-dashed border-blue-300 rounded flex flex-col items-center justify-center text-blue-400 cursor-pointer hover:bg-white transition-colors">
             <ImageIcon size={20}/>
-            <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+            <input 
+              type="file" 
+              accept="image/jpeg,image/jpg,image/png" 
+              capture="environment"
+              className="hidden" 
+              onChange={handlePhotoUpload} 
+            />
           </label>
         </div>
 

@@ -4,17 +4,25 @@ import Link from 'next/link';
 import { Plus, FileText, Video, Trash, CheckCircle, ChevronLeft, ChevronRight, Film, File, Edit, Eye, Upload as UploadIcon, Award } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { api, apiFetch } from '@/lib/apiClient';
+import { api, apiFetch, ApiError } from '@/lib/apiClient';
+import { PermissionManager } from '@/lib/permissions';
+import { useToast } from '@/components/common/Toast';
+import { toLocaleDateString } from '@/utils/dateUtils';
 
 const ITEMS_PER_PAGE = 10;
 
 export default function MaterialsPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const toast = useToast();
   
-  // 权限检查：admin或有上传学习内容权限的用户
+  // 权限检查：admin或拥有创建/编辑/删除培训资料权限（任一即可）
   const hasPermission = user?.role === 'admin' || 
-    (user?.permissions && JSON.parse(user.permissions).includes('upload_training_content'));
+    PermissionManager.hasAnyPermission(user, 'training', [
+      'create_material', 
+      'edit_material_self', 'edit_material_all',
+      'delete_material_self', 'delete_material_all'
+    ]);
   
   useEffect(() => {
     if (user && !hasPermission) {
@@ -66,11 +74,21 @@ export default function MaterialsPage() {
   const handleDelete = async (id: string) => {
       if (!confirm('确定删除该学习内容吗？')) return;
       try {
-        await api.delete(`/api/training/materials/${id}`);
-        setMaterials(materials.filter(m => m.id !== id));
+        const result = await api.delete(`/api/training/materials/${id}`);
+        // 只有成功响应后才更新列表
+        if (result?.success !== false) {
+          setMaterials(materials.filter(m => m.id !== id));
+          toast.success('删除成功', '学习内容已成功删除');
+        }
       } catch (error) {
         console.error('删除失败:', error);
-        alert('删除失败，请重试');
+        // 如果是 ApiError，显示后端返回的具体错误信息
+        if (error instanceof ApiError) {
+          toast.error('删除失败', error.message);
+        } else {
+          toast.error('删除失败', '请稍后重试');
+        }
+        // 确保删除失败时不更新列表状态
       }
   };
 
@@ -237,7 +255,7 @@ export default function MaterialsPage() {
                           </td>
                           <td className="px-6 py-4">
                             <span className="text-sm text-slate-600 font-medium">
-                              {new Date(m.createdAt).toLocaleDateString()}
+                              {toLocaleDateString(m.createdAt)}
                             </span>
                           </td>
                           <td className="px-6 py-4">
@@ -250,22 +268,38 @@ export default function MaterialsPage() {
                               >
                                 <Eye size={18} />
                               </Link>
-                              <Link
-                                href={`/training/materials/edit/${m.id}`}
-                                className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 
-                                  rounded-lg transition-all duration-200 active:scale-95"
-                                title="编辑"
-                              >
-                                <Edit size={18} />
-                              </Link>
-                              <button
-                                onClick={() => handleDelete(m.id)}
-                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 
-                                  rounded-lg transition-all duration-200 active:scale-95"
-                                title="删除"
-                              >
-                                <Trash size={18} />
-                              </button>
+                              {PermissionManager.canOperateResource(
+                                user,
+                                'training',
+                                'edit_material',
+                                m.uploader?.id,
+                                user?.id
+                              ) && (
+                                <Link
+                                  href={`/training/materials/edit/${m.id}`}
+                                  className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 
+                                    rounded-lg transition-all duration-200 active:scale-95"
+                                  title="编辑"
+                                >
+                                  <Edit size={18} />
+                                </Link>
+                              )}
+                              {PermissionManager.canOperateResource(
+                                user,
+                                'training',
+                                'delete_material',
+                                m.uploader?.id,
+                                user?.id
+                              ) && (
+                                <button
+                                  onClick={() => handleDelete(m.id)}
+                                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 
+                                    rounded-lg transition-all duration-200 active:scale-95"
+                                  title="删除"
+                                >
+                                  <Trash size={18} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

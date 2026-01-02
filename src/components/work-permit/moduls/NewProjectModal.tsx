@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { Hash, Paperclip, X, Briefcase } from 'lucide-react';
 import { ProjectService } from '@/services/workPermitService';
 import PeopleSelector from '@/components/common/PeopleSelector';
+import { useDateRange } from '@/hooks/useDateRange';
 
 interface Props {
   isOpen: boolean;
@@ -17,11 +18,12 @@ export default function NewProjectModal({ isOpen, onClose, onSuccess }: Props) {
   const [attachments, setAttachments] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 使用日期范围 Hook 自动处理开始和结束日期的关联
+  const { startDate, endDate, setStartDate, setEndDate, endDateMin } = useDateRange();
+  
   const [formData, setFormData] = useState({
     name: '',
     location: '',
-    startDate: '',
-    endDate: '',
     requestDept: '',     // 存储部门名称
     requestDeptId: '',   // 存储部门ID (可选，如果后端支持)
     supplierName: '',
@@ -60,10 +62,8 @@ export default function NewProjectModal({ isOpen, onClose, onSuccess }: Props) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const start = new Date(formData.startDate);
-    const end = new Date(formData.endDate);
-    if (end < start) {
-      alert("❌ 错误：结束日期不能早于开始日期！");
+    if (!startDate || !endDate) {
+      alert("❌ 错误：请选择开始日期和结束日期！");
       return;
     }
 
@@ -72,6 +72,8 @@ export default function NewProjectModal({ isOpen, onClose, onSuccess }: Props) {
       // 🟢 提交时带上 attachments
       await ProjectService.create({
         ...formData,
+        startDate,
+        endDate,
         attachments: attachments, 
       });
       alert("创建成功");
@@ -121,8 +123,8 @@ export default function NewProjectModal({ isOpen, onClose, onSuccess }: Props) {
               type="date"
               required
               className="w-full border rounded p-2"
-              value={formData.startDate}
-              onChange={e => setFormData({ ...formData, startDate: e.target.value })}
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
             />
           </div>
 
@@ -132,8 +134,9 @@ export default function NewProjectModal({ isOpen, onClose, onSuccess }: Props) {
               type="date"
               required
               className="w-full border rounded p-2"
-              value={formData.endDate}
-              onChange={e => setFormData({ ...formData, endDate: e.target.value })}
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              min={endDateMin}
             />
           </div>
 

@@ -453,6 +453,8 @@ export default function RecordDetailModal({
   const wmSettings = record.template.watermarkSettings || {
     text: '公司内部文件',
     enabled: true,
+    includeUser: false,
+    includeTime: false
   };
 
   // 回复处理函数
@@ -679,9 +681,14 @@ export default function RecordDetailModal({
   return (
     <div className={`fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm print:!block print:!static print:bg-white print:!p-0 print:!m-0 ${isMobile ? 'p-0' : 'p-4'}`}>
        {/* 🟢 水印层 - 移到最外层 */}
-       {wmSettings.enabled && (
+       {wmSettings.enabled && (wmSettings.text || wmSettings.includeUser || wmSettings.includeTime) && (
          <div className="absolute inset-0 pointer-events-none watermark-layer overflow-hidden z-[100]">
-           <Watermark text={wmSettings.text} />
+           <Watermark 
+             text={wmSettings.text || ''} 
+             includeUser={wmSettings.includeUser}
+             includeTime={wmSettings.includeTime}
+             user={user}
+           />
          </div>
        )}
        

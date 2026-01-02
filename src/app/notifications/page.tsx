@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Bell, CheckCheck, X, FileSignature, AlertTriangle, FileText, RefreshCw, Filter } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { apiFetch } from '@/lib/apiClient';
 
 interface Notification {
   id: string;
@@ -29,7 +30,7 @@ export default function NotificationsPage() {
     
     setLoading(true);
     try {
-      const res = await fetch(`/api/notifications?userId=${user.id}`);
+      const res = await apiFetch(`/api/notifications?userId=${user.id}`);
       if (res.ok) {
         const data = await res.json();
         setNotifications(data.notifications || []);
@@ -47,10 +48,9 @@ export default function NotificationsPage() {
     if (!user?.id) return;
 
     try {
-      const res = await fetch('/api/notifications', {
+      const res = await apiFetch('/api/notifications', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notificationIds, userId: user.id }),
+        body: { notificationIds, userId: user.id },
       });
 
       if (res.ok) {
@@ -87,6 +87,9 @@ export default function NotificationsPage() {
       window.location.href = `/work-permit?recordId=${notification.relatedId}`;
     } else if (notification.relatedType === 'hazard' && notification.relatedId) {
       window.location.href = `/hidden-danger?recordId=${notification.relatedId}`;
+    } else if ((notification.relatedType === 'training' || notification.relatedType === 'training_task') && notification.relatedId) {
+      // 培训任务通知跳转到我的任务页面（进行中标签页）
+      window.location.href = `/training/my-tasks`;
     }
   };
 

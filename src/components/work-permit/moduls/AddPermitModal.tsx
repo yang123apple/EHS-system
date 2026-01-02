@@ -49,7 +49,7 @@ export default function AddPermitModal({
 
   // --- 数据加载与初始化 ---
   useEffect(() => {
-    fetch('/api/templates')
+    apiFetch('/api/templates')
       .then(res => res.json())
       .then(data => setAllTemplates(data))
       .catch(err => console.error('加载模板失败:', err));

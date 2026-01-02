@@ -4,6 +4,7 @@ import { db } from '@/lib/mockDb';
 import { HazardRecord } from '@/types/hidden-danger';
 import { prisma } from '@/lib/prisma';
 import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
+import { setEndOfDay, extractDatePart, normalizeDate } from '@/utils/dateUtils';
 
 // 辅助：生成变更描述
 const generateChanges = (oldData: HazardRecord, newData: Partial<HazardRecord>) => {
@@ -20,13 +21,6 @@ const generateChanges = (oldData: HazardRecord, newData: Partial<HazardRecord>) 
   return changes.join('; ');
 };
 
-// 辅助：将日期字符串转换为当天的结束时间（23:59:59.999）
-function setEndOfDay(dateString: string): Date {
-  const date = new Date(dateString);
-  date.setHours(23, 59, 59, 999);
-  return date;
-}
-
 // 转换 Prisma HazardRecord 到前端 HazardRecord 类型
 function mapHazard(pHazard: any): HazardRecord {
   try {
@@ -38,14 +32,14 @@ function mapHazard(pHazard: any): HazardRecord {
       ccDepts: pHazard.ccDepts ? (typeof pHazard.ccDepts === 'string' ? JSON.parse(pHazard.ccDepts) : pHazard.ccDepts) : [],
       ccUsers: pHazard.ccUsers ? (typeof pHazard.ccUsers === 'string' ? JSON.parse(pHazard.ccUsers) : pHazard.ccUsers) : [],
       old_personal_ID: pHazard.old_personal_ID ? (typeof pHazard.old_personal_ID === 'string' ? JSON.parse(pHazard.old_personal_ID) : pHazard.old_personal_ID) : [],
-      reportTime: pHazard.reportTime instanceof Date ? pHazard.reportTime.toISOString() : pHazard.reportTime,
-      rectifyTime: pHazard.rectifyTime instanceof Date ? pHazard.rectifyTime.toISOString() : pHazard.rectifyTime,
-      verifyTime: pHazard.verifyTime instanceof Date ? pHazard.verifyTime.toISOString() : pHazard.verifyTime,
-      deadline: pHazard.deadline instanceof Date ? pHazard.deadline.toISOString() : pHazard.deadline,
-      emergencyPlanDeadline: pHazard.emergencyPlanDeadline instanceof Date ? pHazard.emergencyPlanDeadline.toISOString() : pHazard.emergencyPlanDeadline,
-      emergencyPlanSubmitTime: pHazard.emergencyPlanSubmitTime instanceof Date ? pHazard.emergencyPlanSubmitTime.toISOString() : pHazard.emergencyPlanSubmitTime,
-      createdAt: pHazard.createdAt instanceof Date ? pHazard.createdAt.toISOString() : pHazard.createdAt,
-      updatedAt: pHazard.updatedAt instanceof Date ? pHazard.updatedAt.toISOString() : pHazard.updatedAt,
+      reportTime: normalizeDate(pHazard.reportTime),
+      rectifyTime: normalizeDate(pHazard.rectifyTime),
+      verifyTime: normalizeDate(pHazard.verifyTime),
+      deadline: normalizeDate(pHazard.deadline),
+      emergencyPlanDeadline: normalizeDate(pHazard.emergencyPlanDeadline),
+      emergencyPlanSubmitTime: normalizeDate(pHazard.emergencyPlanSubmitTime),
+      createdAt: normalizeDate(pHazard.createdAt),
+      updatedAt: normalizeDate(pHazard.updatedAt),
     };
   } catch (error) {
     console.error('[mapHazard] 转换失败:', error, pHazard);
@@ -205,13 +199,7 @@ export const POST = withErrorHandling(
     }
     // 整改期限设置为当天的结束时间（23:59:59.999）
     if (processedData.deadline && typeof processedData.deadline === 'string') {
-      // 如果是 YYYY-MM-DD 格式（来自 date input），设置为当天结束时间
-      if (/^\d{4}-\d{2}-\d{2}$/.test(processedData.deadline)) {
-        processedData.deadline = setEndOfDay(processedData.deadline);
-      } else {
-        // 如果已经是完整的日期时间字符串，也设置为当天结束时间
-        processedData.deadline = setEndOfDay(processedData.deadline.split('T')[0]);
-      }
+      processedData.deadline = setEndOfDay(extractDatePart(processedData.deadline));
     }
     
     try {
@@ -300,6 +288,14 @@ export const PATCH = withErrorHandling(
       ...updates,
       logs: JSON.stringify(updatedLogs)
     };
+    
+    // 🔴 关键修复：确保 dopersonal_ID 和 dopersonal_Name 被保存
+    if (dopersonal_ID !== undefined) {
+      finalUpdates.dopersonal_ID = dopersonal_ID;
+    }
+    if (dopersonal_Name !== undefined) {
+      finalUpdates.dopersonal_Name = dopersonal_Name;
+    }
 
     // 处理数组字段
     if (photosInput !== undefined) {
@@ -317,13 +313,7 @@ export const PATCH = withErrorHandling(
 
     // 处理日期字段：整改期限设置为当天的结束时间（23:59:59.999）
     if (finalUpdates.deadline && typeof finalUpdates.deadline === 'string') {
-      // 如果是 YYYY-MM-DD 格式（来自 date input），设置为当天结束时间
-      if (/^\d{4}-\d{2}-\d{2}$/.test(finalUpdates.deadline)) {
-        finalUpdates.deadline = setEndOfDay(finalUpdates.deadline);
-      } else {
-        // 如果已经是完整的日期时间字符串，也设置为当天结束时间
-        finalUpdates.deadline = setEndOfDay(finalUpdates.deadline.split('T')[0]);
-      }
+      finalUpdates.deadline = setEndOfDay(extractDatePart(finalUpdates.deadline));
     }
 
     const res = await prisma.hazardRecord.update({

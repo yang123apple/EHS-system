@@ -2,6 +2,7 @@
 import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle, XCircle } from 'lucide-react';
+import { apiFetch } from '@/lib/apiClient';
 
 export default function ExamPage({ params }: { params: Promise<{ taskId: string }> }) {
   const router = useRouter();
@@ -15,11 +16,11 @@ export default function ExamPage({ params }: { params: Promise<{ taskId: string 
   useEffect(() => {
     async function load() {
         try {
-            const assignRes = await fetch(`/api/training/assignment/${taskId}`);
+            const assignRes = await apiFetch(`/api/training/assignment/${taskId}`);
             const assignData = await assignRes.json();
             setAssignment(assignData);
 
-            const matRes = await fetch(`/api/training/materials/${assignData.task.materialId}`);
+            const matRes = await apiFetch(`/api/training/materials/${assignData.task.materialId}`);
             const matData = await matRes.json();
 
             // Parse options if string
@@ -73,13 +74,13 @@ export default function ExamPage({ params }: { params: Promise<{ taskId: string 
       setResult({ score, passed });
 
       // Save to backend
-      await fetch(`/api/training/assignment/${assignment.id}`, {
+      await apiFetch(`/api/training/assignment/${assignment.id}`, {
           method: 'POST',
-          body: JSON.stringify({
+          body: {
               action: 'complete_exam',
               examScore: score,
               isPassed: passed
-          })
+          }
       });
   };
 

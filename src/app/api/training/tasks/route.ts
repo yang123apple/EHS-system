@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
+import { setStartOfDay, setEndOfDay, extractDatePart } from '@/utils/dateUtils';
 
 export const GET = withErrorHandling(
   withAuth(async (req: NextRequest, context, user) => {
@@ -26,7 +27,7 @@ export const GET = withErrorHandling(
       orderBy: { createdAt: 'desc' },
       include: {
         material: true,
-        publisher: { select: { name: true } },
+        publisher: { select: { id: true, name: true } },
         assignments: { select: { status: true } }
       }
     });
@@ -40,12 +41,13 @@ export const POST = withErrorHandling(
     const { title, description, startDate, endDate, materialId, publisherId, targetType, targetConfig } = body;
 
     // 1. Create Task
+    // 开始时间设置为当天的 00:00:00，结束时间设置为当天的 23:59:59.999
     const task = await prisma.trainingTask.create({
       data: {
         title,
         description,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        startDate: setStartOfDay(extractDatePart(startDate)),
+        endDate: setEndOfDay(extractDatePart(endDate)),
         materialId,
         publisherId,
         targetType,

@@ -23,12 +23,50 @@ export const GET = withAuth(async (req: NextRequest, context, user) => {
 
     const records = await prisma.materialLearnedRecord.findMany({
       where,
-      select: {
-        materialId: true
+      include: {
+        material: true
       }
     });
 
-    const learnedMaterialIds = records.map(r => r.materialId);
+    // 分离有考试要求和没有考试要求的材料
+    const materialsWithExam: string[] = [];
+    const materialsWithoutExam: string[] = [];
+    
+    records.forEach(record => {
+      if (record.material.isExamRequired) {
+        materialsWithExam.push(record.materialId);
+      } else {
+        materialsWithoutExam.push(record.materialId);
+      }
+    });
+
+    // 对于有考试要求的材料，批量查询是否通过考试
+    let passedExamMaterials: string[] = [];
+    if (materialsWithExam.length > 0) {
+      const passedAssignments = await prisma.trainingAssignment.findMany({
+        where: {
+          userId,
+          task: {
+            materialId: { in: materialsWithExam }
+          },
+          isPassed: true,
+          status: 'passed'
+        },
+        select: {
+          task: {
+            select: {
+              materialId: true
+            }
+          }
+        }
+      });
+
+      passedExamMaterials = passedAssignments.map(a => a.task.materialId);
+    }
+
+    // 合并结果：没有考试要求的材料 + 通过考试的材料
+    const learnedMaterialIds = [...materialsWithoutExam, ...passedExamMaterials];
+
     return NextResponse.json({ learnedMaterialIds });
   } catch (error) {
     console.error('获取已学习记录失败:', error);
@@ -44,6 +82,37 @@ export const POST = withAuth(async (req: NextRequest, context, user) => {
 
     if (!userId || !materialId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    // 获取材料信息，检查是否有考试要求
+    const material = await prisma.trainingMaterial.findUnique({
+      where: { id: materialId }
+    });
+
+    if (!material) {
+      return NextResponse.json({ error: 'Material not found' }, { status: 404 });
+    }
+
+    // 如果材料有考试要求，必须通过考试才能标记为已学习
+    if (material.isExamRequired) {
+      // 检查是否有对应的 assignment 且已通过考试
+      const assignment = await prisma.trainingAssignment.findFirst({
+        where: {
+          userId,
+          task: {
+            materialId
+          },
+          isPassed: true,
+          status: 'passed'
+        }
+      });
+
+      if (!assignment) {
+        return NextResponse.json({ 
+          error: '该学习内容需要先通过考试才能标记为已学习',
+          requiresExam: true
+        }, { status: 400 });
+      }
     }
 
     // 使用upsert避免重复插入

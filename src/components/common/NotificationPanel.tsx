@@ -109,8 +109,8 @@ export default function NotificationPanel() {
       window.location.href = `/work-permit?permitId=${notification.relatedId}`;
     } else if (notification.relatedType === 'hazard' && notification.relatedId) {
       window.location.href = `/hidden-danger?hazardId=${notification.relatedId}`;
-    } else if (notification.relatedType === 'training' && notification.relatedId) {
-      // 培训任务通知跳转到我的任务页面
+    } else if ((notification.relatedType === 'training' || notification.relatedType === 'training_task') && notification.relatedId) {
+      // 培训任务通知跳转到我的任务页面（进行中标签页）
       window.location.href = `/training/my-tasks`;
     }
   };

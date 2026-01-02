@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 // import { User, db } from '@/lib/mockDb'; // 删除这行引用
 import { useRouter } from 'next/navigation';
+import { apiFetch } from '@/lib/apiClient';
 
 // 重新定义一下 User 接口，或者从 userDb 导入 (但 userDb 含 fs 不能在前端用)
 // 建议在这里简单定义一下，或者创建一个 shared/types.ts
@@ -35,10 +36,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (username: string, password: string) => {
     try {
       // 修改点：调用 API 登录
-      const res = await fetch('/api/auth/login', {
+      const res = await apiFetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: { username, password },
       });
       
       const data = await res.json();

@@ -2,6 +2,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { Clock, User, FileText, Eye, ChevronLeft, ChevronRight, AlertCircle, Filter, X } from 'lucide-react';
+import { apiFetch } from '@/lib/apiClient';
 
 interface SystemLog {
   id: string;
@@ -49,7 +50,7 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
       if (filters.startDate) params.append('startDate', filters.startDate);
       if (filters.endDate) params.append('endDate', filters.endDate);
 
-      const res = await fetch(`/api/logs?${params}`);
+      const res = await apiFetch(`/api/logs?${params}`);
       const data = await res.json();
       
       if (data.success && data.data) {
@@ -175,7 +176,14 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
               <input
                 type="date"
                 value={filters.startDate}
-                onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                onChange={(e) => {
+                  const newStartDate = e.target.value;
+                  setFilters({ ...filters, startDate: newStartDate });
+                  // 如果结束时间已设置且早于新的开始时间，提示用户
+                  if (filters.endDate && newStartDate && new Date(filters.endDate) <= new Date(newStartDate)) {
+                    alert('❌ 提示：结束时间必须晚于开始时间！');
+                  }
+                }}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -187,7 +195,15 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
               <input
                 type="date"
                 value={filters.endDate}
-                onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                onChange={(e) => {
+                  const newEndDate = e.target.value;
+                  // 如果开始时间已设置且结束时间早于或等于开始时间，提示用户
+                  if (filters.startDate && newEndDate && new Date(newEndDate) <= new Date(filters.startDate)) {
+                    alert('❌ 错误：结束时间必须晚于开始时间！');
+                    return; // 不更新结束时间
+                  }
+                  setFilters({ ...filters, endDate: newEndDate });
+                }}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>

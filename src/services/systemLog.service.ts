@@ -1,12 +1,13 @@
 // src/services/systemLog.service.ts
 import { prisma } from '@/lib/prisma';
+import { setStartOfDay, setEndOfDay, extractDatePart, addDays } from '@/utils/dateUtils';
 
 export interface SystemLogData {
   userId?: string;
   userName?: string;
   action: string;
   targetId?: string;
-  targetType?: 'hazard' | 'document' | 'permit' | 'config' | 'user' | 'org';
+  targetType?: 'hazard' | 'document' | 'permit' | 'config' | 'user' | 'org' | 'training';
   details?: string;
   snapshot?: any; // 流程快照对象，将自动序列化
   ip?: string;
@@ -92,12 +93,9 @@ export class SystemLogService {
     if (userId) where.userId = userId;
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        where.createdAt.lte = end;
-      }
+      // 开始时间设置为当天的 00:00:00，结束时间设置为当天的 23:59:59.999
+      if (startDate) where.createdAt.gte = setStartOfDay(extractDatePart(startDate));
+      if (endDate) where.createdAt.lte = setEndOfDay(extractDatePart(endDate));
     }
 
     try {
@@ -131,8 +129,7 @@ export class SystemLogService {
    */
   static async cleanOldLogs(daysToKeep: number = 90) {
     try {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+      const cutoffDate = addDays(new Date(), -daysToKeep);
 
       const result = await prisma.systemLog.deleteMany({
         where: {

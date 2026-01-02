@@ -44,12 +44,18 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
     body = JSON.stringify(body);
   }
   
-  // 发送请求
-  const response = await fetch(url, {
+  // Next.js 16: 默认不缓存 fetch 请求，需要明确指定缓存策略
+  // 如果 options 中没有 cache 配置，默认使用 'no-store' 确保实时数据
+  const fetchOptions: RequestInit = {
     ...options,
     headers,
     body,
-  });
+    // Next.js 16 缓存策略：如果没有指定，默认不缓存（适合实时数据）
+    cache: options.cache ?? 'no-store',
+  };
+  
+  // 发送请求
+  const response = await fetch(url, fetchOptions);
   
   // 处理认证失败
   if (response.status === 401) {

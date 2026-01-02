@@ -12,7 +12,7 @@ export const GET = withErrorHandling(withAuth(async (req: NextRequest, user) => 
     where: publicOnly ? { isPublic: true } : undefined,
     orderBy: { createdAt: 'desc' },
     include: {
-      uploader: { select: { name: true } }
+      uploader: { select: { id: true, name: true } }
     }
   });
   return NextResponse.json(materials);

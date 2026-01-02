@@ -54,6 +54,8 @@ export type Template = {
   watermarkSettings?: {
     text: string; // 如 "仅供内部审批"
     enabled: boolean;
+    includeUser?: boolean; // 是否包含用户名和ID
+    includeTime?: boolean; // 是否包含当前时间
   };
   // 🟢 V3.3 模板级别系统
   level?: string; // 'primary' | 'secondary'

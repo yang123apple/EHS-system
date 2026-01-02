@@ -23,6 +23,7 @@ export async function matchHandler(params: {
   departments: Department[];
 }): Promise<{
   success: boolean;
+  userIds: string[];
   userNames: string[];
   matchedBy?: string;
   error?: string;
@@ -32,6 +33,7 @@ export async function matchHandler(params: {
   if (!step?.handlerStrategy) {
     return {
       success: false,
+      userIds: [],
       userNames: [],
       error: '步骤缺少处理人策略配置'
     };
@@ -47,6 +49,7 @@ export async function matchHandler(params: {
     if (!handlers || handlers.length === 0) {
       return {
         success: false,
+        userIds: [],
         userNames: [],
         error: `未找到符合策略"${strategy}"的处理人`
       };
@@ -54,6 +57,7 @@ export async function matchHandler(params: {
 
     return {
       success: true,
+      userIds: handlers.map(h => h.id),
       userNames: handlers.map(h => h.name),
       matchedBy: strategy
     };
@@ -61,6 +65,7 @@ export async function matchHandler(params: {
     console.error('[handler-matcher] 匹配处理人失败:', error);
     return {
       success: false,
+      userIds: [],
       userNames: [],
       error: error instanceof Error ? error.message : '未知错误'
     };

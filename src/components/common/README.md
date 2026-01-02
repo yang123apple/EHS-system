@@ -88,3 +88,7 @@ import { SignatureManager } from '@/components/common';
 3. 多人签名模式下，签名按添加顺序排列
 4. 删除签名时，如果删除后数组为空，会返回空字符串或空数组（取决于 `allowMultiple` 设置）
 
+
+
+
+

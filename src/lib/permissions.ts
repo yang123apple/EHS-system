@@ -36,6 +36,40 @@ export class PermissionManager {
   }
 
   /**
+   * 检查用户是否可以操作指定资源（支持创建人权限检查）
+   * @param user 用户对象
+   * @param module 模块名
+   * @param permissionBase 权限基础名称（如 'edit_material'）
+   * @param creatorId 资源创建人ID
+   * @param currentUserId 当前用户ID
+   * @returns true 如果用户有权限操作该资源
+   */
+  static canOperateResource(
+    user: User | null,
+    module: string,
+    permissionBase: string,
+    creatorId: string | null | undefined,
+    currentUserId: string | null | undefined
+  ): boolean {
+    if (!user || !currentUserId) return false;
+    
+    // Admin 拥有所有权限
+    if (user.role === 'admin') return true;
+    
+    // 检查是否有 all 权限（可以操作所有人的资源）
+    if (this.hasPermission(user, module, `${permissionBase}_all`)) {
+      return true;
+    }
+    
+    // 检查是否是创建人，且有 self 权限
+    if (creatorId && creatorId === currentUserId) {
+      return this.hasPermission(user, module, `${permissionBase}_self`);
+    }
+    
+    return false;
+  }
+
+  /**
    * 检查用户是否可以访问指定模块（基础权限）
    */
   static canAccessModule(user: User | null, module: string): boolean {
@@ -70,6 +104,18 @@ export class PermissionManager {
     if (user.role === 'admin') return true;
     
     return permissions.some(perm => this.hasPermission(user, module, perm));
+  }
+
+  /**
+   * 检查用户是否拥有指定权限的 self 或 all 版本
+   * 用于判断用户是否有操作权限（不区分资源）
+   */
+  static hasResourcePermission(user: User | null, module: string, permissionBase: string): boolean {
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    
+    return this.hasPermission(user, module, `${permissionBase}_self`) ||
+           this.hasPermission(user, module, `${permissionBase}_all`);
   }
 
   /**

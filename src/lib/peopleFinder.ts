@@ -57,12 +57,50 @@ export class PeopleFinder {
   }
 
   /**
+   * 递归查找部门的主管（向上查找父部门）
+   * @param deptId - 部门ID
+   * @param excludeUserId - 要排除的用户ID（避免返回自己）
+   * @returns 主管用户对象，如果未找到则返回null
+   */
+  private static async findManagerRecursive(
+    deptId: string | null,
+    excludeUserId?: string
+  ): Promise<User | null> {
+    if (!deptId) return null;
+
+    const dept = await prisma.department.findUnique({
+      where: { id: deptId },
+      select: {
+        managerId: true,
+        parentId: true,
+      },
+    });
+
+    if (!dept) return null;
+
+    // 如果当前部门有主管，且不是要排除的用户，返回该主管
+    if (dept.managerId && dept.managerId !== excludeUserId) {
+      const manager = await prisma.user.findUnique({
+        where: { id: dept.managerId },
+      });
+      if (manager) return manager;
+    }
+
+    // 如果当前部门没有主管，或者是用户自己，递归向上查找父部门
+    if (dept.parentId) {
+      return this.findManagerRecursive(dept.parentId, excludeUserId);
+    }
+
+    return null;
+  }
+
+  /**
    * Find the supervisor of a specific user.
    * Logic:
    * 1. Check directManagerId first (if schema supported it fully, assuming business logic first).
-   * 2. Find manager of user's department.
+   * 2. Find manager of user's department recursively (go up the hierarchy if needed).
    * 3. If manager.id != user.id, return manager.
-   * 4. If manager.id == user.id, find parent department's manager.
+   * 4. If manager.id == user.id, find parent department's manager recursively.
    */
   static async findSupervisor(userId: string): Promise<User | null> {
     const user = await prisma.user.findUnique({
@@ -81,33 +119,42 @@ export class PeopleFinder {
 
     if (!user.departmentId) return null;
 
-    // 2. Department Manager
-    const dept = await prisma.department.findUnique({
-      where: { id: user.departmentId },
-      include: { parent: true },
+    // 2. 递归查找部门层级中的主管
+    return this.findManagerRecursive(user.departmentId, userId);
+  }
+
+  /**
+   * 查找用户的直接主管ID（directManagerId）
+   * 如果用户没有设置 directManagerId，则通过递归查找部门层级来确定
+   * @param userId - 用户ID
+   * @returns 主管的用户ID，如果未找到则返回null
+   */
+  static async findDirectManagerId(userId: string): Promise<string | null> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        directManagerId: true,
+        departmentId: true,
+      },
     });
 
-    if (!dept) return null;
+    if (!user) return null;
 
-    if (dept.managerId && dept.managerId !== userId) {
-      return prisma.user.findUnique({ where: { id: dept.managerId } });
+    // 如果已经设置了 directManagerId，直接返回
+    if (user.directManagerId) {
+      // 验证该主管是否存在
+      const manager = await prisma.user.findUnique({
+        where: { id: user.directManagerId },
+        select: { id: true },
+      });
+      if (manager) return user.directManagerId;
     }
 
-    // 3. Parent Department Manager (if user is the manager of current dept)
-    if (dept.parentId) {
-      // Logic: If user is manager, go up. Or if no manager set, go up?
-      // Requirement says: "if consistent (manager == user), find parent dept id..."
-      if (dept.parentId) {
-          const parentDept = await prisma.department.findUnique({
-              where: { id: dept.parentId }
-          });
-          if (parentDept?.managerId) {
-              return prisma.user.findUnique({ where: { id: parentDept.managerId } });
-          }
-      }
-    }
+    // 如果没有设置 directManagerId，通过递归查找部门层级来确定
+    if (!user.departmentId) return null;
 
-    return null;
+    const supervisor = await this.findManagerRecursive(user.departmentId, userId);
+    return supervisor?.id || null;
   }
 
   /**

@@ -29,3 +29,14 @@ export const STATUS_MAP: Record<HazardStatus, { label: string; text: string; col
   verified: { label: '待验收', text: '待验收', color: 'bg-purple-50 text-purple-600 border-purple-200' },
   closed: { label: '已闭环', text: '已闭环', color: 'bg-green-50 text-green-600 border-green-200' },
 };
+
+// 处理策略名称映射（用于流程预览信息降噪）
+export const STRATEGY_NAME_MAP: Record<string, string> = {
+  'fixed': '固定人员',
+  'reporter_manager': '上报人主管',
+  'responsible_manager': '责任部门主管',
+  'department_manager': '部门主管',
+  'risk_match': '按风险等级',
+  'responsible': '责任人',
+  'reporter': '上报人',
+};

@@ -1,6 +1,7 @@
 // src/lib/db.ts
 import { prisma } from '@/lib/prisma';
 import { User, DepartmentNode, HazardRecord, HazardConfig } from '@/types/database';
+import { todayString, parseDateForDB } from '@/utils/dateUtils';
 
 // 转换 Prisma User 到前端 User 类型
 function mapUser(pUser: any): User {
@@ -179,7 +180,7 @@ export const db = {
 
   createHazard: async (data: any) => {
       // 1. 生成 code (YYYYMMDDNNN)
-      const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const todayStr = todayString().replace(/-/g, '');
       const count = await prisma.hazardRecord.count({
         where: { code: { startsWith: todayStr } }
       });
@@ -204,7 +205,7 @@ export const db = {
           responsibleId,
           responsibleName,
           responsibleDept,
-          deadline: deadline ? new Date(deadline) : null,
+          deadline: deadline ? parseDateForDB(deadline, true) : null,
           photos: JSON.stringify(photos || []),
           logs: JSON.stringify(logs || []),
           ccDepts: JSON.stringify(ccDepts || []),
@@ -232,9 +233,9 @@ export const db = {
     if (ccUsers) updateData.ccUsers = JSON.stringify(ccUsers);
     if (old_personal_ID) updateData.old_personal_ID = JSON.stringify(old_personal_ID);
 
-    if (deadline) updateData.deadline = new Date(deadline);
-    if (rectifyTime) updateData.rectifyTime = new Date(rectifyTime);
-    if (verifyTime) updateData.verifyTime = new Date(verifyTime);
+    if (deadline) updateData.deadline = parseDateForDB(deadline, true);
+    if (rectifyTime) updateData.rectifyTime = parseDateForDB(rectifyTime);
+    if (verifyTime) updateData.verifyTime = parseDateForDB(verifyTime);
 
     try {
       const updated = await prisma.hazardRecord.update({

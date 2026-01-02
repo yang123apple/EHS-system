@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ExamEditor from '@/components/training/ExamEditor';
 import { useAuth } from '@/context/AuthContext';
+import { apiFetch } from '@/lib/apiClient';
 
 export default function UploadPage() {
   const router = useRouter();
@@ -29,14 +30,26 @@ export default function UploadPage() {
         // router.push('/login');
     }
     // Load categories from settings
-    fetch('/api/training/settings')
-      .then(res => res.json())
+    apiFetch('/api/training/settings')
+      .then(res => {
+        if (!res.ok) {
+          console.error('加载学习类型失败:', res.status);
+          return { categories: [] };
+        }
+        return res.json();
+      })
       .then(data => {
-        if (data.categories) {
+        // 确保 categories 是数组
+        if (Array.isArray(data.categories)) {
           setCategories(data.categories);
+        } else {
+          setCategories([]);
         }
       })
-      .catch(console.error);
+      .catch(error => {
+        console.error('加载学习类型失败:', error);
+        setCategories([]);
+      });
   }, [user]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,6 +74,7 @@ export default function UploadPage() {
 
   const handleSubmit = async () => {
       if (!file || !title) return alert('请完善信息');
+      if (!category) return alert('请选择学习类型');
 
       setUploading(true);
       try {
@@ -73,7 +87,7 @@ export default function UploadPage() {
           // 1. Upload File
           const formData = new FormData();
           formData.append('file', file);
-          const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData });
+          const uploadRes = await apiFetch('/api/upload', { method: 'POST', body: formData });
           const { url } = await uploadRes.json();
 
           // 2. Create Material
@@ -91,10 +105,9 @@ export default function UploadPage() {
               uploaderId: user.id
           };
 
-          const res = await fetch('/api/training/materials', {
+          const res = await apiFetch('/api/training/materials', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body)
+              body: body
           });
 
           if (res.ok) {
@@ -127,17 +140,27 @@ export default function UploadPage() {
                 </div>
                 
                 <div>
-                    <label className="block font-bold mb-2">学习类型</label>
+                    <label className="block font-bold mb-2">学习类型 <span className="text-red-500">*</span></label>
                     <select 
                         className="w-full border rounded p-2" 
                         value={category} 
                         onChange={e => setCategory(e.target.value)}
+                        required
                     >
                         <option value="">请选择类型</option>
-                        {categories.map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
-                        ))}
+                        {categories.length > 0 ? (
+                            categories.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                            ))
+                        ) : (
+                            <option value="" disabled>暂无可用类型，请先在系统设置中配置学习类型</option>
+                        )}
                     </select>
+                    {categories.length === 0 && (
+                        <p className="text-sm text-amber-600 mt-1">
+                            提示：请先在系统设置中配置学习类型
+                        </p>
+                    )}
                 </div>
                 <div>
                     <label className="block font-bold mb-2">文件 (MP4, PDF, DOCX)</label>
@@ -191,7 +214,10 @@ export default function UploadPage() {
                          {isExam && (
                              <div className="flex items-center gap-2">
                                  <span className="text-sm">及格分数:</span>
-                                 <input type="number" value={passingScore} onChange={e => setPassingScore(parseInt(e.target.value))} className="border rounded w-20 p-1"/>
+                                 <input type="number" value={passingScore || ''} onChange={e => {
+                                     const val = parseInt(e.target.value);
+                                     setPassingScore(isNaN(val) ? 60 : val);
+                                 }} className="border rounded w-20 p-1"/>
                              </div>
                          )}
                     </div>

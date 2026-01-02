@@ -10,6 +10,7 @@ import * as XLSX from 'xlsx';
 import { Trash2, UserPlus, Settings, Search, Filter, Edit, UploadCloud, User as UserIcon, Briefcase, GitFork, FileSpreadsheet, Download, Shield } from 'lucide-react';
 import Link from 'next/link';
 import BatchPermissionModal from './_components/BatchPermissionModal';
+import PeopleSelector from '@/components/common/PeopleSelector';
 import { apiFetch } from '@/lib/apiClient';
 
 interface User {
@@ -48,6 +49,7 @@ export default function AccountManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
   const [allDepts, setAllDepts] = useState<string[]>([]);
+  const [showDeptSelector, setShowDeptSelector] = useState(false);
 
   // 编辑弹窗状态
   const [showEditModal, setShowEditModal] = useState(false);
@@ -84,42 +86,73 @@ export default function AccountManagement() {
         apiFetch('/api/org')
       ]);
 
+      // 检查响应状态
+      if (!usersRes.ok) {
+        const errorData = await usersRes.json().catch(() => ({ error: '请求失败' }));
+        console.error('加载用户失败:', errorData);
+        alert(errorData.error || '加载用户列表失败');
+        return;
+      }
+
       const usersData = await usersRes.json();
       let validUsers = [];
 
-      if (usersData.data) {
-          validUsers = usersData.data.filter((u: any) => u.username !== 'admin');
-          setTotalPages(usersData.meta.totalPages);
-          setTotalUsers(usersData.meta.total);
-      } else {
-          // Fallback if API returns array
+      // 检查返回数据的格式
+      if (Array.isArray(usersData)) {
+          // 非分页模式：直接返回数组
           validUsers = usersData.filter((u: any) => u.username !== 'admin');
+          setTotalPages(1);
+          setTotalUsers(validUsers.length);
+      } else if (usersData && Array.isArray(usersData.data)) {
+          // 分页模式：返回 { data: [...], meta: {...} }
+          validUsers = usersData.data.filter((u: any) => u.username !== 'admin');
+          setTotalPages(usersData.meta?.totalPages || 1);
+          setTotalUsers(usersData.meta?.total || validUsers.length);
+      } else {
+          // 未知格式或错误响应
+          console.error('意外的API响应格式:', usersData);
+          validUsers = [];
+          setTotalPages(1);
+          setTotalUsers(0);
       }
 
       setUsers(validUsers);
       
       // 🟢 加载部门列表
-      const deptsData = await deptsRes.json();
-      setDepartments(deptsData);
-      
-      // 🟢 创建部门名称到ID的映射
-      const mapping = new Map<string, string>();
-      const flattenDepts = (nodes: any[]): void => {
-        nodes.forEach(node => {
-          mapping.set(node.name, node.id);
-          if (node.children && node.children.length > 0) {
-            flattenDepts(node.children);
-          }
-        });
-      };
-      flattenDepts(deptsData);
-      setDeptNameToId(mapping);
-      
-      // We might want to fetch all depts just for the filter dropdown,
-      // but for now let's just use what's on the page + full org tree names if needed
-      // Ideally we should have an API for "all unique department names" or just use the org tree
-      const allDeptNames = Array.from(mapping.keys());
-      setAllDepts(allDeptNames);
+      if (!deptsRes.ok) {
+        console.error('加载部门列表失败');
+        setDepartments([]);
+        setDeptNameToId(new Map());
+        setAllDepts([]);
+      } else {
+        const deptsData = await deptsRes.json();
+        
+        // 确保 deptsData 是数组
+        const departmentsArray = Array.isArray(deptsData) ? deptsData : [];
+        setDepartments(departmentsArray);
+        
+        // 🟢 创建部门名称到ID的映射
+        const mapping = new Map<string, string>();
+        const flattenDepts = (nodes: any[]): void => {
+          if (!Array.isArray(nodes)) return;
+          nodes.forEach(node => {
+            if (node && node.name && node.id) {
+              mapping.set(node.name, node.id);
+              if (node.children && Array.isArray(node.children) && node.children.length > 0) {
+                flattenDepts(node.children);
+              }
+            }
+          });
+        };
+        flattenDepts(departmentsArray);
+        setDeptNameToId(mapping);
+        
+        // We might want to fetch all depts just for the filter dropdown,
+        // but for now let's just use what's on the page + full org tree names if needed
+        // Ideally we should have an API for "all unique department names" or just use the org tree
+        const allDeptNames = Array.from(mapping.keys());
+        setAllDepts(allDeptNames);
+      }
     } catch(e) { 
       console.error(e); 
     } finally { 
@@ -521,11 +554,17 @@ export default function AccountManagement() {
                      <input type="text" placeholder="搜索..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-7 md:pl-9 pr-3 md:pr-4 py-1.5 md:py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" />
                  </div>
                  <div className="relative w-full sm:w-40">
-                     <Filter className="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                     <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="w-full pl-7 md:pl-9 pr-3 md:pr-4 py-1.5 md:py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm outline-none appearance-none cursor-pointer hover:bg-slate-50">
-                         <option value="">所有部门</option>
-                         {allDepts.map(dept => <option key={dept} value={dept}>{dept}</option>)}
-                     </select>
+                     <Filter className="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10 pointer-events-none" size={14} />
+                     <button
+                       type="button"
+                       onClick={() => setShowDeptSelector(true)}
+                       className="w-full pl-7 md:pl-9 pr-3 md:pr-4 py-1.5 md:py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm outline-none cursor-pointer hover:bg-slate-50 text-left flex items-center justify-between"
+                     >
+                       <span className="truncate">{deptFilter || '所有部门'}</span>
+                       <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                       </svg>
+                     </button>
                  </div>
              </div>
           </div>
@@ -701,6 +740,25 @@ export default function AccountManagement() {
           setShowBatchPermissionModal(false);
           loadUsers(currentPage);
         }}
+      />
+
+      {/* 部门选择弹窗 */}
+      <PeopleSelector
+        isOpen={showDeptSelector}
+        onClose={() => setShowDeptSelector(false)}
+        onConfirm={(selection) => {
+          if (Array.isArray(selection) && selection.length > 0) {
+            // @ts-ignore
+            const dept = selection[0];
+            setDeptFilter(dept.name);
+          } else {
+            setDeptFilter('');
+          }
+          setShowDeptSelector(false);
+        }}
+        mode="dept"
+        multiSelect={false}
+        title="选择部门"
       />
     </div>
   );

@@ -1,16 +1,33 @@
 'use client';
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookOpen, Upload, Calendar, Settings, Library, GraduationCap } from 'lucide-react';
+import { BookOpen, Upload, Calendar, Settings, Library, GraduationCap, Activity } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { PermissionManager } from '@/lib/permissions';
+import SystemLogModal from './_components/SystemLogModal';
 
 export default function TrainingLayout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
+  const [showLogModal, setShowLogModal] = useState(false);
   
-  // 检查用户是否有上传学习内容权限
-  const hasUploadPermission = user?.role === 'admin' || 
-    (user?.permissions && JSON.parse(user.permissions).includes('upload_training_content'));
+  // 检查用户是否有创建/编辑/删除培训资料权限（任一即可）
+  const hasMaterialPermission = user?.role === 'admin' || 
+    PermissionManager.hasAnyPermission(user, 'training', [
+      'create_material',
+      'edit_material_self', 'edit_material_all',
+      'delete_material_self', 'delete_material_all'
+    ]);
+  
+  // 检查用户是否有创建/修改/分配培训任务权限（任一即可）
+  const hasTaskPermission = user?.role === 'admin' || 
+    PermissionManager.hasAnyPermission(user, 'training', [
+      'create_task',
+      'edit_task_self', 'edit_task_all',
+      'delete_task_self', 'delete_task_all',
+      'assign_task'
+    ]);
 
   const isActive = (path: string) => pathname === path;
 
@@ -23,30 +40,27 @@ export default function TrainingLayout({ children }: { children: React.ReactNode
     { href: '/training/knowledge-base', label: '公共知识库', icon: Library },
   ];
 
-  const adminItems = [
-    { href: '/training/materials', label: '学习内容库', icon: Upload },
-    { href: '/training/tasks', label: '任务发布', icon: Calendar },
-  ];
+  const adminItems = [];
+  
+  // 根据权限动态添加菜单项
+  if (hasMaterialPermission) {
+    adminItems.push({ href: '/training/materials', label: '学习内容库', icon: Upload });
+  }
+  
+  if (hasTaskPermission) {
+    adminItems.push({ href: '/training/tasks', label: '任务发布', icon: Calendar });
+  }
 
   const systemItems = [
     { href: '/training/settings', label: '系统设置', icon: Settings },
+    { href: '#', label: '操作日志', icon: Activity, onClick: () => setShowLogModal(true) },
   ];
 
-  const NavItem = ({ href, label, icon: Icon }: { href: string; label: string; icon: any }) => {
+  const NavItem = ({ href, label, icon: Icon, onClick }: { href: string; label: string; icon: any; onClick?: () => void }) => {
     const active = isActive(href);
     
-    return (
-      <Link 
-        href={href}
-        className={`
-          group relative flex items-center gap-3 px-3 py-2.5 rounded-lg
-          transition-all duration-200 font-medium text-sm
-          ${active 
-            ? 'bg-blue-50 text-blue-700' 
-            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-          }
-        `}
-      >
+    const content = (
+      <>
         {/* Active Indicator */}
         {active && (
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-600 rounded-r-full" />
@@ -60,6 +74,37 @@ export default function TrainingLayout({ children }: { children: React.ReactNode
           `}
         />
         <span className="truncate">{label}</span>
+      </>
+    );
+    
+    if (onClick) {
+      return (
+        <button
+          onClick={onClick}
+          className={`
+            group relative flex items-center gap-3 px-3 py-2.5 rounded-lg w-full text-left
+            transition-all duration-200 font-medium text-sm
+            text-slate-600 hover:bg-slate-100 hover:text-slate-900
+          `}
+        >
+          {content}
+        </button>
+      );
+    }
+    
+    return (
+      <Link 
+        href={href}
+        className={`
+          group relative flex items-center gap-3 px-3 py-2.5 rounded-lg
+          transition-all duration-200 font-medium text-sm
+          ${active 
+            ? 'bg-blue-50 text-blue-700' 
+            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+          }
+        `}
+      >
+        {content}
       </Link>
     );
   };
@@ -108,7 +153,7 @@ export default function TrainingLayout({ children }: { children: React.ReactNode
           ))}
 
           {/* 管理中心 */}
-          {(user?.role === 'admin' || hasUploadPermission) && (
+          {(hasMaterialPermission || hasTaskPermission) && adminItems.length > 0 && (
             <>
               <SectionTitle>管理中心</SectionTitle>
               {adminItems.map(item => (
@@ -152,6 +197,14 @@ export default function TrainingLayout({ children }: { children: React.ReactNode
       <div className="flex-1 overflow-auto">
         {children}
       </div>
+
+      {/* 操作日志弹窗 */}
+      {user?.role === 'admin' && (
+        <SystemLogModal 
+          isOpen={showLogModal} 
+          onClose={() => setShowLogModal(false)} 
+        />
+      )}
     </div>
   );
 }

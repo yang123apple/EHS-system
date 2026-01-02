@@ -29,7 +29,7 @@ export default function SystemLogView() {
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
 
-      const res = await fetch(`/api/logs?${params.toString()}`);
+      const res = await apiFetch(`/api/logs?${params.toString()}`);
       if (res.ok) {
           const data = await res.json();
           if (data.success && data.data) {

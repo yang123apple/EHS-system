@@ -109,6 +109,53 @@ export async function requirePermission(
 }
 
 /**
+ * 要求用户拥有资源操作权限（支持创建人检查）
+ * @param req 请求对象
+ * @param module 模块名
+ * @param permissionBase 权限基础名称（如 'edit_material'）
+ * @param getCreatorId 获取资源创建人ID的函数
+ * @returns 用户对象或错误响应
+ */
+export async function requireResourcePermission(
+  req: NextRequest,
+  module: string,
+  permissionBase: string,
+  getCreatorId: () => Promise<string | null | undefined>
+): Promise<{ user: User } | NextResponse> {
+  const authResult = await requireAuth(req);
+  
+  if (authResult instanceof NextResponse) {
+    return authResult;
+  }
+  
+  const { user } = authResult;
+  
+  // 获取资源创建人ID
+  const creatorId = await getCreatorId();
+  
+  // 检查权限
+  if (!PermissionManager.canOperateResource(
+    user,
+    module,
+    permissionBase,
+    creatorId,
+    user.id
+  )) {
+    return NextResponse.json(
+      { 
+        error: '权限不足',
+        details: `需要 ${module}.${permissionBase}_self 或 ${module}.${permissionBase}_all 权限`,
+        module,
+        permissionBase,
+      },
+      { status: 403 }
+    );
+  }
+  
+  return { user };
+}
+
+/**
  * 要求用户拥有任一权限
  */
 export async function requireAnyPermission(
@@ -179,11 +226,21 @@ export async function logApiOperation(
   details?: Record<string, any>
 ) {
   try {
+    // 模块名到 targetType 的映射
+    const moduleToTargetType: Record<string, string> = {
+      'hidden_danger': 'hazard',
+      'doc_sys': 'document',
+      'work_permit': 'permit',
+      'training': 'training',
+    };
+    
+    const targetType = (moduleToTargetType[module] || module) as any;
+    
     await SystemLogService.createLog({
       userId: user.id,
       userName: user.name,
       action: `${module}.${action}`,
-      targetType: module as any,
+      targetType,
       details: JSON.stringify({
         ...details,
         userRole: user.role,
@@ -222,6 +279,35 @@ export function withPermission<T = any>(
 ) {
   return async (req: NextRequest, context?: T): Promise<NextResponse> => {
     const permResult = await requirePermission(req, module, permission);
+    
+    if (permResult instanceof NextResponse) {
+      return permResult;
+    }
+    
+    return handler(req, context as T, permResult.user);
+  };
+}
+
+/**
+ * 包装API处理函数，自动处理资源权限检查（支持创建人检查）
+ * @param module 模块名
+ * @param permissionBase 权限基础名称（如 'edit_material'）
+ * @param getCreatorId 获取资源创建人ID的函数
+ * @param handler API处理函数
+ */
+export function withResourcePermission<T = any>(
+  module: string,
+  permissionBase: string,
+  getCreatorId: (req: NextRequest, context: T) => Promise<string | null | undefined>,
+  handler: (req: NextRequest, context: T, user: User) => Promise<NextResponse>
+) {
+  return async (req: NextRequest, context?: T): Promise<NextResponse> => {
+    const permResult = await requireResourcePermission(
+      req,
+      module,
+      permissionBase,
+      () => getCreatorId(req, context as T)
+    );
     
     if (permResult instanceof NextResponse) {
       return permResult;

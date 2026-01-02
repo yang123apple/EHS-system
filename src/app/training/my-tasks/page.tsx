@@ -1,9 +1,10 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { PlayCircle, CheckCircle, Clock, ChevronLeft, ChevronRight, Calendar, Award, AlertCircle, Film, FileText } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { api } from '@/lib/apiClient';
+import { api, apiFetch } from '@/lib/apiClient';
+import { toLocaleDateString } from '@/utils/dateUtils';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -11,6 +12,7 @@ export default function MyTasksPage() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'in-progress' | 'completed'>('in-progress');
   const [currentPage, setCurrentPage] = useState(1);
   const [learnedMaterialIds, setLearnedMaterialIds] = useState<Set<string>>(new Set());
 
@@ -34,13 +36,36 @@ export default function MyTasksPage() {
       .finally(() => setLoading(false));
   }, [user?.id]);
 
+  // 切换标签页时重置页码
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab]);
+
+  // 过滤任务：根据标签页状态（使用useMemo优化性能）
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(t => {
+      if (activeTab === 'completed') {
+        return t.status === 'passed';
+      } else {
+        return t.status !== 'passed';
+      }
+    });
+  }, [tasks, activeTab]);
+
+  // 计算各标签页的任务数量（使用useMemo优化性能）
+  const taskCounts = useMemo(() => {
+    const completed = tasks.filter(t => t.status === 'passed').length;
+    const inProgress = tasks.length - completed;
+    return { completed, inProgress };
+  }, [tasks]);
+
   // 加载当前页任务的已学习状态
   useEffect(() => {
-    if (!user?.id || tasks.length === 0) return;
+    if (!user?.id || filteredTasks.length === 0) return;
 
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     const endIndex = startIndex + ITEMS_PER_PAGE;
-    const currentPageTasks = tasks.slice(startIndex, endIndex);
+    const currentPageTasks = filteredTasks.slice(startIndex, endIndex);
     const materialIds = currentPageTasks.map(t => t.task.materialId).join(',');
 
     if (materialIds) {
@@ -53,13 +78,13 @@ export default function MyTasksPage() {
           console.error('Error loading learned status:', error);
         });
     }
-  }, [user?.id, tasks, currentPage]);
+  }, [user?.id, filteredTasks, currentPage]);
 
-  // 分页计算
-  const totalPages = Math.ceil(tasks.length / ITEMS_PER_PAGE);
+  // 分页计算（基于过滤后的任务）
+  const totalPages = Math.ceil(filteredTasks.length / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = startIndex + ITEMS_PER_PAGE;
-  const currentPageTasks = tasks.slice(startIndex, endIndex);
+  const currentPageTasks = filteredTasks.slice(startIndex, endIndex);
 
   const goToPage = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -101,7 +126,7 @@ export default function MyTasksPage() {
     if (diffDays === 1) return { text: '明天到期', color: 'text-orange-600', urgent: true };
     if (diffDays <= 3) return { text: `${diffDays}天后到期`, color: 'text-orange-600', urgent: true };
     if (diffDays <= 7) return { text: `${diffDays}天后到期`, color: 'text-slate-600', urgent: false };
-    return { text: date.toLocaleDateString(), color: 'text-slate-500', urgent: false };
+    return { text: toLocaleDateString(date), color: 'text-slate-500', urgent: false };
   };
 
   return (
@@ -112,6 +137,32 @@ export default function MyTasksPage() {
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight mb-2">我的学习任务</h1>
           <p className="text-slate-500 text-sm font-medium">完成您的培训任务并追踪学习进度</p>
         </div>
+
+        {/* Tab Switcher */}
+        {!loading && tasks.length > 0 && (
+          <div className="mb-6 flex gap-3">
+            <button
+              onClick={() => setActiveTab('in-progress')}
+              className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all duration-200 border ${
+                activeTab === 'in-progress'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/30'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+              }`}
+            >
+              进行中 ({taskCounts.inProgress})
+            </button>
+            <button
+              onClick={() => setActiveTab('completed')}
+              className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all duration-200 border ${
+                activeTab === 'completed'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/30'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+              }`}
+            >
+              已完成 ({taskCounts.completed})
+            </button>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24">
@@ -124,6 +175,18 @@ export default function MyTasksPage() {
               <Clock className="mx-auto text-slate-300 mb-4" size={64} />
               <h3 className="text-lg font-semibold text-slate-900 mb-2">暂无学习任务</h3>
               <p className="text-slate-500 font-medium">当前没有待完成的学习任务</p>
+            </div>
+          </div>
+        ) : filteredTasks.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 py-24 shadow-sm">
+            <div className="text-center">
+              <CheckCircle className="mx-auto text-slate-300 mb-4" size={64} />
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                {activeTab === 'completed' ? '暂无已完成的任务' : '暂无进行中的任务'}
+              </h3>
+              <p className="text-slate-500 font-medium">
+                {activeTab === 'completed' ? '您还没有完成任何学习任务' : '当前没有进行中的学习任务'}
+              </p>
             </div>
           </div>
         ) : (
@@ -260,8 +323,8 @@ export default function MyTasksPage() {
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-slate-600 font-medium">
                     显示 <span className="font-bold text-slate-900">{startIndex + 1}</span> - 
-                    <span className="font-bold text-slate-900"> {Math.min(endIndex, tasks.length)}</span> 条，
-                    共 <span className="font-bold text-slate-900">{tasks.length}</span> 条
+                    <span className="font-bold text-slate-900"> {Math.min(endIndex, filteredTasks.length)}</span> 条，
+                    共 <span className="font-bold text-slate-900">{filteredTasks.length}</span> 条
                   </div>
 
                   <div className="flex items-center gap-2">

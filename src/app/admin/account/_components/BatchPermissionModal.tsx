@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { X, Users, CheckCircle, AlertCircle, Shield, Plus, Minus, RefreshCw } from 'lucide-react';
 import { SYSTEM_MODULES } from '@/lib/constants';
 import PeopleSelector from '@/components/common/PeopleSelector';
+import { apiFetch } from '@/lib/apiClient';
 
 interface User {
   id: string;
@@ -182,14 +183,13 @@ export default function BatchPermissionModal({
 
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/users/batch-permissions', {
+      const res = await apiFetch('/api/users/batch-permissions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           userIds: actualSelectedUserIds,
           permissions: selectedPermissions,
           mode,
-        }),
+        },
       });
 
       const data = await res.json();

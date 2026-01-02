@@ -17,6 +17,7 @@ import { hazardService } from '@/services/hazard.service';
 import { ViewMode } from '@/constants/hazard';
 import { useToast } from '@/components/common/Toast';
 import { apiFetch } from '@/lib/apiClient';
+import { setEndOfDay, extractDatePart, addDays, todayString, nowISOString } from '@/utils/dateUtils';
 
 interface HiddenDangerPageProps {
   initialViewMode?: ViewMode;
@@ -84,7 +85,12 @@ export default function HiddenDangerPage({
       
       // 扁平化部门树，保留所有字段（包括 managerId）
       const flattenDepts = (nodes: any[], result: any[] = []): any[] => {
-        nodes?.forEach(node => {
+        // 确保 nodes 是数组
+        if (!Array.isArray(nodes) || nodes.length === 0) {
+          return result;
+        }
+        
+        nodes.forEach(node => {
           result.push({ 
             id: node.id, 
             name: node.name,
@@ -92,14 +98,15 @@ export default function HiddenDangerPage({
             level: node.level,
             managerId: node.managerId
           });
-          if (node.children?.length) {
+          if (node.children && Array.isArray(node.children) && node.children.length > 0) {
             flattenDepts(node.children, result);
           }
         });
         return result;
       };
       
-      setDepartments(flattenDepts(data));
+      // 确保 data 是数组
+      setDepartments(flattenDepts(Array.isArray(data) ? data : []));
     } catch (error) {
       console.error('获取部门列表失败:', error);
     }
@@ -145,7 +152,7 @@ export default function HiddenDangerPage({
   const handleReport = async (formData: any) => {
     try {
       // 生成隐患编号：Hazard+日期+序号
-      const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+      const today = todayString().replace(/-/g, '');
       // TODO: 应该从数据库获取今日已有记录数来计算序号
       const sequence = String(filteredHazards.length + 1).padStart(3, '0');
       const hazardCode = `Hazard${today}${sequence}`;
@@ -177,7 +184,7 @@ export default function HiddenDangerPage({
   // 处理批量上传
   const handleBatchUpload = async (data: any[]) => {
     try {
-      const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+      const today = todayString().replace(/-/g, '');
       let successCount = 0;
       let failCount = 0;
 
@@ -189,9 +196,7 @@ export default function HiddenDangerPage({
           const hazardCode = `Hazard${today}${sequence}`;
 
           // 计算截止日期（设置为当天的结束时间 23:59:59.999）
-          const deadline = new Date();
-          deadline.setDate(deadline.getDate() + (item.deadlineDays || 7));
-          deadline.setHours(23, 59, 59, 999);
+          const deadline = addDays(new Date(), item.deadlineDays || 7, true);
 
           // 创建隐患记录
           const newHazard = await hazardService.createHazard({

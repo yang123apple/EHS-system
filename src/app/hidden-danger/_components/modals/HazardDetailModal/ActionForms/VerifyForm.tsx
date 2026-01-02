@@ -68,11 +68,21 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
         departments: [],
       });
 
-      if (result.success && result.userNames && result.userNames.length > 0) {
-        const matchedUser = allUsers.find(u => u.name === result.userNames[0]);
+      if (result.success && result.userIds && result.userIds.length > 0) {
+        // 直接使用返回的用户ID查找用户，避免通过用户名查找可能失败的问题
+        const matchedUser = allUsers.find(u => u.id === result.userIds[0]);
         if (matchedUser) {
           setSuggestedVerifier(matchedUser.name);
           setMatchResult(`✅ ${result.matchedBy}: ${result.userNames?.join(', ')}`);
+        } else {
+          // 如果通过ID找不到，尝试通过用户名查找（向后兼容）
+          const matchedUserByName = allUsers.find(u => u.name === result.userNames[0]);
+          if (matchedUserByName) {
+            setSuggestedVerifier(matchedUserByName.name);
+            setMatchResult(`✅ ${result.matchedBy}: ${result.userNames?.join(', ')}`);
+          } else {
+            setMatchResult(`❌ 未找到匹配的用户`);
+          }
         }
       } else {
         setMatchResult(`❌ ${result.error || '未找到匹配的验收人'}`);

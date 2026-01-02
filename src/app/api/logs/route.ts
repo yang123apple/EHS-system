@@ -1,6 +1,6 @@
 // src/app/api/logs/route.ts
 import { NextResponse } from 'next/server';
-import { SystemLogService } from '@/services/systemLog.service';
+import { SystemLogService, SystemLogData } from '@/services/systemLog.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,5 +49,41 @@ export async function GET(req: Request) {
       data: { logs: [], total: 0 },
       meta: { page: 1, limit: 50, totalPages: 0 }
     }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const logData: SystemLogData = {
+      userId: body.userId,
+      userName: body.userName,
+      action: body.action,
+      targetId: body.targetId,
+      targetType: body.targetType,
+      details: body.details,
+      snapshot: body.snapshot,
+      ip: body.ip || req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || undefined,
+    };
+
+    const log = await SystemLogService.createLog(logData);
+
+    if (!log) {
+      return NextResponse.json(
+        { success: false, error: '创建日志失败' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: log,
+    });
+  } catch (error) {
+    console.error('创建日志失败:', error);
+    return NextResponse.json(
+      { success: false, error: '创建日志失败' },
+      { status: 500 }
+    );
   }
 }

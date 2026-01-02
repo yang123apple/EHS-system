@@ -213,11 +213,14 @@ export const GET = withAuth(async (req: Request, context, user) => {
     if (date) {
         const targetDate = new Date(date);
         if (!isNaN(targetDate.getTime())) {
-            const nextDay = new Date(targetDate);
-            nextDay.setDate(nextDay.getDate() + 1);
+            // 开始时间设置为当天的 00:00:00，结束时间设置为当天的 23:59:59.999
+            const startOfDay = new Date(targetDate);
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(targetDate);
+            endOfDay.setHours(23, 59, 59, 999);
             whereCondition.createdAt = {
-                gte: targetDate,
-                lt: nextDay
+                gte: startOfDay,
+                lte: endOfDay
             };
         }
     }

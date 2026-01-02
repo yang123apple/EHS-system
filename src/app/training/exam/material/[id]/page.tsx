@@ -3,6 +3,7 @@ import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { apiFetch } from '@/lib/apiClient';
 
 export default function MaterialExamPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -26,8 +27,8 @@ export default function MaterialExamPage({ params }: { params: Promise<{ id: str
 
     // 加载学习材料和相关任务
     Promise.all([
-      fetch(`/api/training/materials/${id}`).then(res => res.json()),
-      fetch(`/api/training/my-tasks?userId=${user.id}`).then(res => res.json())
+      apiFetch(`/api/training/materials/${id}`).then(res => res.json()),
+      apiFetch(`/api/training/my-tasks?userId=${user.id}`).then(res => res.json())
     ]).then(([materialData, tasksData]) => {
       setMaterial(materialData);
 
@@ -96,14 +97,13 @@ export default function MaterialExamPage({ params }: { params: Promise<{ id: str
     // 如果有任务，提交到服务器
     if (hasTask && assignment) {
       try {
-        await fetch(`/api/training/assignment/${assignment.id}`, {
+        await apiFetch(`/api/training/assignment/${assignment.id}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: {
             action: 'submit_exam',
             score: totalScore,
             isPassed: passed
-          })
+          }
         });
       } catch (error) {
         console.error('Failed to submit exam:', error);

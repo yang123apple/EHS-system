@@ -52,13 +52,19 @@ export const SYSTEM_MODULES = [
     basePermission: 'access', // 基础权限：能访问该系统
     permissions: [
       { key: 'create_material', name: '创建培训资料' },
-      { key: 'edit_material', name: '编辑培训资料' },
-      { key: 'delete_material', name: '删除培训资料' },
+      { key: 'edit_material_self', name: '编辑培训资料（自己创建的）' },
+      { key: 'edit_material_all', name: '编辑培训资料（所有人创建的）' },
+      { key: 'delete_material_self', name: '删除培训资料（自己创建的）' },
+      { key: 'delete_material_all', name: '删除培训资料（所有人创建的）' },
       { key: 'create_task', name: '创建培训任务' },
-      { key: 'edit_task', name: '修改培训任务' },
+      { key: 'edit_task_self', name: '修改培训任务（自己创建的）' },
+      { key: 'edit_task_all', name: '修改培训任务（所有人创建的）' },
+      { key: 'delete_task_self', name: '删除培训任务（自己创建的）' },
+      { key: 'delete_task_all', name: '删除培训任务（所有人创建的）' },
       { key: 'assign_task', name: '分配培训任务' },
       { key: 'view_stats', name: '查看培训统计' },
-      { key: 'manage_exam', name: '管理考试试卷' },
+      { key: 'manage_exam_self', name: '管理考试试卷（自己创建的）' },
+      { key: 'manage_exam_all', name: '管理考试试卷（所有人创建的）' },
       { key: 'review_exam', name: '审核考试结果' },
     ]
   }

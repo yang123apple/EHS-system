@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { User, Building, Briefcase, Lock, Camera, Save, Loader2 } from 'lucide-react';
+import { apiFetch } from '@/lib/apiClient';
 
 interface UserProfile {
   id: string;
@@ -31,7 +32,7 @@ export default function ProfilePage() {
     const fetchProfile = async () => {
       try {
         // 复用之前的 GET /api/users/[id] 接口
-        const res = await fetch(`/api/users/${authUser.id}`);
+        const res = await apiFetch(`/api/users/${authUser.id}`);
         if (res.ok) {
           const data = await res.json();
           setProfile(data);
@@ -73,7 +74,7 @@ export default function ProfilePage() {
     // 但在页面逻辑上，我们不提交这两个字段
 
     try {
-      const res = await fetch(`/api/users/${profile.id}`, {
+      const res = await apiFetch(`/api/users/${profile.id}`, {
         method: 'PUT',
         body: formData
       });

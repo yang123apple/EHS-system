@@ -3,6 +3,7 @@ import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import FileViewer from '@/components/training/FileViewer';
 import { ArrowLeft, CheckCircle } from 'lucide-react';
+import { apiFetch } from '@/lib/apiClient';
 
 export default function LearnPage({ params }: { params: Promise<{ taskId: string }> }) {
   const router = useRouter();
@@ -12,11 +13,26 @@ export default function LearnPage({ params }: { params: Promise<{ taskId: string
   const [completed, setCompleted] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/training/assignment/${taskId}`)
+    apiFetch(`/api/training/assignment/${taskId}`)
         .then(res => res.json())
         .then(data => {
             setAssignment(data);
-            if (data?.isPassed || (data?.progress === 100 && !data?.task?.material?.isExamRequired)) {
+            const material = data?.task?.material;
+            const materialType = material?.type;
+            const isVideo = materialType === 'video';
+            const isDocument = materialType === 'pdf' || materialType === 'docx';
+            
+            // 判断是否完成：
+            // - 已通过考试
+            // - 无考试要求且：视频进度>=95% 或 文档进度=100%
+            const isCompleted = data?.isPassed || (
+                !material?.isExamRequired && (
+                    (isVideo && data?.progress >= 95) || 
+                    (isDocument && data?.progress === 100)
+                )
+            );
+            
+            if (isCompleted) {
                 setCompleted(true);
             }
         })
@@ -29,30 +45,50 @@ export default function LearnPage({ params }: { params: Promise<{ taskId: string
 
   const handleProgress = (progress: number) => {
       if (!assignment) return;
+      const material = assignment.task?.material;
+      const materialType = material?.type;
+      const isVideo = materialType === 'video';
+      
       // Only update if progress increased
       if (progress > assignment.progress) {
-          fetch(`/api/training/progress`, {
+          // 对于视频，当进度>=95%时，也触发完成逻辑
+          const shouldComplete = isVideo && progress >= 95 && !material?.isExamRequired;
+          
+          apiFetch(`/api/training/progress`, {
               method: 'POST',
-              body: JSON.stringify({
+              body: {
                   assignmentId: assignment.id,
-                  progress: Math.floor(progress)
-              })
+                  progress: Math.floor(progress),
+                  ...(shouldComplete ? { status: 'completed' } : {})
+              }
+          }).then(() => {
+              // 如果是视频且达到95%，更新本地状态
+              if (shouldComplete) {
+                  setCompleted(true);
+              }
           });
       }
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
       if (completed) return;
-      setCompleted(true);
-      // Update backend to completed
-      fetch(`/api/training/progress`, {
-          method: 'POST',
-          body: JSON.stringify({
-              assignmentId: assignment.id,
-              progress: 100,
-              status: 'completed'
-          })
-      });
+      
+      // 更新后端进度和状态
+      try {
+          await apiFetch(`/api/training/progress`, {
+              method: 'POST',
+              body: {
+                  assignmentId: assignment.id,
+                  progress: 100,
+                  status: 'completed'
+              }
+          });
+          
+          // 更新本地状态，显示完成覆盖层
+          setCompleted(true);
+      } catch (error) {
+          console.error('标记学习完成失败:', error);
+      }
   };
 
   if (loading) return <div className="p-10 text-center">加载中...</div>;
@@ -77,6 +113,11 @@ export default function LearnPage({ params }: { params: Promise<{ taskId: string
                 type={material.convertedUrl ? 'pdf' : material.type}
                 onProgress={handleProgress}
                 onComplete={handleComplete}
+                isExamRequired={material.isExamRequired}
+                onStartExam={() => {
+                    // 跳转到考试页面
+                    router.push(`/training/exam/${assignment.id}`);
+                }}
             />
 
             {/* Completion Overlay / Exam Prompt */}

@@ -24,15 +24,15 @@ export default function LoginPage() {
 
   return (
     // 修改点：删除了 -mt-16，保留 min-h-screen 和 w-full
-    <div className="min-h-screen w-full flex items-center justify-center bg-hytzer-dark relative overflow-hidden z-10">
+    <div className="min-h-screen w-full flex items-center justify-center bg-hytzer-dark relative overflow-hidden">
         
         {/* 背景光效装饰 */}
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
-             <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-hytzer-blue opacity-20 blur-[120px] rounded-full"></div>
-             <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-400 opacity-10 blur-[120px] rounded-full"></div>
+             <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-hytzer-blue opacity-20 blur-[120px] rounded-full pointer-events-none"></div>
+             <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-400 opacity-10 blur-[120px] rounded-full pointer-events-none"></div>
         </div>
 
-      <div className="bg-white/10 backdrop-blur-lg border border-white/20 p-6 sm:p-8 rounded-2xl shadow-2xl w-full max-w-md z-20 mx-4">
+      <div className="bg-white/10 backdrop-blur-lg border border-white/20 p-6 sm:p-8 rounded-2xl shadow-2xl w-full max-w-md mx-4 relative z-10">
         <div className="text-center mb-6 sm:mb-8">
             <div className="relative w-32 sm:w-40 h-10 sm:h-12 mx-auto mb-3 sm:mb-4">
                  <Image src="/logo1.png" alt="Hytzer" fill className="object-contain brightness-0 invert" sizes="(max-width: 640px) 128px, 160px" priority />

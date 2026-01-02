@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import FileViewer from '@/components/training/FileViewer';
 import { ArrowLeft, Download, BookOpen } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { apiFetch } from '@/lib/apiClient';
 
 export default function MaterialLearnPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -13,6 +14,7 @@ export default function MaterialLearnPage({ params }: { params: Promise<{ id: st
   const [assignment, setAssignment] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [hasTask, setHasTask] = useState(false);
+  const [completed, setCompleted] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -22,8 +24,8 @@ export default function MaterialLearnPage({ params }: { params: Promise<{ id: st
 
     // 加载学习材料和相关任务
     Promise.all([
-      fetch(`/api/training/materials/${id}`).then(res => res.json()),
-      fetch(`/api/training/my-tasks?userId=${user.id}`).then(res => res.json())
+      apiFetch(`/api/training/materials/${id}`).then(res => res.json()),
+      apiFetch(`/api/training/my-tasks?userId=${user.id}`).then(res => res.json())
     ]).then(([materialData, tasksData]) => {
       setMaterial(materialData);
 
@@ -38,17 +40,9 @@ export default function MaterialLearnPage({ params }: { params: Promise<{ id: st
         setHasTask(false);
       }
 
-      // 标记为已学习
-      fetch('/api/training/learned', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          materialId: id
-        })
-      }).catch(err => {
-        console.error('Failed to mark as learned:', err);
-      });
+      // 注意：不再直接标记为已学习
+      // 对于有考试要求的学习内容，必须通过考试才能标记为已学习
+      // 对于没有考试要求的学习内容，会在学习完成时自动标记（通过 progress API）
     }).catch(err => {
       console.error('Failed to load material:', err);
     }).finally(() => setLoading(false));
@@ -96,7 +90,75 @@ export default function MaterialLearnPage({ params }: { params: Promise<{ id: st
         <FileViewer
           url={material.url}
           type={material.type}
+          onProgress={(progress) => {
+            // 如果有任务，更新进度
+            if (hasTask && assignment && progress > (assignment.progress || 0)) {
+              apiFetch(`/api/training/progress`, {
+                method: 'POST',
+                body: {
+                  assignmentId: assignment.id,
+                  progress: Math.floor(progress)
+                }
+              }).catch(err => console.error('更新进度失败:', err));
+            }
+          }}
+          onComplete={async () => {
+            // 如果有任务，标记为完成
+            if (hasTask && assignment) {
+              try {
+                await apiFetch(`/api/training/progress`, {
+                  method: 'POST',
+                  body: {
+                    assignmentId: assignment.id,
+                    progress: 100,
+                    status: 'completed'
+                  }
+                });
+                setCompleted(true);
+              } catch (error) {
+                console.error('标记学习完成失败:', error);
+              }
+            } else {
+              // 自由学习模式，对于没有考试要求的内容，标记为已学习
+              if (!material.isExamRequired && user) {
+                try {
+                  await apiFetch('/api/training/learned', {
+                    method: 'POST',
+                    body: {
+                      userId: user.id,
+                      materialId: id
+                    }
+                  });
+                } catch (error) {
+                  console.error('标记已学习失败:', error);
+                  // 即使标记失败，也显示完成提示
+                }
+              }
+              setCompleted(true);
+            }
+          }}
+          isExamRequired={material.isExamRequired}
+          onStartExam={handleStartExam}
         />
+        
+        {/* 完成提示覆盖层 */}
+        {completed && (
+          <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-10 backdrop-blur-sm">
+            <div className="bg-white p-8 rounded-xl max-w-md w-full text-center space-y-6 animate-in fade-in zoom-in">
+              <div className="text-green-500 text-6xl mb-4">✓</div>
+              <h2 className="text-2xl font-bold text-slate-800">学习已完成!</h2>
+              <p className="text-slate-600 mb-6">
+                {hasTask ? '恭喜，您已完成该课程。' : '您已完成该学习内容的学习。'}
+              </p>
+              <button 
+                onClick={() => router.back()} 
+                className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-200"
+              >
+                返回
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

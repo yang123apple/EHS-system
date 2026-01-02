@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createLog } from '@/lib/logger';
+import { setStartOfDay, setEndOfDay, extractDatePart, nowISOString } from '@/utils/dateUtils';
 
 // GET: 获取所有工程/项目列表
 export async function GET(req: Request) {
@@ -31,11 +32,11 @@ export async function GET(req: Request) {
     if (date) {
         // Find projects active on this date
         // startDate <= date <= endDate
-        const targetDate = new Date(date);
-        if (!isNaN(targetDate.getTime())) {
-             where.startDate = { lte: targetDate };
-             where.endDate = { gte: targetDate };
-        }
+        // 开始时间设置为当天的 00:00:00，结束时间设置为当天的 23:59:59.999
+        const startOfDay = setStartOfDay(extractDatePart(date));
+        const endOfDay = setEndOfDay(extractDatePart(date));
+        where.startDate = { lte: endOfDay };
+        where.endDate = { gte: startOfDay };
     }
 
     if (status) {
@@ -108,11 +109,13 @@ export async function POST(req: Request) {
     const { name, contractNo, location, startDate, endDate, requestDept, requestHead, requestContact, mgmtDept, mgmtHead, mgmtContact, supplierName, supplierHead, supplierContact, attachments, userId, userName } = body;
     if (!name || !location || !supplierName) return NextResponse.json({ error: '缺少必填字段' }, { status: 400 });
     const autoCode = await generateSequentialCode();
+    // 开始时间设置为当天的 00:00:00，结束时间设置为当天的 23:59:59.999
     const newProject = await prisma.project.create({
       data: {
         code: autoCode,
         name, contractNo, location,
-        startDate: new Date(startDate), endDate: new Date(endDate),
+        startDate: setStartOfDay(extractDatePart(startDate)), 
+        endDate: setEndOfDay(extractDatePart(endDate)),
         requestDept, requestHead: requestHead||"", requestContact: requestContact||"",
         mgmtDept, mgmtHead, mgmtContact,
         supplierName, supplierHead: supplierHead||"", supplierContact: supplierContact||"",
@@ -148,8 +151,9 @@ export async function PATCH(req: Request) {
     if (!id) return NextResponse.json({ error: '缺少 ID' }, { status: 400 });
 
     const dataToUpdate: any = {};
-    if (startDate) dataToUpdate.startDate = new Date(startDate);
-    if (endDate) dataToUpdate.endDate = new Date(endDate);
+    // 开始时间设置为当天的 00:00:00，结束时间设置为当天的 23:59:59.999
+    if (startDate) dataToUpdate.startDate = setStartOfDay(extractDatePart(startDate));
+    if (endDate) dataToUpdate.endDate = setEndOfDay(extractDatePart(endDate));
 
     const updatedProject = await prisma.project.update({
       where: { id },
@@ -186,7 +190,7 @@ export async function DELETE(req: Request) {
     // 🟢 软删除：更新 deletedAt 字段
     await prisma.project.update({ 
       where: { id },
-      data: { deletedAt: new Date() }
+      data: { deletedAt: new Date(nowISOString()) }
     });
 
     // 🟢 插入日志

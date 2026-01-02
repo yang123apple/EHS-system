@@ -5,7 +5,7 @@ import { HazardRecord, CCRule, EmergencyPlanRule, HazardWorkflowConfig, SimpleUs
 import { HazardDispatchEngine, DispatchAction } from '@/services/hazardDispatchEngine';
 import { matchHandler } from '@/app/hidden-danger/_utils/handler-matcher';
 import type { Department } from '@/utils/departmentUtils';
-import { SystemLogService } from '@/services/systemLog.service';
+import { apiFetch } from '@/lib/apiClient';
 
 export function useHazardWorkflow(onSuccess: () => void) {
   const [loading, setLoading] = useState(false);
@@ -175,6 +175,16 @@ export function useHazardWorkflow(onSuccess: () => void) {
             const handlerId = result.handlers.userIds[0];
             const handlerName = result.handlers.userNames[0];
             
+            console.log('🎯 设置下一步执行人:', {
+              handlerId,
+              handlerName,
+              nextStepId: nextStep.id,
+              nextStepName: nextStep.name,
+              matchedBy: result.handlers.matchedBy,
+              allHandlerIds: result.handlers.userIds,
+              allHandlerNames: result.handlers.userNames
+            });
+            
             dispatchedHandlers.dopersonal_ID = handlerId;
             dispatchedHandlers.dopersonal_Name = handlerName;
             dispatchedHandlers.old_personal_ID = [...(hazard.old_personal_ID || []), handlerId];
@@ -187,7 +197,11 @@ export function useHazardWorkflow(onSuccess: () => void) {
               dispatchedHandlers.verifierName = handlerName;
             }
           } else {
-            console.warn('⚠️ 派发引擎未匹配到处理人');
+            console.warn('⚠️ 派发引擎未匹配到处理人', {
+              resultHandlers: result.handlers,
+              nextStepId: nextStep.id,
+              nextStepName: nextStep.name
+            });
           }
         }
       } else {
@@ -223,6 +237,8 @@ export function useHazardWorkflow(onSuccess: () => void) {
         payload,
         dispatchedHandlers,
         finalUpdates: updates,
+        dopersonal_ID: updates.dopersonal_ID,
+        dopersonal_Name: updates.dopersonal_Name,
         责任人字段: {
           responsibleId: updates.responsibleId,
           responsibleName: updates.responsibleName,
@@ -267,14 +283,18 @@ export function useHazardWorkflow(onSuccess: () => void) {
           additionalData: payload,
         };
 
-        await SystemLogService.createLog({
-          action: logAction,
-          targetType: 'hazard',
-          targetId: hazard.id,
-          userId: user?.id || 'system',
-          userName: user?.name || '系统',
-          details: `${result.log.action}：${hazard.code} - ${hazard.desc?.substring(0, 50)}`,
-          snapshot,
+        await apiFetch('/api/logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: logAction,
+            targetType: 'hazard',
+            targetId: hazard.id,
+            userId: user?.id || 'system',
+            userName: user?.name || '系统',
+            details: `${result.log.action}：${hazard.code} - ${hazard.desc?.substring(0, 50)}`,
+            snapshot,
+          })
         });
 
         console.log('📝 已记录系统日志，包含派发快照');
@@ -285,10 +305,9 @@ export function useHazardWorkflow(onSuccess: () => void) {
       // 创建通知（通过 API）
       if (result.notifications && result.notifications.length > 0) {
         try {
-          await fetch('/api/notifications', {
+          await apiFetch('/api/notifications', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ notifications: result.notifications }),
+            body: { notifications: result.notifications },
           });
           console.log(`✅ 已创建 ${result.notifications.length} 条通知`);
         } catch (notifyError) {

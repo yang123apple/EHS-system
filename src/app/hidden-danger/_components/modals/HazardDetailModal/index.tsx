@@ -74,42 +74,47 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2 lg:p-4 backdrop-blur-md">
         <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-          <div className="flex items-center gap-3">
-            <h3 className="font-bold text-lg">隐患详情</h3>
-            <RiskBadge level={hazard.riskLevel} />
-            <StatusBadge status={hazard.status} />
+        <div className="p-3 lg:p-4 border-b flex justify-between items-center bg-slate-50 shrink-0">
+          <div className="flex items-center gap-2 lg:gap-3 flex-1 min-w-0">
+            <h3 className="font-bold text-base lg:text-lg truncate">隐患详情</h3>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <RiskBadge level={hazard.riskLevel} />
+              <StatusBadge status={hazard.status} />
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 lg:gap-2 shrink-0">
             {hasDeletePermission && (
-              <button onClick={() => onDelete(hazard.id)} className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors">
-                <Trash2 size={18}/>
+              <button onClick={() => onDelete(hazard.id)} className="text-red-500 p-1.5 lg:p-2 hover:bg-red-50 rounded-lg transition-colors">
+                <Trash2 size={16} className="lg:w-[18px] lg:h-[18px]"/>
               </button>
             )}
-            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-lg transition-colors"><X size={20}/></button>
+            <button onClick={onClose} className="p-1.5 lg:p-2 hover:bg-slate-200 rounded-lg transition-colors">
+              <X size={18} className="lg:w-5 lg:h-5"/>
+            </button>
           </div>
         </div>
 
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
           {/* Left: Info Section */}
-          <div className="w-full lg:w-1/2 overflow-y-auto p-6 space-y-6">
-            <div className="bg-slate-50 p-6 rounded-xl border border-slate-100">
-              <h2 className="text-xl font-bold text-slate-900 mb-4">{hazard.desc}</h2>
-              <div className="grid grid-cols-2 gap-4 text-sm text-slate-500">
+          <div className="w-full lg:w-1/2 overflow-y-auto p-4 lg:p-6 space-y-4 lg:space-y-6">
+            <div className="bg-slate-50 p-4 lg:p-6 rounded-xl border border-slate-100">
+              <h2 className="text-lg lg:text-xl font-bold text-slate-900 mb-3 lg:mb-4">{hazard.desc}</h2>
+              {/* 移动端：单列，桌面端：2列 */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4 text-sm text-slate-500">
                 {hazard.code && (
-                  <p className="col-span-2">
-                    编号：<span className="text-blue-600 font-mono font-bold">{hazard.code}</span>
+                  <p className="col-span-1 lg:col-span-2">
+                    编号：<span className="text-blue-600 font-mono font-bold break-all">{hazard.code}</span>
                   </p>
                 )}
                 <p>类型：<span className="text-slate-800">{hazard.type}</span></p>
                 <p>区域：<span className="text-slate-800">{hazard.location}</span></p>
                 <p>上报：<span className="text-slate-800">{hazard.reporterName}</span></p>
-                <p>时间：<span className="text-slate-800">{new Date(hazard.reportTime).toLocaleString()}</span></p>
+                <p>时间：<span className="text-slate-800 break-words">{new Date(hazard.reportTime).toLocaleString()}</span></p>
                 {hazard.dopersonal_Name && (
-                  <div className="col-span-2">
+                  <div className="col-span-1 lg:col-span-2">
                     <p className="text-slate-500">
                       当前处理人：
                       <span className="text-blue-600 font-bold ml-1">{hazard.dopersonal_Name}</span>
@@ -117,34 +122,39 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                   </div>
                 )}
               </div>
-              <div className="flex gap-2 mt-6">
-                {photos.map((p: string, i: number) => (
-                  <div 
-                    key={i} 
-                    className="relative group cursor-pointer"
-                    onClick={() => handleImageClick(p, i)}
-                  >
-                    <img 
-                      src={p} 
-                      className="w-24 h-24 rounded-lg object-cover border-2 border-white shadow-sm transition-transform group-hover:scale-105" 
-                      alt="现场"
-                    />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 rounded-lg transition-all flex items-center justify-center">
-                      <ZoomIn className="text-white opacity-0 group-hover:opacity-100 transition-opacity" size={24} />
-                    </div>
+              {/* 照片展示区域 - 移动端横向滚动 */}
+              {photos.length > 0 && (
+                <div className="mt-4 lg:mt-6">
+                  <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0">
+                    {photos.map((p: string, i: number) => (
+                      <div 
+                        key={i} 
+                        className="relative group cursor-pointer shrink-0 flex-shrink-0"
+                        onClick={() => handleImageClick(p, i)}
+                      >
+                        <img 
+                          src={p} 
+                          className="w-20 h-20 lg:w-24 lg:h-24 rounded-lg object-cover border-2 border-white shadow-sm transition-transform group-active:scale-105" 
+                          alt="现场"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-active:bg-black/40 rounded-lg transition-all flex items-center justify-center">
+                          <ZoomIn className="text-white opacity-0 group-active:opacity-100 transition-opacity" size={20} />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
 
             <ProcessingFlow logs={hazard.logs} />
           </div>
 
           {/* Right: Action Pane */}
-          <div className="w-full lg:w-1/2 bg-slate-50/50 border-l border-slate-200 p-6 overflow-y-auto space-y-6">
+          <div className="w-full lg:w-1/2 bg-slate-50/50 border-t lg:border-l border-slate-200 p-4 lg:p-6 overflow-y-auto space-y-4 lg:space-y-6">
             <div className="space-y-2">
               <div className="flex justify-between items-center font-bold text-slate-800">
-                <span>流程处理</span>
+                <span className="text-base lg:text-lg">流程处理</span>
                 <StatusBadge status={hazard.status} />
               </div>
               {hazard.dopersonal_Name && (
@@ -173,10 +183,10 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                 
                 {/* 开始整改和驳回按钮 - 仅当前步骤执行人或管理员可见 */}
                 {hazard.status === 'assigned' && hasRectifyPermission && (
-                  <div className="flex gap-3">
+                  <div className="flex flex-col sm:flex-row gap-3">
                     <button 
                       onClick={() => onProcess('assign', hazard, {}, user)}
-                      className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all"
+                      className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 active:scale-95 transition-all"
                     >
                       开始整改
                     </button>
@@ -187,7 +197,7 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                           onProcess('reject_by_responsible', hazard, { rejectReason: reason }, user);
                         }
                       }}
-                      className="px-6 bg-red-500 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-red-600 transition-all"
+                      className="px-6 bg-red-500 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-red-600 active:scale-95 transition-all"
                     >
                       驳回
                     </button>

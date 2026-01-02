@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { Project } from '@/types/work-permit';
 import { ProjectService } from '@/services/workPermitService';
+import { useDateRange } from '@/hooks/useDateRange';
+import { toDateString } from '@/utils/dateUtils';
 
 interface Props {
     isOpen: boolean;
@@ -11,20 +13,27 @@ interface Props {
 }
 
 export default function AdjustDateModal({ isOpen, onClose, project, onSuccess }: Props) {
-    const [dates, setDates] = useState({ startDate: '', endDate: '' });
+    // 使用日期范围 Hook 自动处理开始和结束日期的关联
+    const { startDate, endDate, setStartDate, setEndDate, endDateMin, isValid } = useDateRange({
+        initialStartDate: project ? toDateString(project.startDate) : '',
+        initialEndDate: project ? toDateString(project.endDate) : '',
+    });
 
     useEffect(() => {
         if (project) {
-            setDates({
-                startDate: new Date(project.startDate).toISOString().slice(0, 10),
-                endDate: new Date(project.endDate).toISOString().slice(0, 10)
-            });
+            setStartDate(toDateString(project.startDate));
+            setEndDate(toDateString(project.endDate));
         }
-    }, [project]);
+    }, [project, setStartDate, setEndDate]);
 
     const handleSave = async () => {
+        if (!isValid) {
+            alert('❌ 错误：结束日期必须晚于开始日期！');
+            return;
+        }
+        
         try {
-            await ProjectService.update(project.id, dates);
+            await ProjectService.update(project.id, { startDate, endDate });
             alert("工期调整成功");
             onSuccess();
         } catch (e) {
@@ -41,11 +50,22 @@ export default function AdjustDateModal({ isOpen, onClose, project, onSuccess }:
                 <div className="space-y-4">
                     <div>
                         <label className="block text-sm font-bold text-slate-700 mb-1">开始日期</label>
-                        <input type="date" className="w-full border rounded p-2" value={dates.startDate} onChange={e => setDates({ ...dates, startDate: e.target.value })} />
+                        <input 
+                            type="date" 
+                            className="w-full border rounded p-2" 
+                            value={startDate} 
+                            onChange={e => setStartDate(e.target.value)} 
+                        />
                     </div>
                     <div>
                         <label className="block text-sm font-bold text-slate-700 mb-1">结束日期</label>
-                        <input type="date" className="w-full border rounded p-2" value={dates.endDate} onChange={e => setDates({ ...dates, endDate: e.target.value })} />
+                        <input 
+                            type="date" 
+                            className="w-full border rounded p-2" 
+                            value={endDate} 
+                            onChange={e => setEndDate(e.target.value)}
+                            min={endDateMin}
+                        />
                     </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6 border-t pt-4">

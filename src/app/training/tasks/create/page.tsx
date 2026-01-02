@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import { Calendar, Users, Building2, UserCheck, ArrowLeft, Sparkles, FileText, Clock } from 'lucide-react';
 import PeopleSelector from '@/components/common/PeopleSelector';
 import { useAuth } from '@/context/AuthContext';
+import { apiFetch } from '@/lib/apiClient';
+import { useDateRange } from '@/hooks/useDateRange';
 
 export default function CreateTaskPage() {
   const router = useRouter();
@@ -15,8 +17,8 @@ export default function CreateTaskPage() {
   // Form
   const [title, setTitle] = useState('');
   const [materialId, setMaterialId] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // 使用日期范围 Hook 自动处理开始和结束日期的关联
+  const { startDate, endDate, setStartDate, setEndDate, endDateMin, isValid } = useDateRange();
   const [targetType, setTargetType] = useState('all'); // all, dept, user
   const [targetConfig, setTargetConfig] = useState<any[]>([]); // ids
 
@@ -26,7 +28,7 @@ export default function CreateTaskPage() {
   const [displayTargets, setDisplayTargets] = useState<string[]>([]);
 
   useEffect(() => {
-    fetch('/api/training/materials')
+    apiFetch('/api/training/materials')
       .then(res => res.json())
       .then(data => {
           setMaterials(data);
@@ -35,17 +37,50 @@ export default function CreateTaskPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const getTypeConfig = (type: string) => {
+    const normalizedType = type?.toLowerCase();
+    const configs: Record<string, { label: string; shortLabel: string; color: string; bgColor: string }> = {
+      video: { 
+        label: '视频课程', 
+        shortLabel: '视频',
+        color: 'text-purple-700', 
+        bgColor: 'bg-purple-100' 
+      },
+      pdf: { 
+        label: 'PDF文档', 
+        shortLabel: 'PDF',
+        color: 'text-rose-700', 
+        bgColor: 'bg-rose-100' 
+      },
+      pptx: { 
+        label: 'PPT课件', 
+        shortLabel: 'PPT',
+        color: 'text-amber-700', 
+        bgColor: 'bg-amber-100' 
+      },
+    };
+    return configs[normalizedType] || { 
+      label: type?.toUpperCase() || '未知', 
+      shortLabel: type?.toUpperCase() || '未知',
+      color: 'text-slate-700', 
+      bgColor: 'bg-slate-100' 
+    };
+  };
+
   const handleSubmit = async () => {
     if (!title || !materialId || !startDate || !endDate) return alert('请完善信息');
     if (targetType !== 'all' && targetConfig.length === 0) return alert('请选择目标对象');
     if (!user?.id) return alert('登录状态失效');
+    if (!isValid) {
+      alert('❌ 错误：结束日期必须晚于开始日期！');
+      return;
+    }
 
     setSubmitting(true);
     try {
-        const res = await fetch('/api/training/tasks', {
+        const res = await apiFetch('/api/training/tasks', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+            body: {
                 title,
                 description: '',
                 startDate,
@@ -54,7 +89,7 @@ export default function CreateTaskPage() {
                 publisherId: user.id,
                 targetType,
                 targetConfig
-            })
+            }
         });
 
         if (res.ok) router.push('/training/tasks');
@@ -138,11 +173,14 @@ export default function CreateTaskPage() {
               ) : materials.length === 0 ? (
                 <option>暂无可用学习内容</option>
               ) : (
-                materials.map(m => (
-                  <option key={m.id} value={m.id}>
-                    {m.title} · {m.type === 'VIDEO' ? '视频课程' : m.type === 'PDF' ? 'PDF文档' : 'PPT课件'}
-                  </option>
-                ))
+                materials.map(m => {
+                  const typeConfig = getTypeConfig(m.type);
+                  return (
+                    <option key={m.id} value={m.id}>
+                      {m.title} · {typeConfig.label}
+                    </option>
+                  );
+                })
               )}
             </select>
             
@@ -155,13 +193,14 @@ export default function CreateTaskPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900">{selectedMaterial.title}</p>
                     <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500">
-                      <span className={`px-2 py-0.5 rounded-full font-medium ${
-                        selectedMaterial.type === 'VIDEO' ? 'bg-purple-100 text-purple-700' :
-                        selectedMaterial.type === 'PDF' ? 'bg-rose-100 text-rose-700' :
-                        'bg-amber-100 text-amber-700'
-                      }`}>
-                        {selectedMaterial.type === 'VIDEO' ? '视频' : selectedMaterial.type === 'PDF' ? 'PDF' : 'PPT'}
-                      </span>
+                      {(() => {
+                        const typeConfig = getTypeConfig(selectedMaterial.type);
+                        return (
+                          <span className={`px-2 py-0.5 rounded-full font-medium ${typeConfig.bgColor} ${typeConfig.color}`}>
+                            {typeConfig.shortLabel}
+                          </span>
+                        );
+                      })()}
                       {selectedMaterial.category && (
                         <span className="text-slate-400">· {selectedMaterial.category}</span>
                       )}
@@ -198,6 +237,7 @@ export default function CreateTaskPage() {
                 type="date"
                 value={endDate}
                 onChange={e => setEndDate(e.target.value)}
+                min={endDateMin}
                 className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl 
                          text-slate-900
                          focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 

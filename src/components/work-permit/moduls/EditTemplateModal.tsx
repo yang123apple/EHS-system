@@ -23,7 +23,12 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
   
   // 🟢 新增水印状态
-  const [watermark, setWatermark] = useState({ text: '仅供内部审批', enabled: true });
+  const [watermark, setWatermark] = useState({ 
+    text: '仅供内部审批', 
+    enabled: true,
+    includeUser: false,
+    includeTime: false
+  });
   
   // 🟢 V3.4 模板级别和section绑定
   const [level, setLevel] = useState<'primary' | 'secondary'>('primary');
@@ -65,10 +70,17 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
       if (template.watermarkSettings) {
         setWatermark({
           text: template.watermarkSettings.text || '仅供内部审批',
-          enabled: !!template.watermarkSettings.enabled
+          enabled: !!template.watermarkSettings.enabled,
+          includeUser: !!template.watermarkSettings.includeUser,
+          includeTime: !!template.watermarkSettings.includeTime
         });
       } else {
-        setWatermark({ text: '仅供内部审批', enabled: true });
+        setWatermark({ 
+          text: '仅供内部审批', 
+          enabled: true,
+          includeUser: false,
+          includeTime: false
+        });
       }
       
       // 🟢 V3.4 初始化级别和绑定
@@ -229,25 +241,50 @@ export default function EditTemplateModal({ isOpen, onClose, template, onSuccess
           </div>
 
           {/* 🟢 水印配置区域 */}
-          <div className="flex items-center gap-3 pt-2 border-t border-slate-200">
-            <span className="text-sm font-bold text-slate-600 flex items-center gap-1">
-              <ShieldCheck size={16} /> 防伪水印:
-            </span>
-            <input
-              className="border rounded px-2 py-1 text-xs w-48"
-              value={watermark.text}
-              onChange={(e) => setWatermark({ ...watermark, text: e.target.value })}
-              placeholder="输入水印文字"
-            />
-            <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+          <div className="space-y-2 pt-2 border-t border-slate-200">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-bold text-slate-600 flex items-center gap-1">
+                <ShieldCheck size={16} /> 防伪水印:
+              </span>
               <input
-                type="checkbox"
-                checked={watermark.enabled}
-                onChange={(e) => setWatermark({ ...watermark, enabled: e.target.checked })}
-                className="rounded text-blue-600"
+                className="border rounded px-2 py-1 text-xs w-48"
+                value={watermark.text}
+                onChange={(e) => setWatermark({ ...watermark, text: e.target.value })}
+                placeholder="输入水印文字"
               />
-              启用
-            </label>
+              <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={watermark.enabled}
+                  onChange={(e) => setWatermark({ ...watermark, enabled: e.target.checked })}
+                  className="rounded text-blue-600"
+                />
+                启用
+              </label>
+            </div>
+            {/* 🔴 动态信息选项 */}
+            {watermark.enabled && (
+              <div className="flex flex-col gap-1.5 ml-20">
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={watermark.includeUser}
+                    onChange={(e) => setWatermark({ ...watermark, includeUser: e.target.checked })}
+                    className="w-3 h-3 text-blue-600 border-slate-300 rounded"
+                  />
+                  <span className="text-slate-600">包含用户名及用户ID</span>
+                </label>
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={watermark.includeTime}
+                    onChange={(e) => setWatermark({ ...watermark, includeTime: e.target.checked })}
+                    className="w-3 h-3 text-blue-600 border-slate-300 rounded"
+                  />
+                  <span className="text-slate-600">包含当前系统时间</span>
+                </label>
+              </div>
+            )}
           </div>
 
           {/* 🟣 V3.4 Section绑定提示 */}

@@ -55,6 +55,21 @@ body {
   @apply bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-300;
 }
 
+/* 移动端安全区域适配（iPhone 等设备） */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* 隐藏滚动条但保持滚动功能 */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari and Opera */
+}
+
 /* 打印样式重置 */
 @media print {
   html, body {

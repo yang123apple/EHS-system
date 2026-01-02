@@ -111,8 +111,9 @@ export class HazardDispatchEngine {
 
       // 5. 匹配抄送人
       const reporter = allUsers.find(u => u.id === updatedHazard.reporterId);
-      const handler = handlerResult.success && handlerResult.userNames.length > 0
-        ? allUsers.find(u => u.name === handlerResult.userNames[0])
+      // 修复：直接使用返回的 userIds，而不是通过用户名查找
+      const handler = handlerResult.success && handlerResult.userIds.length > 0
+        ? allUsers.find(u => u.id === handlerResult.userIds[0])
         : undefined;
 
       const ccResult = await matchAllCCRules(
@@ -140,8 +141,7 @@ export class HazardDispatchEngine {
         action: log.action,
         operator,
         handlers: {
-          userIds: handlerResult.success ? 
-            handlerResult.userNames.map(name => allUsers.find(u => u.name === name)?.id || '') : [],
+          userIds: handlerResult.success ? handlerResult.userIds : [],
           userNames: handlerResult.userNames
         },
         ccUsers: ccResult,
@@ -154,8 +154,7 @@ export class HazardDispatchEngine {
         newStatus: transition.newStatus,
         currentStep: transition.nextStepId,
         handlers: {
-          userIds: handlerResult.success ? 
-            handlerResult.userNames.map(name => allUsers.find(u => u.name === name)?.id || '') : [],
+          userIds: handlerResult.success ? handlerResult.userIds : [],
           userNames: handlerResult.userNames,
           matchedBy: handlerResult.matchedBy
         },
@@ -192,6 +191,7 @@ export class HazardDispatchEngine {
     error?: string;
   } {
     // 定义状态机（步骤ID与 hazard-workflow.json 保持一致）
+    // 🔴 修复：确保驳回时状态和步骤ID一致，避免状态机死锁
     const transitions: Record<HazardStatus, Partial<Record<DispatchAction, { newStatus: HazardStatus; nextStepId: string }>>> = {
       'reported': {
         [DispatchAction.SUBMIT]: { newStatus: 'assigned', nextStepId: 'assign' },   // 步骤1完成：提交上报，进入步骤2（assign），匹配步骤2的处理人规则
@@ -200,16 +200,19 @@ export class HazardDispatchEngine {
       'assigned': {
         [DispatchAction.ASSIGN]: { newStatus: 'rectifying', nextStepId: 'rectify' },   // 步骤2完成：指派整改，进入步骤3（rectify），匹配步骤3的处理人规则
         [DispatchAction.RECTIFY]: { newStatus: 'rectifying', nextStepId: 'rectify' },  // 开始整改（兼容旧逻辑）
-        [DispatchAction.REJECT]: { newStatus: 'reported', nextStepId: 'assign' },
+        // 🔴 修复：驳回时回到 reported 状态，nextStepId 应该是 'report'（上报步骤），而不是 'assign'
+        [DispatchAction.REJECT]: { newStatus: 'reported', nextStepId: 'report' },
         [DispatchAction.EXTEND_DEADLINE]: { newStatus: 'assigned', nextStepId: 'rectify' }
       },
       'rectifying': {
         [DispatchAction.RECTIFY]: { newStatus: 'verified', nextStepId: 'verify' },  // 提交整改后进入验收
         [DispatchAction.VERIFY]: { newStatus: 'verified', nextStepId: 'verify' },
-        [DispatchAction.REJECT]: { newStatus: 'assigned', nextStepId: 'rectify' }
+        // 🔴 修复：驳回时回到 assigned 状态，nextStepId 应该是 'assign'（指派步骤），而不是 'rectify'
+        [DispatchAction.REJECT]: { newStatus: 'assigned', nextStepId: 'assign' }
       },
       'verified': {
         [DispatchAction.VERIFY]: { newStatus: 'closed', nextStepId: 'verify' },  // 验收步骤
+        // 🔴 修复：驳回时回到 rectifying 状态，nextStepId 应该是 'rectify'（整改步骤），保持一致
         [DispatchAction.REJECT]: { newStatus: 'rectifying', nextStepId: 'rectify' }
       },
       'closed': {}

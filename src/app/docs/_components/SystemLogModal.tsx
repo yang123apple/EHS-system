@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { X, Filter, Download, Eye, Calendar, User, FileText, Activity } from 'lucide-react';
+import { apiFetch } from '@/lib/apiClient';
+import { useDateRange } from '@/hooks/useDateRange';
 
 interface SystemLog {
   id: string;
@@ -56,7 +58,7 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
       if (endDate) params.append('endDate', endDate);
       if (userFilter) params.append('userId', userFilter);
 
-      const res = await fetch(`/api/logs?${params}`);
+      const res = await apiFetch(`/api/logs?${params}`);
       const data = await res.json();
       
       if (data.success && data.data) {
@@ -185,7 +187,10 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setPage(1);
+                  }}
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm"
                 />
               </div>
@@ -195,7 +200,11 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
                 <input
                   type="date"
                   value={endDate}
-                  onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setPage(1);
+                  }}
+                  min={endDateMin}
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm"
                 />
               </div>
