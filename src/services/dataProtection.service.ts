@@ -153,30 +153,53 @@ export class DataProtectionService {
    */
   private async restoreFromJson(orgPath: string, usersPath: string): Promise<void> {
     try {
-      // 读取JSON数据
       const orgData = JSON.parse(fs.readFileSync(orgPath, 'utf-8'));
       const usersData = JSON.parse(fs.readFileSync(usersPath, 'utf-8'));
 
       console.log(`   - 准备恢复 ${orgData.length} 个部门`);
       console.log(`   - 准备恢复 ${usersData.length} 个用户`);
 
-      // 使用事务恢复数据
       await this.prisma.$transaction(async (tx) => {
-        // 恢复部门
+        // 1. 恢复部门
         for (const dept of orgData) {
+          // 清理部门数据中的多余字段
+          const { children, parent, ...cleanDept } = dept; 
           await tx.department.upsert({
             where: { id: dept.id },
-            update: dept,
-            create: dept,
+            update: cleanDept,
+            create: cleanDept,
           });
         }
 
-        // 恢复用户
+        // 2. 恢复用户 (修复所有残留字段问题)
         for (const user of usersData) {
+          // ⚠️ 关键步骤：先克隆一份数据，避免修改原始引用
+          const userData = { ...user };
+
+          // 1. 提取出我们需要用到的 ID，然后立即删除它
+          const deptId = userData.departmentId;
+          delete userData.departmentId; // ❌ 彻底删除，防止 Prisma 报错
+          
+          // 2. 删除其他 Prisma 不认识的冗余字段
+          delete userData.department;   // 删除部门名称字符串
+
+          // 3. 处理权限字段 (如果是对象则转字符串)
+          if (userData.permissions && typeof userData.permissions === 'object') {
+            userData.permissions = JSON.stringify(userData.permissions);
+          }
+
+          // 4. 重新构建符合 Prisma 规范的关联
+          if (deptId) {
+            // @ts-ignore - 忽略类型检查，动态添加关联属性
+            userData.department = {
+              connect: { id: deptId }
+            };
+          }
+
           await tx.user.upsert({
             where: { id: user.id },
-            update: user,
-            create: user,
+            update: userData,
+            create: userData,
           });
         }
       });
