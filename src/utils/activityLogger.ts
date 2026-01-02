@@ -2,9 +2,13 @@
 /**
  * 用户活动日志记录工具
  * 提供便捷的日志记录方法，自动处理用户快照和数据变更对比
+ * 
+ * ⚠️ 兼容层：保留旧 API，底层统一调用新的 AuditService
  */
 
 import { SystemLogService, SystemLogData, FieldChange } from '@/services/systemLog.service';
+import AuditService from '@/services/audit.service';
+import { LogModule, LogAction } from '@/types/audit';
 import { NextRequest } from 'next/server';
 
 /**
@@ -123,10 +127,14 @@ export const Modules = {
 
 /**
  * 活动日志记录器
+ * 
+ * ⚠️ 兼容层：保留旧 API，底层统一调用新的 AuditService
+ * 建议新代码直接使用：import AuditService from '@/services/audit.service';
  */
 export class ActivityLogger {
   /**
    * 记录创建操作
+   * @deprecated 建议使用 AuditService.logCreate()
    */
   static async logCreate(params: {
     userId: string;
@@ -135,29 +143,16 @@ export class ActivityLogger {
     targetId: string;
     targetLabel?: string;
     data: any;
-    roleInAction?: string; // 用户在本次操作中的业务角色
+    roleInAction?: string;
     request?: NextRequest;
   }) {
-    const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
-    
-    await SystemLogService.createLog({
-      userSnapshot: userSnapshot || undefined,
-      userRoleInAction: params.roleInAction,
-      action: ActionTypes.CREATE,
-      actionLabel: ActionLabels[ActionTypes.CREATE],
-      module: params.module,
-      targetType: params.targetType as any,
-      targetId: params.targetId,
-      targetLabel: params.targetLabel,
-      details: `创建了${params.targetLabel || params.targetType}`,
-      afterData: params.data,
-      ip: params.request ? getClientIp(params.request) : undefined,
-      userAgent: params.request ? getUserAgent(params.request) : undefined,
-    });
+    const { ActivityLoggerCompat } = await import('@/services/audit-compat.service');
+    return ActivityLoggerCompat.logCreate(params);
   }
 
   /**
    * 记录更新操作（自动对比变更）
+   * @deprecated 建议使用 AuditService.logUpdate()
    */
   static async logUpdate(params: {
     userId: string;
@@ -168,36 +163,16 @@ export class ActivityLogger {
     beforeData: any;
     afterData: any;
     fieldLabels?: Record<string, string>;
-    roleInAction?: string; // 用户在本次操作中的业务角色
+    roleInAction?: string;
     request?: NextRequest;
   }) {
-    const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
-    const changes = SystemLogService.compareObjects(
-      params.beforeData,
-      params.afterData,
-      params.fieldLabels
-    );
-
-    await SystemLogService.createLog({
-      userSnapshot: userSnapshot || undefined,
-      userRoleInAction: params.roleInAction,
-      action: ActionTypes.UPDATE,
-      actionLabel: ActionLabels[ActionTypes.UPDATE],
-      module: params.module,
-      targetType: params.targetType as any,
-      targetId: params.targetId,
-      targetLabel: params.targetLabel,
-      details: `修改了${params.targetLabel || params.targetType}，变更了${changes.length}个字段`,
-      beforeData: params.beforeData,
-      afterData: params.afterData,
-      changes,
-      ip: params.request ? getClientIp(params.request) : undefined,
-      userAgent: params.request ? getUserAgent(params.request) : undefined,
-    });
+    const { ActivityLoggerCompat } = await import('@/services/audit-compat.service');
+    return ActivityLoggerCompat.logUpdate(params);
   }
 
   /**
    * 记录删除操作
+   * @deprecated 建议使用 AuditService.logDelete()
    */
   static async logDelete(params: {
     userId: string;
@@ -206,29 +181,16 @@ export class ActivityLogger {
     targetId: string;
     targetLabel?: string;
     data: any;
-    roleInAction?: string; // 用户在本次操作中的业务角色
+    roleInAction?: string;
     request?: NextRequest;
   }) {
-    const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
-    
-    await SystemLogService.createLog({
-      userSnapshot: userSnapshot || undefined,
-      userRoleInAction: params.roleInAction,
-      action: ActionTypes.DELETE,
-      actionLabel: ActionLabels[ActionTypes.DELETE],
-      module: params.module,
-      targetType: params.targetType as any,
-      targetId: params.targetId,
-      targetLabel: params.targetLabel,
-      details: `删除了${params.targetLabel || params.targetType}`,
-      beforeData: params.data,
-      ip: params.request ? getClientIp(params.request) : undefined,
-      userAgent: params.request ? getUserAgent(params.request) : undefined,
-    });
+    const { ActivityLoggerCompat } = await import('@/services/audit-compat.service');
+    return ActivityLoggerCompat.logDelete(params);
   }
 
   /**
    * 记录审批操作
+   * @deprecated 建议使用 AuditService.logApprove() 或 AuditService.logReject()
    */
   static async logApproval(params: {
     userId: string;
@@ -240,40 +202,16 @@ export class ActivityLogger {
     comment?: string;
     beforeStatus?: string;
     afterStatus?: string;
-    roleInAction?: string; // 用户在本次操作中的业务角色（如：审批人/验收人）
+    roleInAction?: string;
     request?: NextRequest;
   }) {
-    const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
-    const actionType = params.action === 'APPROVE' ? ActionTypes.APPROVE : ActionTypes.REJECT;
-    
-    await SystemLogService.createLog({
-      userSnapshot: userSnapshot || undefined,
-      userRoleInAction: params.roleInAction,
-      action: actionType,
-      actionLabel: ActionLabels[actionType],
-      module: params.module,
-      targetType: params.targetType as any,
-      targetId: params.targetId,
-      targetLabel: params.targetLabel,
-      details: `${ActionLabels[actionType]}${params.targetLabel || params.targetType}${params.comment ? `，意见：${params.comment}` : ''}`,
-      beforeData: params.beforeStatus ? { status: params.beforeStatus } : undefined,
-      afterData: params.afterStatus ? { status: params.afterStatus } : undefined,
-      changes: params.beforeStatus && params.afterStatus ? [
-        {
-          field: 'status',
-          fieldLabel: '状态',
-          oldValue: params.beforeStatus,
-          newValue: params.afterStatus,
-          changeType: 'modified',
-        }
-      ] : undefined,
-      ip: params.request ? getClientIp(params.request) : undefined,
-      userAgent: params.request ? getUserAgent(params.request) : undefined,
-    });
+    const { ActivityLoggerCompat } = await import('@/services/audit-compat.service');
+    return ActivityLoggerCompat.logApproval(params);
   }
 
   /**
    * 记录导出操作
+   * @deprecated 建议使用 AuditService.logExport()
    */
   static async logExport(params: {
     userId: string;
@@ -281,53 +219,33 @@ export class ActivityLogger {
     targetType: string;
     description: string;
     count?: number;
-    roleInAction?: string; // 用户在本次操作中的业务角色
+    roleInAction?: string;
     request?: NextRequest;
   }) {
-    const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
-    
-    await SystemLogService.createLog({
-      userSnapshot: userSnapshot || undefined,
-      userRoleInAction: params.roleInAction,
-      action: ActionTypes.EXPORT,
-      actionLabel: ActionLabels[ActionTypes.EXPORT],
-      module: params.module,
-      targetType: params.targetType as any,
-      details: `导出${params.description}${params.count ? `，共${params.count}条` : ''}`,
-      ip: params.request ? getClientIp(params.request) : undefined,
-      userAgent: params.request ? getUserAgent(params.request) : undefined,
-    });
+    const { ActivityLoggerCompat } = await import('@/services/audit-compat.service');
+    return ActivityLoggerCompat.logExport(params);
   }
 
   /**
    * 记录导入操作
+   * @deprecated 建议使用 AuditService.recordLog({ action: LogAction.IMPORT })
    */
   static async logImport(params: {
     userId: string;
     module: string;
     targetType: string;
     description: string;
-    count?: number;
-    roleInAction?: string; // 用户在本次操作中的业务角色
+    count: number; // 改为必填
+    roleInAction?: string;
     request?: NextRequest;
   }) {
-    const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
-    
-    await SystemLogService.createLog({
-      userSnapshot: userSnapshot || undefined,
-      userRoleInAction: params.roleInAction,
-      action: ActionTypes.IMPORT,
-      actionLabel: ActionLabels[ActionTypes.IMPORT],
-      module: params.module,
-      targetType: params.targetType as any,
-      details: `导入${params.description}${params.count ? `，共${params.count}条` : ''}`,
-      ip: params.request ? getClientIp(params.request) : undefined,
-      userAgent: params.request ? getUserAgent(params.request) : undefined,
-    });
+    const { ActivityLoggerCompat } = await import('@/services/audit-compat.service');
+    return ActivityLoggerCompat.logImport(params);
   }
 
   /**
    * 记录用户登录
+   * @deprecated 建议使用 AuditService.logLogin()
    */
   static async logLogin(params: {
     userId: string;
@@ -335,59 +253,30 @@ export class ActivityLogger {
     success: boolean;
     request?: NextRequest;
   }) {
-    const userSnapshot = params.success 
-      ? await SystemLogService.getUserSnapshot(params.userId)
-      : null;
-    
-    await SystemLogService.createLog({
-      userSnapshot: userSnapshot || undefined,
-      userId: params.userId,
-      userName: params.userName,
-      action: ActionTypes.LOGIN,
-      actionLabel: ActionLabels[ActionTypes.LOGIN],
-      module: Modules.SYSTEM,
-      targetType: 'user',
-      details: params.success ? '用户登录成功' : '用户登录失败',
-      ip: params.request ? getClientIp(params.request) : undefined,
-      userAgent: params.request ? getUserAgent(params.request) : undefined,
-    });
+    const { ActivityLoggerCompat } = await import('@/services/audit-compat.service');
+    return ActivityLoggerCompat.logLogin(params);
   }
 
   /**
    * 记录通用操作
+   * @deprecated 建议使用 AuditService.recordLog()
    */
   static async logAction(params: {
     userId: string;
     action: string;
     actionLabel?: string;
     module: string;
-    targetType?: string;
+    targetType: string; // 改为必填
     targetId?: string;
     targetLabel?: string;
     details?: string;
     beforeData?: any;
     afterData?: any;
     changes?: FieldChange[];
-    roleInAction?: string; // 用户在本次操作中的业务角色
+    roleInAction?: string;
     request?: NextRequest;
   }) {
-    const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
-    
-    await SystemLogService.createLog({
-      userSnapshot: userSnapshot || undefined,
-      userRoleInAction: params.roleInAction,
-      action: params.action,
-      actionLabel: params.actionLabel || ActionLabels[params.action] || params.action,
-      module: params.module,
-      targetType: params.targetType as any,
-      targetId: params.targetId,
-      targetLabel: params.targetLabel,
-      details: params.details,
-      beforeData: params.beforeData,
-      afterData: params.afterData,
-      changes: params.changes,
-      ip: params.request ? getClientIp(params.request) : undefined,
-      userAgent: params.request ? getUserAgent(params.request) : undefined,
-    });
+    const { ActivityLoggerCompat } = await import('@/services/audit-compat.service');
+    return ActivityLoggerCompat.logAction(params);
   }
 }
