@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { withAuth, withErrorHandling, withPermission, withResourcePermission, logApiOperation } from '@/middleware/auth';
 import { type Department } from '@/utils/departmentUtils';
 import { setStartOfDay, setEndOfDay, extractDatePart } from '@/utils/dateUtils';
+import { createTrainingNotification } from '@/lib/notificationService';
 
 interface DepartmentStat {
   deptId: string;
@@ -344,19 +345,16 @@ export const PUT = withErrorHandling(
         })
       ));
 
-      // Create notifications for new assignments
-      await Promise.all(usersToAdd.map(uid =>
-        prisma.notification.create({
-          data: {
-            userId: uid,
-            type: 'training_assigned',
-            title: '培训任务已更新',
-            content: `培训任务"${title}"已更新，请及时查看。`,
-            relatedType: 'training_task',
-            relatedId: taskId
-          }
-        })
-      ));
+      // Create notifications for new assignments using notification service
+      await createTrainingNotification(
+        'training_updated',
+        usersToAdd,
+        {
+          id: taskId,
+          title: title || '',
+        },
+        user.name
+      );
     }
 
     // 记录操作日志

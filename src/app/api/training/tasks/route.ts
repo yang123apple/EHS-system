@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
 import { setStartOfDay, setEndOfDay, extractDatePart } from '@/utils/dateUtils';
+import { createTrainingNotification } from '@/lib/notificationService';
 
 export const GET = withErrorHandling(
   withAuth(async (req: NextRequest, context, user) => {
@@ -97,19 +98,17 @@ export const POST = withErrorHandling(
         })
       ));
 
-      // Create Notifications
-      await Promise.all(userIds.map(uid =>
-        prisma.notification.create({
-          data: {
-            userId: uid,
-            type: 'training_assigned',
-            title: '新培训任务',
-            content: `您有新的培训任务：${title}，请及时完成。`,
-            relatedType: 'training_task',
-            relatedId: task.id
-          }
-        })
-      ));
+      // Create Notifications using notification service
+      await createTrainingNotification(
+        'training_assigned',
+        userIds,
+        {
+          id: task.id,
+          title: title,
+          description: description,
+        },
+        user.name
+      );
     }
 
     // 记录操作日志

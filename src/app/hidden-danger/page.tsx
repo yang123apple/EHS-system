@@ -68,6 +68,7 @@ export default function HiddenDangerPage({
 
   // 获取所有用户（用于指派）
   const fetchUsers = async () => {
+    if (!user) return; // 用户未登录时不请求
     try {
       const res = await apiFetch('/api/users');
       const data = await res.json();
@@ -79,6 +80,7 @@ export default function HiddenDangerPage({
 
   // 获取部门列表
   const fetchDepartments = async () => {
+    if (!user) return; // 用户未登录时不请求
     try {
       const res = await apiFetch('/api/org');
       const data = await res.json();
@@ -114,6 +116,7 @@ export default function HiddenDangerPage({
 
   // 获取工作流配置
   const fetchWorkflowConfig = async () => {
+    if (!user) return; // 用户未登录时不请求
     try {
       const res = await apiFetch('/api/hazards/workflow');
       if (res.ok) {
@@ -129,10 +132,11 @@ export default function HiddenDangerPage({
 
   // 初始化时获取用户列表、部门列表和工作流配置
   useEffect(() => {
+    if (!user) return; // 用户未登录时不执行
     fetchUsers();
     fetchDepartments();
     fetchWorkflowConfig();
-  }, []);
+  }, [user]); // 依赖 user，当用户状态变化时重新执行
 
   // 当前视图模式由 layout 通过 props 传入
   const viewMode = initialViewMode || 'overview';

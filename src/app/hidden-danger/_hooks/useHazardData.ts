@@ -19,6 +19,14 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
   const [filters, setFilters] = useState({ type: '', area: '', status: '', risk: '' });
 
   const fetchData = async (pageNum = 1, currentFilters = filters) => {
+    // 如果用户未登录，直接返回，避免发起请求
+    if (!user) {
+      setLoading(false);
+      setHazards([]);
+      setTotalCount(0);
+      return;
+    }
+    
     setLoading(true);
     try {
       // Pass filters and view context to server
@@ -59,8 +67,13 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
 
       setConfig(hConfig);
       setWorkflowRules({ ccRules: wRules.ccRules || [], planRules: wRules.emergencyPlanRules || [] });
-    } catch (error) {
-      console.error('获取数据失败:', error);
+    } catch (error: any) {
+      // 如果是 401 错误且用户已退出，静默处理
+      if (error?.status === 401 && !user) {
+        console.debug('用户已退出登录，忽略数据获取错误');
+      } else {
+        console.error('获取数据失败:', error);
+      }
       // Ensure hazards is always an array even on error
       setHazards([]);
       setTotalCount(0);
@@ -71,8 +84,15 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
 
   // Refetch when page, filters, or viewMode changes
   useEffect(() => {
+      // 如果用户未登录，不执行数据获取，避免退出登录后的 API 错误
+      if (!user) {
+        setLoading(false);
+        setHazards([]);
+        setTotalCount(0);
+        return;
+      }
       fetchData(page, filters);
-  }, [page, filters, currentViewMode]); // Added currentViewMode dependency
+  }, [page, filters, currentViewMode, user]); // Added user dependency
 
   // Client-side post-filtering for permissions
   // 'My Tasks' logic is now handled by Server.

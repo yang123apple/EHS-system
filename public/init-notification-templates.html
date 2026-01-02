@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>初始化通知模板</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      max-width: 900px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      border-radius: 8px;
+      padding: 30px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 20px;
+    }
+    .instructions {
+      background: #e3f2fd;
+      border-left: 4px solid #2196f3;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+    button {
+      background: #2196f3;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-right: 10px;
+    }
+    button:hover {
+      background: #1976d2;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .log {
+      background: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 15px;
+      margin-top: 20px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+    }
+    .log-item {
+      padding: 5px 0;
+    }
+    .success { color: #4caf50; }
+    .error { color: #f44336; }
+    .info { color: #2196f3; }
+    .warning { color: #ff9800; }
+    .summary {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f9f9f9;
+      border-radius: 4px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔔 初始化通知模板</h1>
+    
+    <div class="instructions">
+      <h3>使用说明：</h3>
+      <p><strong>⚠️ 如果提示"数据库表不存在"，请先执行数据库迁移：</strong></p>
+      <ol>
+        <li>停止应用（Ctrl+C）</li>
+        <li>运行迁移命令：<code>node node_modules/prisma/build/index.js migrate deploy</code></li>
+        <li>重启应用：<code>npm run dev</code></li>
+      </ol>
+      <p><strong>📝 创建模板：</strong></p>
+      <ol>
+        <li>确保您已登录管理员账号</li>
+        <li>点击"开始初始化"按钮</li>
+        <li>等待所有模板创建完成</li>
+        <li>访问 <a href="/admin/notifications" target="_blank">/admin/notifications</a> 页面查看结果</li>
+      </ol>
+      <p style="color: #ff9800;"><strong>💡 提示：</strong> 也可以直接在 <a href="/admin/notifications" target="_blank">/admin/notifications</a> 页面手动创建模板。</p>
+    </div>
+
+    <div>
+      <button id="initBtn" onclick="initTemplates()">开始初始化</button>
+      <button onclick="clearLog()">清空日志</button>
+    </div>
+
+    <div class="summary" id="summary"></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    const templates = [
+      {
+        name: 'training_assigned_default',
+        title: '新培训任务',
+        content: '{{user.name}}分配给您一个新的培训任务：{{training.title}}，请及时完成。',
+        type: 'training',
+        triggerEvent: 'training_assigned',
+        variables: '["user.name","training.title","training.id"]',
+        isActive: true,
+      },
+      {
+        name: 'training_updated_default',
+        title: '培训任务已更新',
+        content: '培训任务"{{training.title}}"已更新，请及时查看。',
+        type: 'training',
+        triggerEvent: 'training_updated',
+        variables: '["training.title","training.id"]',
+        isActive: true,
+      },
+      {
+        name: 'permit_pending_approval_default',
+        title: '待审批作业票',
+        content: '【{{permit.templateName}}】{{permit.projectName}} - 等待您审批（第{{permit.stepNumber}}步：{{permit.stepName}}）',
+        type: 'work_permit',
+        triggerEvent: 'permit_pending_approval',
+        variables: '["permit.templateName","permit.projectName","permit.stepNumber","permit.stepName","user.name"]',
+        isActive: true,
+      },
+      {
+        name: 'permit_approved_default',
+        title: '作业票审批通过',
+        content: '【已完成】【{{permit.templateName}}】{{permit.projectName}} - {{user.name}}通过了您的申请',
+        type: 'work_permit',
+        triggerEvent: 'permit_approved',
+        variables: '["permit.templateName","permit.projectName","user.name"]',
+        isActive: true,
+      },
+      {
+        name: 'permit_rejected_default',
+        title: '作业票被驳回',
+        content: '【已驳回】【{{permit.templateName}}】{{permit.projectName}} - {{user.name}}驳回了您的申请',
+        type: 'work_permit',
+        triggerEvent: 'permit_rejected',
+        variables: '["permit.templateName","permit.projectName","user.name"]',
+        isActive: true,
+      },
+      {
+        name: 'hazard_assigned_default',
+        title: '隐患已分配',
+        content: '{{user.name}}分配给您一个隐患（编号：{{hazard.code}}，位置：{{hazard.location}}），请及时处理。',
+        type: 'hazard',
+        triggerEvent: 'hazard_assigned',
+        variables: '["user.name","hazard.code","hazard.location","hazard.riskLevel"]',
+        isActive: true,
+      },
+    ];
+
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const item = document.createElement('div');
+      item.className = `log-item ${type}`;
+      item.textContent = message;
+      logDiv.appendChild(item);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById('log').innerHTML = '';
+      document.getElementById('summary').style.display = 'none';
+    }
+
+    function showSummary(created, skipped, failed) {
+      const summaryDiv = document.getElementById('summary');
+      summaryDiv.style.display = 'block';
+      summaryDiv.innerHTML = `
+        <h3>📊 初始化完成</h3>
+        <p><strong>✅ 成功创建:</strong> ${created} 个</p>
+        <p><strong>⏭️ 已存在跳过:</strong> ${skipped} 个</p>
+        <p><strong>❌ 失败:</strong> ${failed} 个</p>
+        <p><strong>📋 总计:</strong> ${templates.length} 个</p>
+        ${created > 0 ? '<p style="color: #4caf50;">✨ 现在可以访问 <a href="/admin/notifications" target="_blank">/admin/notifications</a> 查看模板了！</p>' : ''}
+      `;
+    }
+
+    async function initTemplates() {
+      const btn = document.getElementById('initBtn');
+      btn.disabled = true;
+      btn.textContent = '初始化中...';
+      clearLog();
+
+      log('🚀 开始初始化通知模板...', 'info');
+      log('', 'info');
+
+      let created = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (const template of templates) {
+        try {
+          log(`⏳ 正在创建: ${template.name}`, 'info');
+          
+          const response = await fetch('/api/admin/notification-templates', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(template),
+          });
+
+          const result = await response.json();
+
+          if (response.ok && result.success) {
+            log(`✅ 创建成功: ${template.name} (${template.triggerEvent})`, 'success');
+            created++;
+          } else if (result.message?.includes('已存在')) {
+            log(`⏭️ 跳过: ${template.name} (已存在)`, 'warning');
+            skipped++;
+          } else {
+            log(`❌ 创建失败: ${template.name} - ${result.message || '未知错误'}`, 'error');
+            failed++;
+          }
+        } catch (error) {
+          log(`❌ 网络错误: ${template.name} - ${error.message}`, 'error');
+          failed++;
+        }
+
+        // 添加小延迟避免请求过快
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      log('', 'info');
+      log('==============================================', 'info');
+      showSummary(created, skipped, failed);
+      
+      btn.disabled = false;
+      btn.textContent = '重新初始化';
+    }
+  </script>
+</body>
+</html>

@@ -1,19 +1,40 @@
 /**
  * 数据保护服务
- * 负责核心数据（组织架构和用户账号）的自动备份和恢复
+ * 负责系统全量备份的管理和调度
+ * 
+ * v2.0 更新说明：
+ * - 采用 ZIP 全量备份策略，包含数据库、上传文件、配置文件
+ * - 废弃了基于 JSON 的部分恢复逻辑
+ * - 恢复操作统一使用 scripts/restore-backup.js
  */
 
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
 
+interface BackupInfo {
+  filename: string;
+  filepath: string;
+  sizeBytes: number;
+  sizeMB: number;
+  createdAt: Date;
+  age: string;
+}
+
 export class DataProtectionService {
   private static instance: DataProtectionService;
   private prisma: PrismaClient;
   private backupInterval: NodeJS.Timeout | null = null;
+  private backupDir: string;
 
   private constructor() {
     this.prisma = new PrismaClient();
+    this.backupDir = path.join(process.cwd(), 'data', 'backups');
+    
+    // 确保备份目录存在
+    if (!fs.existsSync(this.backupDir)) {
+      fs.mkdirSync(this.backupDir, { recursive: true });
+    }
   }
 
   /**
@@ -27,187 +48,162 @@ export class DataProtectionService {
   }
 
   /**
-   * 启动时检查数据完整性并恢复
+   * 格式化文件大小
    */
-  async checkAndRestore(): Promise<void> {
-    console.log('🔍 检查核心数据完整性...');
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+  }
 
-    try {
-      const deptCount = await this.prisma.department.count();
-      const userCount = await this.prisma.user.count();
+  /**
+   * 计算时间差描述
+   */
+  private getAgeDescription(date: Date): string {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
 
-      console.log(`   - 部门数量: ${deptCount}`);
-      console.log(`   - 用户数量: ${userCount}`);
-
-      if (deptCount === 0 || userCount === 0) {
-        console.warn('⚠️  检测到核心数据缺失！');
-        console.log('🔄 开始自动恢复...');
-        await this.autoRestore();
-      } else {
-        console.log('✅ 核心数据完整');
-      }
-    } catch (error) {
-      console.error('❌ 检查数据完整性失败:', error);
-      throw error;
+    if (diffMins < 60) {
+      return `${diffMins} 分钟前`;
+    } else if (diffHours < 24) {
+      return `${diffHours} 小时前`;
+    } else if (diffDays < 30) {
+      return `${diffDays} 天前`;
+    } else {
+      return `${Math.floor(diffDays / 30)} 个月前`;
     }
   }
 
   /**
-   * 自动恢复数据
-   * 优先级：主JSON文件 > 最新备份
+   * 获取备份列表
+   * 扫描 data/backups/ 目录，返回所有 ZIP 备份文件的信息
    */
-  private async autoRestore(): Promise<void> {
+  async getBackupsList(): Promise<BackupInfo[]> {
     try {
-      // 1. 尝试从主JSON文件恢复
-      if (this.hasValidJsonFiles()) {
-        console.log('📂 从主JSON文件恢复...');
-        const orgPath = path.join(process.cwd(), 'data', 'org.json');
-        const usersPath = path.join(process.cwd(), 'data', 'users.json');
-        await this.restoreFromJson(orgPath, usersPath);
-        console.log('✅ 从主JSON文件恢复成功');
-        return;
-      }
-
-      // 2. 尝试从最新备份恢复
-      const latestBackup = this.getLatestBackup();
-      if (latestBackup) {
-        console.log(`📂 从备份恢复: ${latestBackup.timestamp}`);
-        await this.restoreFromJson(latestBackup.orgPath, latestBackup.usersPath);
-        console.log('✅ 从备份恢复成功');
-        return;
+      if (!fs.existsSync(this.backupDir)) {
+        return [];
       }
 
-      // 3. 无可用数据源
-      console.error('❌ 无可用的恢复数据源！');
-      throw new Error('无法找到有效的备份数据');
-    } catch (error) {
-      console.error('❌ 自动恢复失败:', error);
-      throw error;
-    }
-  }
+      const files = fs.readdirSync(this.backupDir);
+      const backupFiles = files.filter(f => 
+        f.startsWith('full_backup_') && f.endsWith('.zip')
+      );
 
-  /**
-   * 检查主JSON文件是否有效
-   */
-  private hasValidJsonFiles(): boolean {
-    const orgPath = path.join(process.cwd(), 'data', 'org.json');
-    const usersPath = path.join(process.cwd(), 'data', 'users.json');
-
-    if (!fs.existsSync(orgPath) || !fs.existsSync(usersPath)) {
-      return false;
-    }
-
-    try {
-      const orgData = JSON.parse(fs.readFileSync(orgPath, 'utf-8'));
-      const usersData = JSON.parse(fs.readFileSync(usersPath, 'utf-8'));
-      return Array.isArray(orgData) && Array.isArray(usersData) && 
-             orgData.length > 0 && usersData.length > 0;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * 获取最新的备份
-   */
-  private getLatestBackup(): { orgPath: string; usersPath: string; timestamp: string } | null {
-    const backupDir = path.join(process.cwd(), 'data', 'backups');
-    
-    if (!fs.existsSync(backupDir)) {
-      return null;
-    }
-
-    const files = fs.readdirSync(backupDir);
-    const backupFiles = files.filter(f => f.startsWith('org_') || f.startsWith('users_'));
-    
-    if (backupFiles.length === 0) {
-      return null;
-    }
-
-    // 按时间戳排序，获取最新的
-    const timestamps = new Set<string>();
-    backupFiles.forEach(f => {
-      const match = f.match(/_([\d-T:.]+)\.json$/);
-      if (match) timestamps.add(match[1]);
-    });
-
-    const sortedTimestamps = Array.from(timestamps).sort().reverse();
-    const latestTimestamp = sortedTimestamps[0];
-
-    if (!latestTimestamp) {
-      return null;
-    }
-
-    const orgPath = path.join(backupDir, `org_${latestTimestamp}.json`);
-    const usersPath = path.join(backupDir, `users_${latestTimestamp}.json`);
-
-    if (fs.existsSync(orgPath) && fs.existsSync(usersPath)) {
-      return { orgPath, usersPath, timestamp: latestTimestamp };
-    }
-
-    return null;
-  }
-
-  /**
-   * 从JSON文件恢复数据到数据库
-   */
-  private async restoreFromJson(orgPath: string, usersPath: string): Promise<void> {
-    try {
-      const orgData = JSON.parse(fs.readFileSync(orgPath, 'utf-8'));
-      const usersData = JSON.parse(fs.readFileSync(usersPath, 'utf-8'));
-
-      console.log(`   - 准备恢复 ${orgData.length} 个部门`);
-      console.log(`   - 准备恢复 ${usersData.length} 个用户`);
-
-      await this.prisma.$transaction(async (tx) => {
-        // 1. 恢复部门
-        for (const dept of orgData) {
-          // 清理部门数据中的多余字段
-          const { children, parent, ...cleanDept } = dept; 
-          await tx.department.upsert({
-            where: { id: dept.id },
-            update: cleanDept,
-            create: cleanDept,
-          });
-        }
-
-        // 2. 恢复用户 (修复所有残留字段问题)
-        for (const user of usersData) {
-          // ⚠️ 关键步骤：先克隆一份数据，避免修改原始引用
-          const userData = { ...user };
-
-          // 1. 提取出我们需要用到的 ID，然后立即删除它
-          const deptId = userData.departmentId;
-          delete userData.departmentId; // ❌ 彻底删除，防止 Prisma 报错
-          
-          // 2. 删除其他 Prisma 不认识的冗余字段
-          delete userData.department;   // 删除部门名称字符串
-
-          // 3. 处理权限字段 (如果是对象则转字符串)
-          if (userData.permissions && typeof userData.permissions === 'object') {
-            userData.permissions = JSON.stringify(userData.permissions);
-          }
-
-          // 4. 重新构建符合 Prisma 规范的关联
-          if (deptId) {
-            // @ts-ignore - 忽略类型检查，动态添加关联属性
-            userData.department = {
-              connect: { id: deptId }
-            };
-          }
-
-          await tx.user.upsert({
-            where: { id: user.id },
-            update: userData,
-            create: userData,
-          });
-        }
+      const backups: BackupInfo[] = backupFiles.map(filename => {
+        const filepath = path.join(this.backupDir, filename);
+        const stat = fs.statSync(filepath);
+        
+        return {
+          filename,
+          filepath,
+          sizeBytes: stat.size,
+          sizeMB: Math.round((stat.size / 1024 / 1024) * 100) / 100,
+          createdAt: stat.mtime,
+          age: this.getAgeDescription(stat.mtime),
+        };
       });
 
-      console.log('✅ 数据恢复完成');
+      // 按创建时间倒序排列（最新的在前）
+      backups.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+      return backups;
     } catch (error) {
-      console.error('❌ 恢复数据失败:', error);
-      throw error;
+      console.error('获取备份列表失败:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 验证备份文件
+   * 检查指定 ZIP 文件是否存在且大小不为 0
+   */
+  async verifyBackup(filename: string): Promise<{
+    valid: boolean;
+    message: string;
+    details?: {
+      exists: boolean;
+      sizeBytes: number;
+      sizeMB: number;
+      createdAt?: Date;
+    };
+  }> {
+    try {
+      // 确定文件路径
+      let filepath = filename;
+      if (!path.isAbsolute(filename)) {
+        filepath = path.join(this.backupDir, filename);
+      }
+
+      // 检查文件是否存在
+      if (!fs.existsSync(filepath)) {
+        return {
+          valid: false,
+          message: '备份文件不存在',
+          details: {
+            exists: false,
+            sizeBytes: 0,
+            sizeMB: 0,
+          },
+        };
+      }
+
+      // 获取文件信息
+      const stat = fs.statSync(filepath);
+
+      // 检查文件大小
+      if (stat.size === 0) {
+        return {
+          valid: false,
+          message: '备份文件为空（0 字节）',
+          details: {
+            exists: true,
+            sizeBytes: 0,
+            sizeMB: 0,
+            createdAt: stat.mtime,
+          },
+        };
+      }
+
+      // 检查是否是 ZIP 文件
+      if (!filename.endsWith('.zip')) {
+        return {
+          valid: false,
+          message: '不是有效的 ZIP 备份文件',
+          details: {
+            exists: true,
+            sizeBytes: stat.size,
+            sizeMB: Math.round((stat.size / 1024 / 1024) * 100) / 100,
+            createdAt: stat.mtime,
+          },
+        };
+      }
+
+      // 验证通过
+      return {
+        valid: true,
+        message: '备份文件有效',
+        details: {
+          exists: true,
+          sizeBytes: stat.size,
+          sizeMB: Math.round((stat.size / 1024 / 1024) * 100) / 100,
+          createdAt: stat.mtime,
+        },
+      };
+    } catch (error: any) {
+      return {
+        valid: false,
+        message: `验证失败: ${error.message}`,
+        details: {
+          exists: false,
+          sizeBytes: 0,
+          sizeMB: 0,
+        },
+      };
     }
   }
 
@@ -251,73 +247,129 @@ export class DataProtectionService {
 
   /**
    * 执行每日备份
+   * 通过 child_process 调用 scripts/auto-backup.js
    */
   async performDailyBackup(): Promise<void> {
     console.log('========================================');
-    console.log(`🔄 开始执行每日备份 [${new Date().toLocaleString('zh-CN')}]`);
+    console.log(`🔄 开始执行每日全量备份 [${new Date().toLocaleString('zh-CN')}]`);
     console.log('========================================');
 
     try {
-      // 调用备份脚本
-      const { autoBackup } = require('../../scripts/auto-backup.js');
-      await autoBackup();
+      const autoBackupPath = path.join(process.cwd(), 'scripts', 'auto-backup.js');
       
+      if (!fs.existsSync(autoBackupPath)) {
+        throw new Error('备份脚本不存在: ' + autoBackupPath);
+      }
+
+      // 使用 child_process 执行备份脚本（避免 Next.js Turbopack 编译问题）
+      const { execSync } = require('child_process');
+      const output = execSync(`node "${autoBackupPath}"`, { 
+        encoding: 'utf-8',
+        cwd: process.cwd(),
+      });
+      
+      console.log(output);
       console.log('✅ 每日备份完成');
       console.log('========================================');
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ 每日备份失败:', error);
+      console.error('stderr:', error.stderr?.toString());
       console.error('========================================');
+      throw error;
     }
   }
 
   /**
    * 手动触发备份（供API调用）
    */
-  async manualBackup(): Promise<{ success: boolean; message: string }> {
+  async manualBackup(): Promise<{ 
+    success: boolean; 
+    message: string;
+    backupFile?: string;
+  }> {
     try {
-      await this.performDailyBackup();
-      return { success: true, message: '备份成功' };
+      console.log('🔄 手动触发全量备份...');
+      
+      const autoBackupPath = path.join(process.cwd(), 'scripts', 'auto-backup.js');
+      
+      if (!fs.existsSync(autoBackupPath)) {
+        throw new Error('备份脚本不存在');
+      }
+
+      // 使用 child_process 执行备份脚本
+      const { execSync } = require('child_process');
+      const output = execSync(`node "${autoBackupPath}"`, { 
+        encoding: 'utf-8',
+        cwd: process.cwd(),
+      });
+      
+      console.log(output);
+      
+      // 从输出中提取备份文件名
+      const match = output.match(/备份文件: (full_backup_[\w-]+\.zip)/);
+      const backupFile = match ? match[1] : undefined;
+      
+      return { 
+        success: true, 
+        message: '全量备份成功',
+        backupFile,
+      };
     } catch (error: any) {
-      return { success: false, message: error.message };
+      console.error('手动备份失败:', error);
+      console.error('stderr:', error.stderr?.toString());
+      return { 
+        success: false, 
+        message: `备份失败: ${error.message}`,
+      };
     }
   }
 
   /**
-   * 获取备份状态
+   * 获取备份状态和统计信息
    */
   async getBackupStatus(): Promise<{
-    hasMainFiles: boolean;
-    latestBackup: string | null;
     backupCount: number;
-    databaseStatus: { departments: number; users: number };
-  }> {
-    const hasMainFiles = this.hasValidJsonFiles();
-    const latestBackup = this.getLatestBackup();
-    
-    const backupDir = path.join(process.cwd(), 'data', 'backups');
-    let backupCount = 0;
-    if (fs.existsSync(backupDir)) {
-      const files = fs.readdirSync(backupDir);
-      const timestamps = new Set<string>();
-      files.forEach(f => {
-        const match = f.match(/_([\d-T:.]+)\.json$/);
-        if (match) timestamps.add(match[1]);
-      });
-      backupCount = timestamps.size;
-    }
-
-    const deptCount = await this.prisma.department.count();
-    const userCount = await this.prisma.user.count();
-
-    return {
-      hasMainFiles,
-      latestBackup: latestBackup?.timestamp || null,
-      backupCount,
-      databaseStatus: {
-        departments: deptCount,
-        users: userCount,
-      },
+    latestBackup: BackupInfo | null;
+    totalSizeMB: number;
+    oldestBackup: BackupInfo | null;
+    databaseStatus: { 
+      departments: number; 
+      users: number;
+      hazards?: number;
+      trainings?: number;
     };
+  }> {
+    try {
+      // 获取所有备份文件
+      const backups = await this.getBackupsList();
+      
+      // 计算总大小
+      const totalSizeMB = backups.reduce((sum, backup) => sum + backup.sizeMB, 0);
+      
+      // 获取数据库统计
+      const [deptCount, userCount, hazardCount, trainingCount] = await Promise.all([
+        this.prisma.department.count().catch(() => 0),
+        this.prisma.user.count().catch(() => 0),
+        this.prisma.hazard.count().catch(() => 0),
+        this.prisma.trainingTask.count().catch(() => 0),
+      ]);
+
+      return {
+        backupCount: backups.length,
+        latestBackup: backups[0] || null,
+        oldestBackup: backups[backups.length - 1] || null,
+        totalSizeMB: Math.round(totalSizeMB * 100) / 100,
+        databaseStatus: {
+          departments: deptCount,
+          users: userCount,
+          hazards: hazardCount,
+          trainings: trainingCount,
+        },
+      };
+    } catch (error) {
+      console.error('获取备份状态失败:', error);
+      throw error;
+    }
   }
 
   /**

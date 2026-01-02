@@ -64,7 +64,11 @@ export default function AccountManagement() {
 
   useEffect(() => {
     // 权限检查
-    if (currentUser && currentUser.role !== 'admin') { 
+    if (!currentUser) {
+      // 用户未登录，不执行加载
+      return;
+    }
+    if (currentUser.role !== 'admin') { 
         router.push('/dashboard'); 
         return; 
     }
@@ -72,6 +76,11 @@ export default function AccountManagement() {
   }, [currentUser, currentPage]);
 
   const loadUsers = async (page: number, filters: { term: string, dept: string } = { term: searchTerm, dept: deptFilter }) => {
+    // 如果用户未登录，不执行请求
+    if (!currentUser) {
+      return;
+    }
+    
     try {
       setIsLoading(true);
       const queryParams = new URLSearchParams({
@@ -89,6 +98,13 @@ export default function AccountManagement() {
       // 检查响应状态
       if (!usersRes.ok) {
         const errorData = await usersRes.json().catch(() => ({ error: '请求失败' }));
+        
+        // 如果是 401 且用户已退出登录，静默处理
+        if (usersRes.status === 401 && !currentUser) {
+          console.debug('用户已退出登录，忽略加载用户请求');
+          return;
+        }
+        
         console.error('加载用户失败:', errorData);
         alert(errorData.error || '加载用户列表失败');
         return;
@@ -416,6 +432,30 @@ export default function AccountManagement() {
     }
   };
 
+  // 🟢 重置密码函数
+  const handleResetPassword = async (userId: string, userName: string) => {
+    if (!confirm(`确定要重置 ${userName} 的密码吗？\n\n密码将被重置为默认密码: 123`)) {
+        return;
+    }
+
+    try {
+        const res = await apiFetch(`/api/users/${userId}/reset-password`, { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}
+        });
+        
+        if (res.ok) { 
+            alert(`${userName} 的密码已重置为: 123`); 
+        } else { 
+            const data = await res.json();
+            alert(data.error || '重置密码失败'); 
+        }
+    } catch (err) { 
+        console.error(err);
+        alert('网络错误'); 
+    }
+  };
+
   // 辅助函数：根据ID获取用户姓名
   const getUserName = (id?: string) => {
       if (!id) return '-';
@@ -720,6 +760,21 @@ export default function AccountManagement() {
                             </div>
                             <input name="avatarFile" type="file" accept="image/*" className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"/>
                         </div>
+                    </div>
+
+                    {/* 🟢 重置密码按钮 */}
+                    <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
+                        <label className="block text-sm font-medium text-orange-700 mb-2">重置密码</label>
+                        <button 
+                            type="button" 
+                            onClick={() => handleResetPassword(editingUser.id, editingUser.name)}
+                            className="w-full px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium"
+                        >
+                            重置密码为默认密码 (123)
+                        </button>
+                        <p className="text-xs text-orange-600 mt-2">
+                            ⚠️ 此操作将立即生效，用户下次登录需使用密码 "123"
+                        </p>
                     </div>
                     
                     <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-slate-100">

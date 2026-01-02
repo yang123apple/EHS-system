@@ -4,6 +4,7 @@ import { createLog } from '@/lib/logger';
 import { resolveApprovers } from '@/lib/workflowUtils';
 import { db } from '@/lib/mockDb';
 import { withPermission, logApiOperation } from '@/middleware/auth';
+import { createPermitNotification } from '@/lib/notificationService';
 export const dynamic = 'force-dynamic';
 
 export const POST = withPermission('work_permit', 'approve', async (req: Request, context, user) => {
@@ -270,21 +271,20 @@ export const POST = withPermission('work_permit', 'approve', async (req: Request
             
             console.log('🔔 [通知调试] 提取的审批人ID列表:', approverIds);
             
-            const notificationPromises = approverIds.map((approverId: string) => 
-              prisma.notification.create({
-                data: {
-                  userId: approverId,
-                  type: 'approval_pending',
-                  title: '待审批作业票',
-                  content: `【${updatedRecord.template.name}】 ${updatedRecord.project.name} - 等待您审批（第${nextStep + 1}步：${nextStepConfig.name}）`,
-                  relatedType: 'permit',
-                  relatedId: recordId,
-                  isRead: false,
-                }
-              })
+            // Use notification service to create notifications
+            await createPermitNotification(
+              'permit_pending_approval',
+              approverIds,
+              {
+                id: recordId,
+                templateName: updatedRecord.template.name,
+                projectName: updatedRecord.project.name,
+                stepName: nextStepConfig.name,
+                stepNumber: nextStep + 1,
+              },
+              userName
             );
 
-            await Promise.all(notificationPromises);
             console.log(`✅ [通知] 已为 ${approverIds.length} 位下一步审批人创建通知`);
           } else {
             console.log('⚠️ [通知调试] 解析审批人结果为空');
@@ -305,28 +305,21 @@ export const POST = withPermission('work_permit', 'approve', async (req: Request
         if (creatorId) {
           console.log('🔔 [通知] 给发起人发送审批结果通知, 发起人ID:', creatorId);
           
-          // 构建通知内容
-          const actionText = action === 'pass' ? '通过' : '驳回';
-          const statusText = nextStatus === 'approved' ? '【已完成】' : 
-                           nextStatus === 'rejected' ? '【已驳回】' : 
-                           `【进行中】`;
-          
-          const notificationTitle = action === 'pass' ? '作业票审批通过' : '作业票被驳回';
-          const notificationContent = `${statusText}【${updatedRecord.template.name}】 ${updatedRecord.project.name} - ${userName}${actionText}了您的申请`;
-          
           try {
-            await prisma.notification.create({
-              data: {
-                userId: creatorId,
-                type: action === 'pass' ? 'approval_passed' : 'approval_rejected',
-                title: notificationTitle,
-                content: notificationContent,
-                relatedType: 'permit',
-                relatedId: recordId,
-                isRead: false,
-              }
-            });
-            console.log(`✅ [通知] 已通知发起人: ${notificationTitle}`);
+            // Use notification service to create notification
+            const event = action === 'pass' ? 'permit_approved' : 'permit_rejected';
+            await createPermitNotification(
+              event,
+              [creatorId],
+              {
+                id: recordId,
+                templateName: updatedRecord.template.name,
+                projectName: updatedRecord.project.name,
+              },
+              userName
+            );
+            
+            console.log(`✅ [通知] 已通知发起人: ${event}`);
           } catch (err) {
             console.error('❌ [通知] 通知发起人失败:', err);
           }

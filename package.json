@@ -11,12 +11,20 @@
     "db:export": "node scripts/export-to-json.js",
     "db:import": "node scripts/import-from-json.js",
     "db:backup": "node scripts/export-to-json.js",
-    "db:restore": "node scripts/restore-from-git.js"
+    "db:restore": "node scripts/restore-from-git.js",
+    "backup:full": "node scripts/auto-backup.js",
+    "restore:full": "node scripts/restore-backup.js",
+    "backup:auto": "node scripts/auto-backup.js",
+    "backup:test": "node scripts/test-backup-service.js",
+    "test:backup-api": "node scripts/test-backup-api.js"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
     "@prisma/adapter-pg": "^7.1.0",
     "@prisma/client": "^5.22.0",
+    "archiver": "^7.0.1",
     "autoprefixer": "^10.4.23",
+    "bcryptjs": "^3.0.3",
     "caniuse-lite": "^1.0.30001762",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -31,11 +39,15 @@
     "pg": "^8.16.3",
     "react": "19.2.1",
     "react-dom": "19.2.1",
+    "react-hook-form": "^7.69.0",
     "tailwind-merge": "^3.4.0",
-    "xlsx": "^0.18.5"
+    "unzipper": "^0.12.3",
+    "xlsx": "^0.18.5",
+    "zod": "^4.3.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.17",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19",

@@ -285,3 +285,53 @@ model MaterialLearnedRecord {
 
   @@unique([materialId, userId])
 }
+
+// 通知模板管理
+model NotificationTemplate {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  title         String   // 支持变量占位符，如 {{user.name}}
+  content       String   // 支持变量占位符
+  type          String   // hazard, training, work_permit, system
+  triggerEvent  String   // 触发事件：hazard_created, hazard_assigned, etc
+  triggerCondition String? // JSON配置：条件规则
+  isActive      Boolean  @default(true)
+  variables     String?  // JSON数组：可用变量列表
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// AI API 配置
+model AIApiConfig {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  provider      String   // openai, azure, custom
+  apiKey        String   // 加密存储
+  endpoint      String
+  model         String?  // gpt-4, gpt-3.5-turbo, etc
+  maxTokens     Int      @default(2000)
+  temperature   Float    @default(0.7)
+  isActive      Boolean  @default(true)
+  rateLimitPerMinute Int @default(1000) // 限流策略：每分钟最大调用次数
+  rateLimitPerDay Int    @default(50000) // 每天最大调用次数
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  logs          AIApiLog[]
+}
+
+// AI API 调用日志
+model AIApiLog {
+  id            String   @id @default(cuid())
+  configId      String
+  config        AIApiConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  requestBy     String?  // 调用者用户ID或系统名称
+  requestSource String?  // hazard, training, work_permit, custom
+  requestPayload String? // JSON：请求内容
+  responsePayload String? // JSON：响应内容
+  tokens        Int?     // 消耗的token数
+  duration      Int?     // 响应时间（毫秒）
+  status        String   // success, error, rate_limited
+  errorMessage  String?
+  ip            String?
+  createdAt     DateTime @default(now())
+}

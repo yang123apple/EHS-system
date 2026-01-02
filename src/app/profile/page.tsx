@@ -1,8 +1,9 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { User, Building, Briefcase, Lock, Camera, Save, Loader2 } from 'lucide-react';
+import { User, Building, Briefcase, Lock, Camera, Save, Loader2, KeyRound } from 'lucide-react';
 import { apiFetch } from '@/lib/apiClient';
+import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal';
 
 interface UserProfile {
   id: string;
@@ -18,10 +19,10 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   // 表单状态
   const [name, setName] = useState('');
-  const [password, setPassword] = useState(''); // 留空则不修改
   const [avatarPreview, setAvatarPreview] = useState<string>('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
@@ -62,11 +63,11 @@ export default function ProfilePage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile) return;
+    
     setSaving(true);
 
     const formData = new FormData();
     formData.append('name', name); // 允许改名
-    if (password) formData.append('password', password); // 如果填了密码则修改
     if (avatarFile) formData.append('avatarFile', avatarFile); // 如果选了图则上传
 
     // 注意：这里我们故意不 append 'jobTitle' 和 'department'
@@ -84,7 +85,6 @@ export default function ProfilePage() {
         // 刷新页面或重新获取数据
         const data = await res.json();
         setProfile(data.user);
-        setPassword(''); // 清空密码框
         setAvatarFile(null);
       } else {
         alert('更新失败，请重试');
@@ -200,16 +200,26 @@ export default function ProfilePage() {
                     </div>
                 </div>
 
-                {/* 4. 修改密码 */}
+                {/* 4. 密码安全 */}
                 <div className="pt-3 md:pt-4 border-t border-slate-100">
-                     <label className="block text-xs md:text-sm font-medium text-slate-700 mb-1">修改密码</label>
-                     <input 
-                        type="password" 
-                        placeholder="如果不修改请留空"
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        className="w-full px-3 md:px-4 py-1.5 md:py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-hytzer-blue transition-all text-sm md:text-base"
-                    />
+                     <label className="block text-xs md:text-sm font-medium text-slate-700 mb-2">密码安全</label>
+                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 md:p-4">
+                        <div className="flex items-start gap-3">
+                            <KeyRound className="text-blue-600 mt-0.5 flex-shrink-0" size={20} />
+                            <div className="flex-1">
+                                <p className="text-xs md:text-sm text-slate-700 mb-2">
+                                    为了您的账户安全，建议定期修改密码
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPasswordModalOpen(true)}
+                                    className="text-xs md:text-sm text-blue-600 hover:text-blue-700 font-medium underline"
+                                >
+                                    修改密码 →
+                                </button>
+                            </div>
+                        </div>
+                     </div>
                 </div>
 
                 <div className="pt-3 md:pt-4 flex justify-end">
@@ -219,7 +229,6 @@ export default function ProfilePage() {
                         className="flex items-center gap-2 px-4 md:px-6 py-1.5 md:py-2 bg-hytzer-blue text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-wait text-sm md:text-base"
                     >
                         {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                        <Save size={18} className="hidden md:block" />
                         保存更改
                     </button>
                 </div>
@@ -227,6 +236,12 @@ export default function ProfilePage() {
             </form>
         </div>
       </div>
+      
+      {/* 密码修改弹窗 */}
+      <ChangePasswordModal 
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
+      />
     </div>
   );
 }

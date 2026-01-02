@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Users, Network, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, Users, Network, ChevronDown, Settings } from 'lucide-react';
 import NotificationPanel from '@/components/common/NotificationPanel';
 import Breadcrumbs from '@/components/common/Breadcrumbs';
 import { cn } from '@/lib/utils';
@@ -79,6 +79,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
           {/* Right Section: Notifications + User Menu */}
           <div className="flex items-center gap-3 sm:gap-4">
+            {/* System Settings Icon (Admin Only) */}
+            {user.role === 'admin' && (
+              <>
+                <Link
+                  href="/admin/system"
+                  className={cn(
+                    "p-2 rounded-lg transition-colors",
+                    isActive('/admin/system')
+                      ? "bg-slate-700 text-white"
+                      : "text-slate-300 hover:bg-slate-700/50 hover:text-white"
+                  )}
+                  title="系统设置"
+                >
+                  <Settings size={20} />
+                </Link>
+                <div className="h-6 w-px bg-slate-500 hidden sm:block"></div>
+              </>
+            )}
+
             <NotificationPanel />
             
             <div className="h-6 w-px bg-slate-500 mx-1 hidden sm:block"></div>
@@ -113,7 +132,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       <p className="text-xs text-slate-500 truncate">{user.id}</p>
                     </div>
                     <Link href="/profile" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors" onClick={() => setUserMenuOpen(false)}>个人中心</Link>
-                    <Link href="/settings" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors" onClick={() => setUserMenuOpen(false)}>系统设置</Link>
+                    {user.role === 'admin' && (
+                      <Link href="/admin" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors" onClick={() => setUserMenuOpen(false)}>系统设置</Link>
+                    )}
                     <button onClick={() => { logout(); setUserMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">退出系统</button>
                   </div>
                 </>

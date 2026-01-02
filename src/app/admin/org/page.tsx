@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import PeopleSelector from '@/components/common/PeopleSelector';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/apiClient';
+import { useAuth } from '@/context/AuthContext';
 
 // 定义接口
 interface OrgNode {
@@ -28,6 +29,7 @@ interface UserSimple {
 }
 
 export default function OrgStructurePage() {
+  const { user: currentUser } = useAuth();
   const [tree, setTree] = useState<OrgNode[]>([]);
   const [users, setUsers] = useState<UserSimple[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,10 +57,13 @@ export default function OrgStructurePage() {
     const [showImportGuide, setShowImportGuide] = useState(false);
 
   useEffect(() => {
+    if (!currentUser) return;
     fetchData();
-  }, []);
+  }, [currentUser]);
 
   const fetchData = async () => {
+    if (!currentUser) return;
+    
     try {
       const [treeRes, usersRes] = await Promise.all([
         apiFetch('/api/org'),

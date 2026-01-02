@@ -1,6 +1,6 @@
 /**
  * 应用启动初始化脚本
- * 在服务器启动时执行数据完整性检查和恢复
+ * 在服务器启动时执行备份任务调度
  */
 
 import { DataProtectionService } from '@/services/dataProtection.service';
@@ -23,18 +23,17 @@ export async function initializeApp() {
   console.log('========================================');
 
   try {
-    // 1. 检查核心数据完整性
-    console.log('📊 检查核心数据完整性...');
-    const dataProtection = DataProtectionService.getInstance();
-    await dataProtection.checkAndRestore();
-
-    // 2. 启动每日备份任务
+    // 启动每日备份任务调度
     console.log('⏰ 启动每日自动备份任务...');
+    const dataProtection = DataProtectionService.getInstance();
     await dataProtection.startDailyBackupSchedule();
 
     isInitialized = true;
     console.log('========================================');
     console.log('✅ 应用初始化完成');
+    console.log('  • 每日备份任务已启动 (每天凌晨 2:00)');
+    console.log('  • WAL 模式已启用');
+    console.log('  • 数据保护服务就绪');
     console.log('========================================');
   } catch (error) {
     console.error('========================================');

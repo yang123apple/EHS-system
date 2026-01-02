@@ -29,6 +29,17 @@ function getCurrentUser() {
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const user = getCurrentUser();
   
+  // 如果是需要认证的请求（非登录接口）但用户不存在，直接返回 401 响应
+  // 这样可以避免在退出登录后发起无意义的请求
+  if (!url.includes('/api/auth/login') && !user) {
+    // 创建一个模拟的 401 响应，但不会导致真正的网络请求
+    return new Response(JSON.stringify({ error: '未授权访问，请先登录' }), {
+      status: 401,
+      statusText: 'Unauthorized',
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
   // 合并headers
   const headers = new Headers(options.headers || {});
   
@@ -59,9 +70,13 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
   
   // 处理认证失败
   if (response.status === 401) {
-    console.warn('[API Client] 未授权访问，可能需要重新登录');
-    // TODO: 触发登录流程
-    // window.location.href = '/login';
+    // 检查是否还有登录用户，如果没有则是正常的退出登录流程，不需要警告
+    const currentUser = getCurrentUser();
+    if (currentUser) {
+      console.warn('[API Client] 未授权访问，可能需要重新登录');
+      // TODO: 触发登录流程
+      // window.location.href = '/login';
+    }
   }
   
   // 处理权限不足
@@ -78,6 +93,24 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
  * 提供统一的API调用接口
  */
 export class ApiClient {
+  /**
+   * 处理响应错误的统一方法
+   */
+  private static async handleResponseError(response: Response): Promise<void> {
+    // 对于 401 错误，检查是否是退出登录导致的，如果是则静默处理
+    if (response.status === 401) {
+      const currentUser = getCurrentUser();
+      if (!currentUser) {
+        // 用户已退出登录，静默返回，不抛出错误
+        console.debug('[API Client] 用户已退出登录，静默处理 401 错误');
+        return;
+      }
+    }
+    
+    const error = await response.json().catch(() => ({ error: 'Network error' }));
+    throw new ApiError(error.error || 'Request failed', response.status, error);
+  }
+
   /**
    * GET 请求
    */
@@ -96,8 +129,8 @@ export class ApiClient {
     });
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Network error' }));
-      throw new ApiError(error.error || 'Request failed', response.status, error);
+      await ApiClient.handleResponseError(response);
+      return null as T; // 如果是静默处理的 401，返回 null
     }
     
     return response.json();
@@ -113,8 +146,8 @@ export class ApiClient {
     });
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Network error' }));
-      throw new ApiError(error.error || 'Request failed', response.status, error);
+      await ApiClient.handleResponseError(response);
+      return null as T;
     }
     
     return response.json();
@@ -130,8 +163,8 @@ export class ApiClient {
     });
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Network error' }));
-      throw new ApiError(error.error || 'Request failed', response.status, error);
+      await ApiClient.handleResponseError(response);
+      return null as T;
     }
     
     return response.json();
@@ -147,8 +180,8 @@ export class ApiClient {
     });
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Network error' }));
-      throw new ApiError(error.error || 'Request failed', response.status, error);
+      await ApiClient.handleResponseError(response);
+      return null as T;
     }
     
     return response.json();
@@ -171,8 +204,8 @@ export class ApiClient {
     });
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Network error' }));
-      throw new ApiError(error.error || 'Request failed', response.status, error);
+      await ApiClient.handleResponseError(response);
+      return null as T;
     }
     
     return response.json();
@@ -189,8 +222,8 @@ export class ApiClient {
     });
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-      throw new ApiError(error.error || 'Upload failed', response.status, error);
+      await ApiClient.handleResponseError(response);
+      return null as T;
     }
     
     return response.json();
