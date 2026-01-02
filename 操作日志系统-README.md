@@ -4,7 +4,7 @@
 
 系统已成功实现完整的用户活动日志功能，现在可以：
 
-✅ **记录完整的用户身份** - 操作时的姓名、角色、部门、职位  
+✅ **记录完整的用户身份** - 操作时的姓名、系统角色、部门、职位、**业务角色**  
 ✅ **精确的时间戳** - 操作时间精确到秒  
 ✅ **丰富的操作类型** - 新增、修改、删除、导出、审批等  
 ✅ **详细的操作对象** - 被操作的数据实体及其描述  
@@ -26,6 +26,7 @@ await ActivityLogger.logCreate({
   targetId: newRecord.id,
   targetLabel: `隐患 ${newRecord.code}`,
   data: newRecord,
+  roleInAction: '上报人',  // ⭐ 新增:指定用户在本次操作中的业务角色
   request,  // NextRequest对象
 });
 ```
@@ -44,6 +45,7 @@ import ActivityLogViewer from '@/components/ActivityLogViewer';
 ## 📚 完整文档
 
 - **[操作日志快速开始.md](./操作日志快速开始.md)** ⭐ 5分钟快速入门
+- **[操作日志-用户角色字段使用说明.md](./操作日志-用户角色字段使用说明.md)** 🆕 业务角色字段详解
 - **[操作日志系统使用指南.md](./操作日志系统使用指南.md)** 📖 完整API文档
 - **[操作日志集成示例.md](./操作日志集成示例.md)** 💡 实战示例
 - **[操作日志系统-文件索引.md](./操作日志系统-文件索引.md)** 🗂️ 文件清单
@@ -75,6 +77,7 @@ await ActivityLogger.logUpdate({
   beforeData,
   afterData,
   fieldLabels: { status: '状态', desc: '描述' },
+  roleInAction: '整改责任人',  // ⭐ 指定业务角色
   request,
 });
 ```
@@ -120,7 +123,8 @@ await ActivityLogger.logUpdate({
 {
   // 用户身份（操作时的快照）
   userName: "张三",
-  userRole: "管理员",
+  userRole: "user",              // 系统角色
+  userRoleInAction: "整改责任人", // ⭐ 业务角色（新增）
   userDepartment: "安全管理部",
   userJobTitle: "安全主管",
   

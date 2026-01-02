@@ -113,7 +113,7 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                 <p>区域：<span className="text-slate-800">{hazard.location}</span></p>
                 <p>上报：<span className="text-slate-800">{hazard.reporterName}</span></p>
                 <p>时间：<span className="text-slate-800 break-words">{new Date(hazard.reportTime).toLocaleString()}</span></p>
-                {(hazard.candidateHandlers && hazard.candidateHandlers.length > 0) ? (
+                {(hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) ? (
                   <div className="col-span-1 lg:col-span-2">
                     <p className="text-slate-500">
                       当前处理人（{hazard.approvalMode === 'AND' ? '会签' : '或签'}）：
@@ -166,7 +166,7 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                 <span className="text-base lg:text-lg">流程处理</span>
                 <StatusBadge status={hazard.status} />
               </div>
-              {(hazard.candidateHandlers && hazard.candidateHandlers.length > 0) ? (
+              {(hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) ? (
                 <div className="text-sm text-slate-600">
                   当前处理人（{hazard.approvalMode === 'AND' ? '会签' : '或签'}）：
                   <span className="font-bold text-blue-600">

@@ -135,12 +135,14 @@ export class ActivityLogger {
     targetId: string;
     targetLabel?: string;
     data: any;
+    roleInAction?: string; // 用户在本次操作中的业务角色
     request?: NextRequest;
   }) {
     const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
     
     await SystemLogService.createLog({
       userSnapshot: userSnapshot || undefined,
+      userRoleInAction: params.roleInAction,
       action: ActionTypes.CREATE,
       actionLabel: ActionLabels[ActionTypes.CREATE],
       module: params.module,
@@ -166,6 +168,7 @@ export class ActivityLogger {
     beforeData: any;
     afterData: any;
     fieldLabels?: Record<string, string>;
+    roleInAction?: string; // 用户在本次操作中的业务角色
     request?: NextRequest;
   }) {
     const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
@@ -177,6 +180,7 @@ export class ActivityLogger {
 
     await SystemLogService.createLog({
       userSnapshot: userSnapshot || undefined,
+      userRoleInAction: params.roleInAction,
       action: ActionTypes.UPDATE,
       actionLabel: ActionLabels[ActionTypes.UPDATE],
       module: params.module,
@@ -202,12 +206,14 @@ export class ActivityLogger {
     targetId: string;
     targetLabel?: string;
     data: any;
+    roleInAction?: string; // 用户在本次操作中的业务角色
     request?: NextRequest;
   }) {
     const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
     
     await SystemLogService.createLog({
       userSnapshot: userSnapshot || undefined,
+      userRoleInAction: params.roleInAction,
       action: ActionTypes.DELETE,
       actionLabel: ActionLabels[ActionTypes.DELETE],
       module: params.module,
@@ -234,6 +240,7 @@ export class ActivityLogger {
     comment?: string;
     beforeStatus?: string;
     afterStatus?: string;
+    roleInAction?: string; // 用户在本次操作中的业务角色（如：审批人/验收人）
     request?: NextRequest;
   }) {
     const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
@@ -241,6 +248,7 @@ export class ActivityLogger {
     
     await SystemLogService.createLog({
       userSnapshot: userSnapshot || undefined,
+      userRoleInAction: params.roleInAction,
       action: actionType,
       actionLabel: ActionLabels[actionType],
       module: params.module,
@@ -273,12 +281,14 @@ export class ActivityLogger {
     targetType: string;
     description: string;
     count?: number;
+    roleInAction?: string; // 用户在本次操作中的业务角色
     request?: NextRequest;
   }) {
     const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
     
     await SystemLogService.createLog({
       userSnapshot: userSnapshot || undefined,
+      userRoleInAction: params.roleInAction,
       action: ActionTypes.EXPORT,
       actionLabel: ActionLabels[ActionTypes.EXPORT],
       module: params.module,
@@ -298,12 +308,14 @@ export class ActivityLogger {
     targetType: string;
     description: string;
     count?: number;
+    roleInAction?: string; // 用户在本次操作中的业务角色
     request?: NextRequest;
   }) {
     const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
     
     await SystemLogService.createLog({
       userSnapshot: userSnapshot || undefined,
+      userRoleInAction: params.roleInAction,
       action: ActionTypes.IMPORT,
       actionLabel: ActionLabels[ActionTypes.IMPORT],
       module: params.module,
@@ -356,12 +368,14 @@ export class ActivityLogger {
     beforeData?: any;
     afterData?: any;
     changes?: FieldChange[];
+    roleInAction?: string; // 用户在本次操作中的业务角色
     request?: NextRequest;
   }) {
     const userSnapshot = await SystemLogService.getUserSnapshot(params.userId);
     
     await SystemLogService.createLog({
       userSnapshot: userSnapshot || undefined,
+      userRoleInAction: params.roleInAction,
       action: params.action,
       actionLabel: params.actionLabel || ActionLabels[params.action] || params.action,
       module: params.module,

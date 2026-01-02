@@ -31,6 +31,7 @@ export interface SystemLogData {
   userDepartment?: string;
   userDepartmentId?: string;
   userJobTitle?: string;
+  userRoleInAction?: string; // 用户在本次操作中的业务角色（上报人/整改人/验收人/审批人等）
   userSnapshot?: UserSnapshot; // 完整的用户快照，会自动提取到各字段
   
   // 操作信息
@@ -71,6 +72,7 @@ export class SystemLogService {
           userDepartment: data.userSnapshot.departmentName,
           userDepartmentId: data.userSnapshot.departmentId,
           userJobTitle: data.userSnapshot.jobTitle,
+          userRoleInAction: data.userRoleInAction,
         };
       } else {
         userData = {
@@ -80,6 +82,7 @@ export class SystemLogService {
           userDepartment: data.userDepartment,
           userDepartmentId: data.userDepartmentId,
           userJobTitle: data.userJobTitle,
+          userRoleInAction: data.userRoleInAction,
         };
       }
 
@@ -211,6 +214,7 @@ export class SystemLogService {
               userDepartment: log.userSnapshot.departmentName,
               userDepartmentId: log.userSnapshot.departmentId,
               userJobTitle: log.userSnapshot.jobTitle,
+              userRoleInAction: log.userRoleInAction,
             };
           } else {
             userData = {
@@ -220,6 +224,7 @@ export class SystemLogService {
               userDepartment: log.userDepartment,
               userDepartmentId: log.userDepartmentId,
               userJobTitle: log.userJobTitle,
+              userRoleInAction: log.userRoleInAction,
             };
           }
 

@@ -1,4 +1,5 @@
 ﻿import { ParsedField } from '@/types/work-permit';
+import { calculateStringWidth, calculateA4ColumnWidths } from '@/utils/a4-column-width';
 
 /**
  * 从结构数据中提取二维表格
@@ -683,28 +684,23 @@ function extractOptionsFromCell(cellStr: string): string[] {
 
 /**
  * 辅助函数：计算单个单元格内容所需宽度
- * 区分中英文字符，中文字符按 zhCharWidthPx 计算，英文按 charWidthPx 计算
+ * 使用 A4 列宽计算工具，支持 CJK 字符的精确宽度计算
  */
 function getContentWidth(val: any): number {
-  if (val === null || val === undefined || val === '') return 0;
+  if (val === null || val === undefined || val === '') return COL_WIDTH_CONFIG.minWidth;
   const str = String(val).trim();
-  if (!str) return 0;
-  let width = 0;
-  for (const char of str) {
-    // 区分中英文计算
-    width += char.charCodeAt(0) > 255 
-      ? COL_WIDTH_CONFIG.zhCharWidthPx 
-      : COL_WIDTH_CONFIG.charWidthPx;
-  }
-  return width + COL_WIDTH_CONFIG.paddingPx;
+  if (!str) return COL_WIDTH_CONFIG.minWidth;
+  
+  // 使用新的 A4 列宽计算工具
+  return calculateStringWidth(str);
 }
 
 /**
- * 自动计算各列的最优宽度（新算法）
- * 三轮处理：
- * 1. 处理非合并单元格，建立列宽骨架
- * 2. 处理合并单元格，按需补偿宽度
- * 3. 应用最大值约束
+ * 自动计算各列的最优宽度（基于 A4 列宽计算工具）
+ * 算法流程：
+ * 1. 使用 A4 列宽计算工具计算基础列宽（智能加权分配）
+ * 2. 处理合并单元格的特殊需求（补偿宽度）
+ * 3. 应用约束和最终调整
  */
 export function autoCalculateColumnWidths(structureJson: string): Array<{ wpx: number }> {
   if (!structureJson) return [];
@@ -720,42 +716,29 @@ export function autoCalculateColumnWidths(structureJson: string): Array<{ wpx: n
     const colCountFromMerge = merges.reduce((max, m) => Math.max(max, m.e.c + 1), 0);
     const colCount = Math.max(colCountFromData, colCountFromMerge);
 
-    // 初始化所有列宽为最小宽度
-    let colWidths = new Array(colCount).fill(COL_WIDTH_CONFIG.minWidth);
-
     // ================================================================
-    // 🟢 第一轮：处理【非合并】单元格 (确立骨架)
+    // 🟢 第一步：使用 A4 列宽计算工具获取基础列宽
+    // 该工具会自动处理 CJK 字符宽度、加权分配等
     // ================================================================
-    for (let rIndex = 0; rIndex < data.length; rIndex++) {
-      const row = data[rIndex];
-      if (!row) continue;
-
-      for (let cIndex = 0; cIndex < row.length; cIndex++) {
-        const cellVal = row[cIndex];
-        
-        // 检查当前单元格是否是合并单元格的起始点
-        const mergeInfo = merges.find(m => m.s.r === rIndex && m.s.c === cIndex);
-        
-        // 如果是合并单元格起始点，直接跳过，不让它影响单列宽度
-        if (mergeInfo) continue;
-
-        // 检查当前单元格是否被别的合并覆盖（不是起始点，但在范围内）
-        const isCovered = merges.some(m => 
-          rIndex >= m.s.r && rIndex <= m.e.r && 
-          cIndex >= m.s.c && cIndex <= m.e.c
-        );
-        if (isCovered) continue;
-
-        // 计算当前单格所需宽度
-        const needed = getContentWidth(cellVal);
-        if (needed > colWidths[cIndex]) {
-          colWidths[cIndex] = needed;
-        }
+    let colWidths: number[];
+    
+    try {
+      // 使用 A4 列宽计算工具计算基础列宽
+      colWidths = calculateA4ColumnWidths(data);
+      
+      // 如果返回的列数不够，补齐到实际列数
+      while (colWidths.length < colCount) {
+        colWidths.push(COL_WIDTH_CONFIG.minWidth);
       }
+    } catch (error) {
+      console.warn('A4 列宽计算失败，回退到最小宽度:', error);
+      // 回退方案：使用最小宽度
+      colWidths = new Array(colCount).fill(COL_WIDTH_CONFIG.minWidth);
     }
 
     // ================================================================
-    // 🟢 第二轮：处理【合并】单元格 (补偿宽度)
+    // 🟢 第二步：处理【合并单元格】的特殊需求
+    // 合并单元格可能需要更多空间，这是模板特有的需求
     // ================================================================
     merges.forEach(m => {
       const { s, e } = m;
@@ -784,10 +767,15 @@ export function autoCalculateColumnWidths(structureJson: string): Array<{ wpx: n
     });
 
     // ================================================================
-    // 🟢 第三轮：设置最大上限，防止极端情况
+    // 🟢 第三步：应用最终约束
+    // 确保列宽在合理范围内，并适配打印需求
     // ================================================================
-    const MAX_WIDTH = 500;
-    return colWidths.map(w => ({ wpx: Math.min(Math.round(w), MAX_WIDTH) }));
+    const MIN_WIDTH = 40;  // 最小宽度：防止列崩溃
+    const MAX_WIDTH = 500; // 最大宽度：防止极端情况（模板可能比 A4 更宽）
+    
+    return colWidths.map(w => ({
+      wpx: Math.max(MIN_WIDTH, Math.min(Math.round(w), MAX_WIDTH))
+    }));
   } catch (error) {
     console.error('Failed to calculate column widths:', error);
     return [];

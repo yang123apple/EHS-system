@@ -200,6 +200,8 @@ export function useHazardWorkflow(onSuccess: () => void) {
         if (nextStep.id === 'rectify') {
           dispatchedHandlers.dopersonal_ID = hazard.responsibleId;
           dispatchedHandlers.dopersonal_Name = hazard.responsibleName;
+          dispatchedHandlers.candidateHandlers = null; // 清除候选人列表
+          dispatchedHandlers.approvalMode = null; // 清除审批模式
           if (hazard.responsibleId) {
             dispatchedHandlers.old_personal_ID = [...(hazard.old_personal_ID || []), hazard.responsibleId];
           }
@@ -244,8 +246,8 @@ export function useHazardWorkflow(onSuccess: () => void) {
               
               dispatchedHandlers.dopersonal_ID = handlerId;
               dispatchedHandlers.dopersonal_Name = handlerName;
-              dispatchedHandlers.candidateHandlers = undefined; // 清除候选人列表
-              dispatchedHandlers.approvalMode = undefined; // 清除审批模式
+              dispatchedHandlers.candidateHandlers = null; // 清除候选人列表
+              dispatchedHandlers.approvalMode = null; // 清除审批模式
               
               console.log('🎯 设置单人执行模式:', handlerName, '(ID:', handlerId, ')');
             }
@@ -277,7 +279,8 @@ export function useHazardWorkflow(onSuccess: () => void) {
         // 已经是最后一步，流程结束
         dispatchedHandlers.dopersonal_ID = null;
         dispatchedHandlers.dopersonal_Name = null;
-        dispatchedHandlers.candidateHandlers = undefined;
+        dispatchedHandlers.candidateHandlers = null;
+        dispatchedHandlers.approvalMode = null;
         console.log('✅ 已到达最后一步，流程结束');
       }
 
@@ -305,22 +308,29 @@ export function useHazardWorkflow(onSuccess: () => void) {
         old_personal_ID: allOldPersonalIds
       };
       
-      // 🟢 如果当前步骤有候选处理人（或签/会签模式），标记实际操作人
+      // 🟢 处理候选处理人（或签/会签模式）
       if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0) {
-        updates.candidateHandlers = hazard.candidateHandlers.map(candidate => ({
-          ...candidate,
-          hasOperated: candidate.userId === user?.id ? true : candidate.hasOperated
-        }));
+        if (shouldStayAtCurrentStep) {
+          // 会签模式未完成：更新candidateHandlers的hasOperated状态
+          updates.candidateHandlers = hazard.candidateHandlers.map(candidate => ({
+            ...candidate,
+            hasOperated: candidate.userId === user?.id ? true : candidate.hasOperated
+          }));
+          
+          console.log('🟡 会签未完成，更新候选人状态:', {
+            operatorId: user?.id,
+            operatorName: user?.name,
+            candidateHandlers: updates.candidateHandlers
+          });
+        } else if (hazard.approvalMode === 'OR') {
+          // OR模式已完成流转：清除旧的candidateHandlers，使用dispatchedHandlers中的新值
+          // dispatchedHandlers已经设置了下一步的candidateHandlers（如果下一步也是多人模式）
+          // 或者已经清除了candidateHandlers（如果下一步是单人模式）
+          console.log('✅ 或签已完成，流转到下一步，candidateHandlers由dispatchedHandlers控制');
+        }
         
-        console.log('🎯 标记或签/会签模式操作人:', {
-          operatorId: user?.id,
-          operatorName: user?.name,
-          candidateHandlers: updates.candidateHandlers,
-          approvalMode: hazard.approvalMode
-        });
-        
-        // 🟢 生成会签/或签进度通知
-        if (hazard.approvalMode && (hazard.approvalMode === 'OR' || hazard.approvalMode === 'AND')) {
+        // 🟢 生成会签/或签进度通知（仅当停留在当前步骤时）
+        if (shouldStayAtCurrentStep && hazard.approvalMode && (hazard.approvalMode === 'OR' || hazard.approvalMode === 'AND')) {
           const { HazardNotificationService } = await import('@/services/hazardNotification.service');
           const progressNotifications = HazardNotificationService.generateApprovalProgressNotifications({
             hazard,

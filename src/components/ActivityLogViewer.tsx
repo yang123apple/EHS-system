@@ -29,6 +29,7 @@ interface ActivityLog {
   userRole?: string;
   userDepartment?: string;
   userJobTitle?: string;
+  userRoleInAction?: string; // 用户在本次操作中的业务角色
   
   // 操作信息
   action: string;
@@ -278,8 +279,13 @@ export default function ActivityLogViewer({
                           <User size={14} />
                           <span className="font-medium">{log.userName || '未知用户'}</span>
                         </div>
+                        {log.userRoleInAction && (
+                          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-medium">
+                            {log.userRoleInAction}
+                          </span>
+                        )}
                         {log.userRole && (
-                          <span className="text-xs">角色：{log.userRole}</span>
+                          <span className="text-xs">系统角色：{log.userRole}</span>
                         )}
                         {log.userDepartment && (
                           <span className="text-xs">部门：{log.userDepartment}</span>
@@ -412,8 +418,16 @@ export default function ActivityLogViewer({
                     <span className="text-slate-600">姓名：</span>
                     <span className="font-medium">{viewingDetail.userName || '-'}</span>
                   </div>
+                  {viewingDetail.userRoleInAction && (
+                    <div>
+                      <span className="text-slate-600">操作角色：</span>
+                      <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-medium">
+                        {viewingDetail.userRoleInAction}
+                      </span>
+                    </div>
+                  )}
                   <div>
-                    <span className="text-slate-600">角色：</span>
+                    <span className="text-slate-600">系统角色：</span>
                     <span className="font-medium">{viewingDetail.userRole || '-'}</span>
                   </div>
                   <div>

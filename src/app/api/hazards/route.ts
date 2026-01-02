@@ -317,7 +317,7 @@ export const PATCH = withErrorHandling(
     }
     // 🟢 新增：处理候选处理人列表（或签/会签模式）
     if (candidateHandlersInput !== undefined) {
-      if (candidateHandlersInput === null) {
+      if (candidateHandlersInput === null || candidateHandlersInput === undefined) {
         finalUpdates.candidateHandlers = null;
       } else {
         finalUpdates.candidateHandlers = Array.isArray(candidateHandlersInput) 
@@ -327,7 +327,7 @@ export const PATCH = withErrorHandling(
     }
     // 🟢 新增：处理审批模式
     if (approvalModeInput !== undefined) {
-      finalUpdates.approvalMode = approvalModeInput;
+      finalUpdates.approvalMode = approvalModeInput === undefined ? null : approvalModeInput;
     }
 
     // 处理日期字段：整改期限设置为当天的结束时间（23:59:59.999）

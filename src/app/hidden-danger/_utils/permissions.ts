@@ -52,9 +52,9 @@ export function canAssignHazard(hazard: HazardRecord, user: any): boolean {
 export function canRectifyHazard(hazard: HazardRecord, user: any): boolean {
   if (!user) return false;
   
-  // 🟢 多人模式：检查是否在候选处理人列表中
-  if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0) {
-    const approvalMode = hazard.approvalMode || 'OR'; // 默认OR模式
+  // 🟢 多人模式：检查是否在候选处理人列表中（必须同时有approvalMode才生效）
+  if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) {
+    const approvalMode = hazard.approvalMode;
     
     if (approvalMode === 'OR') {
       // OR模式（或签）：任何一人操作后，其他人不能再操作
@@ -90,9 +90,9 @@ export function canRectifyHazard(hazard: HazardRecord, user: any): boolean {
 export function canVerifyHazard(hazard: HazardRecord, user: any): boolean {
   if (!user) return false;
   
-  // 🟢 多人模式：检查是否在候选处理人列表中
-  if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0) {
-    const approvalMode = hazard.approvalMode || 'OR'; // 默认OR模式
+  // 🟢 多人模式：检查是否在候选处理人列表中（必须同时有approvalMode才生效）
+  if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) {
+    const approvalMode = hazard.approvalMode;
     
     if (approvalMode === 'OR') {
       // OR模式（或签）：任何一人操作后，其他人不能再操作

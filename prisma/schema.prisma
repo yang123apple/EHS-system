@@ -189,10 +189,11 @@ model SystemLog {
   // 用户身份信息（快照）
   userId          String?
   userName        String?
-  userRole        String?  // 操作时的角色
+  userRole        String?  // 操作时的系统角色（admin/user/manager等）
   userDepartment  String?  // 操作时所属部门名称
   userDepartmentId String? // 操作时所属部门ID
   userJobTitle    String?  // 操作时的职位
+  userRoleInAction String? // 用户在本次操作中的业务角色（上报人/整改人/验收人/审批人等）
   
   // 操作信息
   action          String   // 操作类型：CREATE, UPDATE, DELETE, EXPORT, APPROVE, REJECT等
