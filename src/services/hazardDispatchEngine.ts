@@ -38,6 +38,7 @@ export interface DispatchResult {
   success: boolean;
   newStatus: HazardStatus;
   currentStep: string;
+  nextStepIndex?: number; // 新增：下一步骤索引
   handlers: {
     userIds: string[];
     userNames: string[];
@@ -66,6 +67,7 @@ export interface DispatchContext {
   workflowSteps: HazardWorkflowStep[];
   allUsers: SimpleUser[];
   departments: Department[];
+  currentStepIndex?: number; // 当前步骤索引，用于动态步骤流转
   comment?: string;
   additionalData?: any; // 用于传递额外数据，如指派的责任人等
 }
@@ -78,28 +80,44 @@ export class HazardDispatchEngine {
    * 执行派发
    */
   static async dispatch(context: DispatchContext): Promise<DispatchResult> {
-    const { hazard, action, operator, workflowSteps, allUsers, departments, comment, additionalData } = context;
+    const { hazard, action, operator, workflowSteps, allUsers, departments, currentStepIndex, comment, additionalData } = context;
 
     try {
-      // 1. 根据动作确定下一步骤和状态
-      const transition = this.getTransition(hazard.status, action);
+      // 🔄 使用步骤索引的当前值，如果未提供则默认为0
+      const stepIndex = currentStepIndex ?? hazard.currentStepIndex ?? 0;
+      
+      console.log('🎯 [派发引擎] 开始派发:', {
+        action,
+        currentStepIndex: stepIndex,
+        totalSteps: workflowSteps.length,
+        hazardId: hazard.id
+      });
+
+      // 1. 根据动作和当前步骤索引确定下一步骤
+      const transition = this.getTransition(stepIndex, action, workflowSteps, hazard.status);
       if (!transition.success) {
         throw new Error(transition.error || '无效的状态流转');
       }
 
-      // 2. 获取当前步骤配置
-      const currentStep = workflowSteps.find(s => s.id === transition.nextStepId);
-      if (!currentStep) {
-        throw new Error(`未找到步骤配置: ${transition.nextStepId}`);
+      console.log('✅ [派发引擎] 流转结果:', {
+        nextStepIndex: transition.nextStepIndex,
+        nextStepId: transition.nextStepId,
+        newStatus: transition.newStatus
+      });
+
+      // 2. 获取下一步骤配置（用于匹配处理人和抄送人）
+      const nextStep = workflowSteps[transition.nextStepIndex];
+      if (!nextStep) {
+        throw new Error(`未找到步骤配置: 索引=${transition.nextStepIndex}`);
       }
 
       // 3. 创建更新后的隐患数据（用于处理人和抄送人匹配）
       const updatedHazard = this.getUpdatedHazard(hazard, action, additionalData);
 
-      // 4. 匹配处理人
+      // 4. 匹配处理人（针对下一步骤）
       const handlerResult = await matchHandler({
         hazard: updatedHazard,
-        step: currentStep,
+        step: nextStep,
         allUsers,
         departments
       });
@@ -108,6 +126,13 @@ export class HazardDispatchEngine {
         console.warn('[派发引擎] 处理人匹配失败:', handlerResult.error);
         // 不抛出错误，允许继续（某些步骤可能不需要处理人）
       }
+      
+      console.log('🎯 [派发引擎] 匹配到的处理人:', {
+        count: handlerResult.userIds?.length || 0,
+        userIds: handlerResult.userIds,
+        userNames: handlerResult.userNames,
+        approvalMode: nextStep.handlerStrategy.approvalMode || 'OR'
+      });
 
       // 5. 匹配抄送人
       const reporter = allUsers.find(u => u.id === updatedHazard.reporterId);
@@ -118,7 +143,7 @@ export class HazardDispatchEngine {
 
       const ccResult = await matchAllCCRules(
         updatedHazard,
-        currentStep.ccRules || [],
+        nextStep.ccRules || [],
         allUsers,
         departments,
         reporter,
@@ -152,7 +177,8 @@ export class HazardDispatchEngine {
       return {
         success: true,
         newStatus: transition.newStatus,
-        currentStep: transition.nextStepId,
+        currentStep: transition.nextStepId, // 步骤ID（用于兼容）
+        nextStepIndex: transition.nextStepIndex, // 步骤索引（新增）
         handlers: {
           userIds: handlerResult.success ? handlerResult.userIds : [],
           userNames: handlerResult.userNames,
@@ -164,10 +190,12 @@ export class HazardDispatchEngine {
       };
     } catch (error) {
       console.error('[派发引擎] 派发失败:', error);
+      const stepIndex = currentStepIndex ?? hazard.currentStepIndex ?? 0;
       return {
         success: false,
         newStatus: hazard.status,
         currentStep: this.getStepIdByStatus(hazard.status),
+        nextStepIndex: stepIndex,
         handlers: { userIds: [], userNames: [] },
         ccUsers: { userIds: [], userNames: [], details: [] },
         log: this.createLog(operator, action, hazard.status, comment),
@@ -178,61 +206,108 @@ export class HazardDispatchEngine {
   }
 
   /**
-   * 根据动作获取状态流转
-   * 注意：步骤ID必须与 hazard-workflow.json 中的配置一致
+   * 🔄 基于步骤索引的动态流转逻辑（支持任意数量的自定义步骤）
+   * @param currentStepIndex 当前步骤索引
+   * @param action 派发动作
+   * @param workflowSteps 完整的工作流步骤配置
+   * @param currentStatus 当前隐患状态（用于兼容性检查）
    */
   private static getTransition(
-    currentStatus: HazardStatus,
-    action: DispatchAction
+    currentStepIndex: number,
+    action: DispatchAction,
+    workflowSteps: HazardWorkflowStep[],
+    currentStatus: HazardStatus
   ): {
     success: boolean;
     newStatus: HazardStatus;
     nextStepId: string;
+    nextStepIndex: number;
     error?: string;
   } {
-    // 定义状态机（步骤ID与 hazard-workflow.json 保持一致）
-    // 🔴 修复：确保驳回时状态和步骤ID一致，避免状态机死锁
-    const transitions: Record<HazardStatus, Partial<Record<DispatchAction, { newStatus: HazardStatus; nextStepId: string }>>> = {
-      'reported': {
-        [DispatchAction.SUBMIT]: { newStatus: 'assigned', nextStepId: 'assign' },   // 步骤1完成：提交上报，进入步骤2（assign），匹配步骤2的处理人规则
-        [DispatchAction.REJECT]: { newStatus: 'closed', nextStepId: 'closed' }
-      },
-      'assigned': {
-        [DispatchAction.ASSIGN]: { newStatus: 'rectifying', nextStepId: 'rectify' },   // 步骤2完成：指派整改，进入步骤3（rectify），匹配步骤3的处理人规则
-        [DispatchAction.RECTIFY]: { newStatus: 'rectifying', nextStepId: 'rectify' },  // 开始整改（兼容旧逻辑）
-        // 🔴 修复：驳回时回到 reported 状态，nextStepId 应该是 'report'（上报步骤），而不是 'assign'
-        [DispatchAction.REJECT]: { newStatus: 'reported', nextStepId: 'report' },
-        [DispatchAction.EXTEND_DEADLINE]: { newStatus: 'assigned', nextStepId: 'rectify' }
-      },
-      'rectifying': {
-        [DispatchAction.RECTIFY]: { newStatus: 'verified', nextStepId: 'verify' },  // 提交整改后进入验收
-        [DispatchAction.VERIFY]: { newStatus: 'verified', nextStepId: 'verify' },
-        // 🔴 修复：驳回时回到 assigned 状态，nextStepId 应该是 'assign'（指派步骤），而不是 'rectify'
-        [DispatchAction.REJECT]: { newStatus: 'assigned', nextStepId: 'assign' }
-      },
-      'verified': {
-        [DispatchAction.VERIFY]: { newStatus: 'closed', nextStepId: 'verify' },  // 验收步骤
-        // 🔴 修复：驳回时回到 rectifying 状态，nextStepId 应该是 'rectify'（整改步骤），保持一致
-        [DispatchAction.REJECT]: { newStatus: 'rectifying', nextStepId: 'rectify' }
-      },
-      'closed': {}
-    };
+    // 驳回操作：特殊处理
+    if (action === DispatchAction.REJECT) {
+      // 根据当前步骤决定驳回到哪一步
+      const currentStep = workflowSteps[currentStepIndex];
+      
+      if (currentStep?.id === 'verify') {
+        // 从验收驳回 -> 回到整改步骤
+        const rectifyIndex = workflowSteps.findIndex(s => s.id === 'rectify');
+        if (rectifyIndex >= 0) {
+          return {
+            success: true,
+            newStatus: 'rectifying',
+            nextStepId: workflowSteps[rectifyIndex].id,
+            nextStepIndex: rectifyIndex
+          };
+        }
+      } else if (currentStep?.id === 'rectify') {
+        // 从整改驳回 -> 回到指派步骤
+        const assignIndex = workflowSteps.findIndex(s => s.id === 'assign');
+        if (assignIndex >= 0) {
+          return {
+            success: true,
+            newStatus: 'assigned',
+            nextStepId: workflowSteps[assignIndex].id,
+            nextStepIndex: assignIndex
+          };
+        }
+      } else {
+        // 其他中间步骤驳回 -> 回到上一步
+        const prevIndex = Math.max(0, currentStepIndex - 1);
+        return {
+          success: true,
+          newStatus: this.getStatusByStepId(workflowSteps[prevIndex]?.id),
+          nextStepId: workflowSteps[prevIndex]?.id || 'report',
+          nextStepIndex: prevIndex
+        };
+      }
+    }
 
-    const transition = transitions[currentStatus]?.[action];
+    // 正常流转：前进到下一步
+    const nextStepIndex = currentStepIndex + 1;
     
-    if (!transition) {
+    if (nextStepIndex >= workflowSteps.length) {
+      // 已经是最后一步，流程结束
       return {
-        success: false,
-        newStatus: currentStatus,
-        nextStepId: this.getStepIdByStatus(currentStatus),
-        error: `当前状态 "${currentStatus}" 不支持操作 "${action}"`
+        success: true,
+        newStatus: 'closed',
+        nextStepId: 'verify', // 最后停留在验收步骤
+        nextStepIndex: workflowSteps.length - 1
       };
     }
 
+    const nextStep = workflowSteps[nextStepIndex];
+    const newStatus = this.getStatusByStepId(nextStep.id);
+
+    console.log('🔄 [派发引擎] 动态流转:', {
+      from: currentStepIndex,
+      to: nextStepIndex,
+      nextStepId: nextStep.id,
+      nextStepName: nextStep.name,
+      newStatus
+    });
+
     return {
       success: true,
-      ...transition
+      newStatus,
+      nextStepId: nextStep.id,
+      nextStepIndex
     };
+  }
+
+  /**
+   * 根据步骤ID推断对应的隐患状态
+   */
+  private static getStatusByStepId(stepId: string): HazardStatus {
+    if (stepId === 'report') return 'reported';
+    if (stepId === 'assign') return 'assigned';
+    if (stepId === 'rectify') return 'rectifying';
+    if (stepId === 'verify') return 'verified';
+    
+    // 自定义步骤：根据位置推断状态
+    // report -> assigned -> [自定义步骤] -> rectifying -> verified
+    // 自定义步骤默认使用 'assigned' 状态
+    return 'assigned';
   }
 
   /**

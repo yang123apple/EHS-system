@@ -144,7 +144,7 @@ export default function LogsPage() {
   };
 
   const getActionColor = (action: string) => {
-    if (action.includes('login') || action.includes('登录')) return 'text-green-600 bg-green-50';
+    if (action.includes('login') || action.includes('logout') || action.includes('登录') || action.includes('退出')) return 'text-green-600 bg-green-50';
     if (action.includes('create') || action.includes('创建')) return 'text-blue-600 bg-blue-50';
     if (action.includes('update') || action.includes('更新') || action.includes('编辑')) return 'text-yellow-600 bg-yellow-50';
     if (action.includes('delete') || action.includes('删除')) return 'text-red-600 bg-red-50';

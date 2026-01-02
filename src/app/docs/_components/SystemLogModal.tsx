@@ -34,6 +34,9 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
   const [endDate, setEndDate] = useState('');
   const [userFilter, setUserFilter] = useState('');
   
+  // 结束日期的最小值（开始日期）
+  const endDateMin = startDate || '';
+  
   // 快照查看
   const [viewingSnapshot, setViewingSnapshot] = useState<any>(null);
   const [showSnapshotModal, setShowSnapshotModal] = useState(false);

@@ -417,15 +417,40 @@ export default function RecordDetailModal({
     );
     if (!currentStepConfig) return false;
 
-    // 检查是否已审批过
+    // 获取审批模式（默认OR）
+    const approvalMode = currentStepConfig.approvalMode || 'OR';
+    
+    // 检查当前步骤的审批情况
     const logs: any[] = record.approvalLogs ? JSON.parse(record.approvalLogs) : [];
-    const hasApproved = logs.some(
-      (log: any) =>
-        (log.stepIndex === record.currentStep || log.step === record.currentStep) &&
-        log.action === 'pass' &&
-        String(log.operatorId || log.userId) === String(user?.id)
-    );
-    if (hasApproved) return false;
+    
+    if (approvalMode === 'OR') {
+      // OR模式（或签）：任何一人通过审批后，其他人不能再审批
+      const stepHasApproved = logs.some(
+        (log: any) =>
+          (log.stepIndex === record.currentStep || log.step === record.currentStep) &&
+          log.action === 'pass'
+      );
+      if (stepHasApproved) return false;
+    } else if (approvalMode === 'AND') {
+      // AND模式（会签）：检查当前用户是否已审批过
+      const currentUserApproved = logs.some(
+        (log: any) =>
+          (log.stepIndex === record.currentStep || log.step === record.currentStep) &&
+          log.action === 'pass' &&
+          String(log.operatorId || log.userId) === String(user?.id)
+      );
+      if (currentUserApproved) return false;
+    }
+    // CONDITIONAL模式：正常检查当前用户是否已审批
+    else {
+      const currentUserApproved = logs.some(
+        (log: any) =>
+          (log.stepIndex === record.currentStep || log.step === record.currentStep) &&
+          log.action === 'pass' &&
+          String(log.operatorId || log.userId) === String(user?.id)
+      );
+      if (currentUserApproved) return false;
+    }
 
     // 计算审批人名单
     const potentialApprovers = resolveDynamicApprovers(currentStepConfig);
@@ -615,17 +640,22 @@ export default function RecordDetailModal({
           }
 
           let approverName = '待定';
-          const completedLog = logs.find(
+          const completedLogs = logs.filter(
             (log: any) =>
               (log.stepIndex === stepNum || log.step === stepNum) &&
               (log.action === 'pass' || log.action === 'reject')
           );
-          if (completedLog) {
-            approverName = completedLog.approver || '未知';
+          if (completedLogs.length > 0) {
+            // 显示所有已审批的人（支持会签模式）
+            approverName = completedLogs.map((log: any) => log.approver || '未知').join('、');
           } else {
             const potentialApprovers = resolveDynamicApprovers(step);
             if (potentialApprovers.length > 0) {
-              approverName = potentialApprovers.map((u: any) => u.userName).join(', ');
+              // 获取审批模式
+              const approvalMode = step.approvalMode || 'OR';
+              const names = potentialApprovers.map((u: any) => u.userName).join('、');
+              // 如果是会签模式，添加标识
+              approverName = approvalMode === 'AND' ? `${names}（会签）` : names;
             }
           }
 

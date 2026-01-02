@@ -148,9 +148,10 @@ export const PATCH = withPermission('work_permit', 'edit', async (req: Request, 
       createLog(
         userId,
         userName,
-        'UPDATE_PERMIT',
+        '更新作业票',
         id,
-        '更新作业票记录'
+        '更新作业票记录',
+        'permit'
       );
     }
 
@@ -304,9 +305,10 @@ export const POST = withPermission('work_permit', 'create', async (req: Request,
       createLog(
         userId,
         userName,
-        'CREATE_PERMIT',
+        '创建作业票',
         newRecord.id,
-        `创建作业票记录 - 项目ID: ${projectId}`
+        `创建作业票记录 - 项目ID: ${projectId}`,
+        'permit'
       );
     }
 
@@ -341,9 +343,10 @@ export const DELETE = withPermission('work_permit', 'delete', async (req: Reques
       createLog(
         userId,
         userName,
-        'DELETE_PERMIT',
+        '删除作业票',
         id,
-        '删除作业票记录'
+        '删除作业票记录',
+        'permit'
       );
     }
 

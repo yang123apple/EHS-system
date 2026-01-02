@@ -344,7 +344,16 @@ export function withErrorHandling<T = any>(
     try {
       return await handler(req, context);
     } catch (error) {
-      console.error('[API Error]:', error);
+      // 详细的错误日志
+      console.error('[API Error] 请求失败:', {
+        url: req.url,
+        method: req.method,
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : error
+      });
       
       // 处理权限错误
       if (error instanceof PermissionError) {
@@ -355,6 +364,25 @@ export function withErrorHandling<T = any>(
             permission: error.permission,
           },
           { status: 403 }
+        );
+      }
+      
+      // 处理 Prisma 错误
+      if (error && typeof error === 'object' && 'code' in error) {
+        const prismaError = error as any;
+        console.error('[Prisma Error]:', {
+          code: prismaError.code,
+          meta: prismaError.meta,
+          message: prismaError.message
+        });
+        
+        return NextResponse.json(
+          { 
+            error: '数据库操作失败',
+            details: prismaError.message || '未知数据库错误',
+            code: prismaError.code
+          },
+          { status: 500 }
         );
       }
       

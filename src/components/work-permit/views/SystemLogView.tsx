@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ShieldAlert, Search, RefreshCw, Filter, Eye, X } from 'lucide-react';
+import { apiFetch } from '@/lib/apiClient';
 
 export default function SystemLogView() {
   const [logs, setLogs] = useState<any[]>([]);

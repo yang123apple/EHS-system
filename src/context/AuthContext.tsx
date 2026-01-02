@@ -58,7 +58,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    // 在清除本地状态前，先记录退出日志
+    if (user) {
+      try {
+        await apiFetch('/api/auth/logout', {
+          method: 'POST',
+          body: { userId: user.id, userName: user.name },
+        });
+      } catch (error) {
+        console.error('记录退出日志失败:', error);
+        // 即使记录失败也继续退出流程
+      }
+    }
+    
     setUser(null);
     localStorage.removeItem('ehs_user');
     router.push('/login');

@@ -83,10 +83,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {user.role === 'admin' && (
               <>
                 <Link
-                  href="/admin/system"
+                  href="/admin"
                   className={cn(
                     "p-2 rounded-lg transition-colors",
-                    isActive('/admin/system')
+                    isActive('/admin')
                       ? "bg-slate-700 text-white"
                       : "text-slate-300 hover:bg-slate-700/50 hover:text-white"
                   )}

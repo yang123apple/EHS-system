@@ -182,6 +182,68 @@ export class HazardNotificationService {
   }
 
   /**
+   * 生成会签/或签进度通知数据
+   * 当其他人完成签核时，通知剩余的候选人
+   */
+  static generateApprovalProgressNotifications(params: {
+    hazard: HazardRecord;
+    candidateHandlers: Array<{ userId: string; userName: string; hasOperated?: boolean }>;
+    operatorId: string;
+    operatorName: string;
+    approvalMode: 'OR' | 'AND';
+  }): NotificationData[] {
+    const { hazard, candidateHandlers, operatorId, operatorName, approvalMode } = params;
+
+    if (!candidateHandlers || candidateHandlers.length === 0) {
+      return [];
+    }
+
+    // 找出还未操作的候选人（排除当前操作人）
+    const pendingUsers = candidateHandlers.filter(
+      c => c.userId !== operatorId && !c.hasOperated
+    );
+
+    if (pendingUsers.length === 0) {
+      console.log('⚠️ 没有待通知的候选人');
+      return [];
+    }
+
+    const hazardDesc = hazard.desc || '未知隐患';
+    const modeText = approvalMode === 'AND' ? '会签' : '或签';
+    
+    // 计算已操作人数和总人数
+    const operatedCount = candidateHandlers.filter(c => c.hasOperated || c.userId === operatorId).length;
+    const totalCount = candidateHandlers.length;
+    
+    let title: string;
+    let content: string;
+
+    if (approvalMode === 'OR') {
+      // 或签模式：提醒还可以操作（抢单）
+      title = '或签进度提醒';
+      content = `${operatorName} 已完成隐患"${hazardDesc}"的签核（或签模式，${operatedCount}/${totalCount}人已处理）`;
+    } else {
+      // 会签模式：提醒还需要你的审批
+      title = '会签进度提醒';
+      content = `${operatorName} 已完成隐患"${hazardDesc}"的签核，请您尽快完成审批（会签模式，${operatedCount}/${totalCount}人已处理）`;
+    }
+
+    // 生成通知数据
+    const notifications = pendingUsers.map(user => ({
+      userId: user.userId,
+      type: 'hazard_approval_progress',
+      title,
+      content: `${content}（待处理人：${user.userName}）`,
+      relatedType: 'hazard' as const,
+      relatedId: hazard.id,
+      isRead: false,
+    }));
+
+    console.log(`📋 生成${modeText}进度通知数据: ${title} → ${pendingUsers.map(u => u.userName).join('、')}`);
+    return notifications;
+  }
+
+  /**
    * 生成自定义通知数据（用于特殊场景）
    */
   static generateCustomNotifications(params: {

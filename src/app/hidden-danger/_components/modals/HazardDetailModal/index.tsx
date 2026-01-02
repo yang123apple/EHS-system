@@ -113,14 +113,23 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                 <p>区域：<span className="text-slate-800">{hazard.location}</span></p>
                 <p>上报：<span className="text-slate-800">{hazard.reporterName}</span></p>
                 <p>时间：<span className="text-slate-800 break-words">{new Date(hazard.reportTime).toLocaleString()}</span></p>
-                {hazard.dopersonal_Name && (
+                {(hazard.candidateHandlers && hazard.candidateHandlers.length > 0) ? (
+                  <div className="col-span-1 lg:col-span-2">
+                    <p className="text-slate-500">
+                      当前处理人（{hazard.approvalMode === 'AND' ? '会签' : '或签'}）：
+                      <span className="text-blue-600 font-bold ml-1">
+                        {hazard.candidateHandlers.map((h: any) => h.userName).join('、')}
+                      </span>
+                    </p>
+                  </div>
+                ) : hazard.dopersonal_Name ? (
                   <div className="col-span-1 lg:col-span-2">
                     <p className="text-slate-500">
                       当前处理人：
                       <span className="text-blue-600 font-bold ml-1">{hazard.dopersonal_Name}</span>
                     </p>
                   </div>
-                )}
+                ) : null}
               </div>
               {/* 照片展示区域 - 移动端横向滚动 */}
               {photos.length > 0 && (
@@ -157,11 +166,18 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                 <span className="text-base lg:text-lg">流程处理</span>
                 <StatusBadge status={hazard.status} />
               </div>
-              {hazard.dopersonal_Name && (
+              {(hazard.candidateHandlers && hazard.candidateHandlers.length > 0) ? (
+                <div className="text-sm text-slate-600">
+                  当前处理人（{hazard.approvalMode === 'AND' ? '会签' : '或签'}）：
+                  <span className="font-bold text-blue-600">
+                    {hazard.candidateHandlers.map((h: any) => h.userName).join('、')}
+                  </span>
+                </div>
+              ) : hazard.dopersonal_Name ? (
                 <div className="text-sm text-slate-600">
                   当前处理人：<span className="font-bold text-blue-600">{hazard.dopersonal_Name}</span>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {/* 待指派状态 - 系统自动处理，用户不需要手动操作 */}

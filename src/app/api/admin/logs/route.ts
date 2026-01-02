@@ -19,16 +19,34 @@ export async function GET(request: NextRequest) {
     // 构建查询条件
     const where: any = {};
 
-    // 登录日志：action = 'login'
+    // 登录日志：action = 'login' 或 'logout' 或中文的 '用户登录' 或 '用户退出'
     // 操作日志：其他所有action
     if (type === 'login') {
-      where.action = 'login';
+      where.action = { in: ['login', 'logout', '用户登录', '用户退出'] };
     } else if (type === 'operation') {
-      where.action = { not: 'login' };
+      where.action = { notIn: ['login', 'logout', '用户登录', '用户退出'] };
     }
 
+    // 如果指定了 action 筛选，需要结合 type 条件
     if (action) {
-      where.action = { contains: action };
+      if (type === 'login') {
+        // 在登录日志中搜索，需要同时满足两个条件
+        where.AND = [
+          { action: { in: ['login', 'logout', '用户登录', '用户退出'] } },
+          { action: { contains: action } }
+        ];
+        delete where.action;
+      } else if (type === 'operation') {
+        // 在操作日志中搜索，需要同时满足两个条件
+        where.AND = [
+          { action: { notIn: ['login', 'logout', '用户登录', '用户退出'] } },
+          { action: { contains: action } }
+        ];
+        delete where.action;
+      } else {
+        // 没有指定类型，直接按 action 搜索
+        where.action = { contains: action };
+      }
     }
 
     if (userId) {
@@ -117,10 +135,10 @@ export async function POST(request: NextRequest) {
           where: { createdAt: { gte: today } },
         }),
         
-        // 今日登录数
+        // 今日登录数（包含登录和退出）
         prisma.systemLog.count({
           where: { 
-            action: 'login',
+            action: { in: ['login', 'logout', '用户登录', '用户退出'] },
             createdAt: { gte: today },
           },
         }),
@@ -134,14 +152,14 @@ export async function POST(request: NextRequest) {
           },
         }).then(result => result.length),
         
-        // 登录日志数
+        // 登录日志数（包含登录和退出）
         prisma.systemLog.count({
-          where: { action: 'login' },
+          where: { action: { in: ['login', 'logout', '用户登录', '用户退出'] } },
         }),
         
         // 操作日志数
         prisma.systemLog.count({
-          where: { action: { not: 'login' } },
+          where: { action: { notIn: ['login', 'logout', '用户登录', '用户退出'] } },
         }),
         
         // 错误日志数（包含"失败"或"错误"的action）

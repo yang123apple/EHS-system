@@ -32,6 +32,8 @@ function mapHazard(pHazard: any): HazardRecord {
       ccDepts: pHazard.ccDepts ? (typeof pHazard.ccDepts === 'string' ? JSON.parse(pHazard.ccDepts) : pHazard.ccDepts) : [],
       ccUsers: pHazard.ccUsers ? (typeof pHazard.ccUsers === 'string' ? JSON.parse(pHazard.ccUsers) : pHazard.ccUsers) : [],
       old_personal_ID: pHazard.old_personal_ID ? (typeof pHazard.old_personal_ID === 'string' ? JSON.parse(pHazard.old_personal_ID) : pHazard.old_personal_ID) : [],
+      // 🟢 新增：处理候选处理人列表（或签模式）
+      candidateHandlers: pHazard.candidateHandlers ? (typeof pHazard.candidateHandlers === 'string' ? JSON.parse(pHazard.candidateHandlers) : pHazard.candidateHandlers) : undefined,
       reportTime: normalizeDate(pHazard.reportTime),
       rectifyTime: normalizeDate(pHazard.rectifyTime),
       verifyTime: normalizeDate(pHazard.verifyTime),
@@ -52,6 +54,7 @@ function mapHazard(pHazard: any): HazardRecord {
       ccDepts: Array.isArray(pHazard.ccDepts) ? pHazard.ccDepts : [],
       ccUsers: Array.isArray(pHazard.ccUsers) ? pHazard.ccUsers : [],
       old_personal_ID: Array.isArray(pHazard.old_personal_ID) ? pHazard.old_personal_ID : [],
+      candidateHandlers: Array.isArray(pHazard.candidateHandlers) ? pHazard.candidateHandlers : undefined,
     };
   }
 }
@@ -250,6 +253,8 @@ export const PATCH = withErrorHandling(
       logs: logsInput,
       old_personal_ID: oldPersonalIdInput,
       ccUserNames,
+      candidateHandlers: candidateHandlersInput, // 🟢 新增：或签候选人列表
+      approvalMode: approvalModeInput, // 🟢 新增：审批模式
       ...updates 
     } = body;
     
@@ -309,6 +314,20 @@ export const PATCH = withErrorHandling(
     }
     if (oldPersonalIdInput !== undefined) {
       finalUpdates.old_personal_ID = Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput;
+    }
+    // 🟢 新增：处理候选处理人列表（或签/会签模式）
+    if (candidateHandlersInput !== undefined) {
+      if (candidateHandlersInput === null) {
+        finalUpdates.candidateHandlers = null;
+      } else {
+        finalUpdates.candidateHandlers = Array.isArray(candidateHandlersInput) 
+          ? JSON.stringify(candidateHandlersInput) 
+          : candidateHandlersInput;
+      }
+    }
+    // 🟢 新增：处理审批模式
+    if (approvalModeInput !== undefined) {
+      finalUpdates.approvalMode = approvalModeInput;
     }
 
     // 处理日期字段：整改期限设置为当天的结束时间（23:59:59.999）

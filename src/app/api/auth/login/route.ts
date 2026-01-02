@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { PeopleFinder } from '@/lib/peopleFinder';
+import { logUserLogin, getClientIP } from '@/services/systemLogService';
 
 export async function POST(req: Request) {
   try {
@@ -31,6 +32,10 @@ export async function POST(req: Request) {
         department: user.department?.name || null,  // 添加部门名称字段
         directManagerId: directManagerId || null  // 设置 directManagerId（递归查找的结果）
       };
+
+      // 记录登录日志
+      const clientIP = getClientIP(req);
+      await logUserLogin(user.id, user.name, clientIP);
 
       return NextResponse.json({ success: true, user: safeUser });
     } else {

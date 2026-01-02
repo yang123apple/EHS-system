@@ -33,6 +33,32 @@ export const POST = withPermission('work_permit', 'approve', async (req: Request
         const stepNum = w.step ?? w.stepIndex; 
         return String(stepNum) === String(currentStepIndex);
     });
+    
+    // ---------------------------------------------------------
+    // 🟢 1.5 检查OR模式下是否已有人审批通过
+    // ---------------------------------------------------------
+    if (currentStepConfig && action === 'pass') {
+      const approvalMode = currentStepConfig.approvalMode || 'OR';
+      console.log(`[或签检查] 当前步骤审批模式: ${approvalMode}`);
+      
+      if (approvalMode === 'OR') {
+        // OR模式：检查当前步骤是否已有人审批通过
+        const oldLogs = record.approvalLogs ? JSON.parse(record.approvalLogs) : [];
+        const stepHasApproved = oldLogs.some(
+          (log: any) =>
+            (log.stepIndex === currentStepIndex || log.step === currentStepIndex) &&
+            log.action === 'pass'
+        );
+        
+        if (stepHasApproved) {
+          console.log(`[或签检查] 当前步骤已有人审批通过，拒绝重复审批`);
+          return NextResponse.json(
+            { error: '当前步骤已有其他人审批通过，无需重复审批' },
+            { status: 400 }
+          );
+        }
+      }
+    }
 
     if (currentStepConfig) {
         console.log(`[电子签字] 找到步骤配置: "${currentStepConfig.name}", 绑定单元格:`, currentStepConfig.outputCell);
@@ -198,6 +224,87 @@ export const POST = withPermission('work_permit', 'approve', async (req: Request
     try {
       console.log('🔔 [通知调试] 开始检查是否需要创建通知');
       console.log('🔔 [通知调试] action:', action, 'nextStep:', nextStep, 'workflow.length:', workflow.length);
+      
+      // 🟢 会签/或签进度通知：通知其他候选人
+      if (action === 'pass' && currentStepConfig) {
+        const approvalMode = currentStepConfig.approvalMode || 'OR';
+        
+        if ((approvalMode === 'OR' || approvalMode === 'AND') && currentStepConfig.approverStrategy) {
+          console.log(`🔔 [${approvalMode === 'AND' ? '会签' : '或签'}] 检测到多人审批模式，准备通知其他候选人`);
+          
+          try {
+            // 获取当前步骤的所有审批人
+            const formData = updatedRecord.dataJson ? JSON.parse(updatedRecord.dataJson) : {};
+            const parsedFields = updatedRecord.template.parsedFields 
+              ? JSON.parse(updatedRecord.template.parsedFields) 
+              : [];
+            
+            // 获取发起人部门
+            let applicantDept = updatedRecord.project?.requestDept || '';
+            const logs = updatedRecord.approvalLogs ? JSON.parse(updatedRecord.approvalLogs) : [];
+            if (logs.length > 0) {
+              const firstLog = logs[0];
+              const applicantUserId = firstLog.operatorId || firstLog.userId || '';
+              if (applicantUserId) {
+                const applicantUser = await db.getUserById(applicantUserId);
+                applicantDept = (applicantUser as any)?.departmentId || applicantUser?.department || applicantDept;
+              }
+            }
+            
+            const allApprovers = await resolveApprovers(
+              applicantDept,
+              currentStepConfig,
+              formData,
+              parsedFields
+            );
+            
+            // 找出还未审批的人（排除当前操作人）
+            const oldLogs = record.approvalLogs ? JSON.parse(record.approvalLogs) : [];
+            const approvedUserIds = new Set(
+              oldLogs
+                .filter((log: any) => 
+                  (log.stepIndex === currentStepIndex || log.step === currentStepIndex) && 
+                  log.action === 'pass'
+                )
+                .map((log: any) => log.operatorId || log.userId)
+            );
+            approvedUserIds.add(userId); // 包含当前操作人
+            
+            const pendingApprovers = allApprovers.filter(u => !approvedUserIds.has(u.id));
+            
+            if (pendingApprovers.length > 0) {
+              const pendingIds = pendingApprovers.map(u => u.id);
+              const modeText = approvalMode === 'AND' ? '会签' : '或签';
+              const operatedCount = approvedUserIds.size;
+              const totalCount = allApprovers.length;
+              
+              console.log(`🔔 [${modeText}] 通知 ${pendingApprovers.length} 位待审批人: ${pendingApprovers.map(u => u.name).join('、')}`);
+              
+              // 创建进度通知
+              await createPermitNotification(
+                'permit_approval_progress',
+                pendingIds,
+                {
+                  id: recordId,
+                  templateName: updatedRecord.template.name,
+                  projectName: updatedRecord.project.name,
+                  stepName: currentStepConfig.name,
+                  approvalMode: modeText,
+                  operatedCount,
+                  totalCount,
+                },
+                userName
+              );
+              
+              console.log(`✅ [${modeText}] 已创建进度通知: ${operatedCount}/${totalCount}人已处理`);
+            } else {
+              console.log(`🔔 [${approvalMode === 'AND' ? '会签' : '或签'}] 没有待通知的审批人`);
+            }
+          } catch (err) {
+            console.error(`❌ [${approvalMode === 'AND' ? '会签' : '或签'}] 创建进度通知失败:`, err);
+          }
+        }
+      }
       
       // 如果是通过，且还有下一步，通知下一个审批人
       if (action === 'pass' && nextStep < workflow.length) {

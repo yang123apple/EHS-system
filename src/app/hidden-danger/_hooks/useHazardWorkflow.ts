@@ -78,6 +78,7 @@ export function useHazardWorkflow(onSuccess: () => void) {
         action,
         dispatchAction,
         hazardId: hazard.id,
+        currentStepIndex: hazard.currentStepIndex,
         operator: user?.name
       });
 
@@ -91,6 +92,7 @@ export function useHazardWorkflow(onSuccess: () => void) {
         workflowSteps: workflowConfig.steps,
         allUsers,
         departments,
+        currentStepIndex: hazard.currentStepIndex ?? 0, // 传入当前步骤索引
         comment: payload?.comment || payload?.rejectReason || payload?.extensionReason,
         additionalData: payload
       });
@@ -101,6 +103,7 @@ export function useHazardWorkflow(onSuccess: () => void) {
 
       console.log('✅ 派发成功:', {
         newStatus: result.newStatus,
+        nextStepIndex: result.nextStepIndex,
         handlers: result.handlers.userNames,
         ccUsers: result.ccUsers.userNames,
         handlersDetail: result.handlers
@@ -122,43 +125,75 @@ export function useHazardWorkflow(onSuccess: () => void) {
         }
       });
       
-      // ========== 新的动态步骤流转逻辑 ==========
-      // 获取当前步骤索引
-      const currentStepIndex = hazard.currentStepIndex ?? 0;
-      const currentStepId = result.currentStep;
+      // 🟢 会签模式检查：如果当前步骤是AND模式且不是所有人都已审批，则停留在当前步骤
+      let shouldStayAtCurrentStep = false;
+      if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode === 'AND') {
+        // 计算操作后的hasOperated状态
+        const updatedCandidates = hazard.candidateHandlers.map(candidate => ({
+          ...candidate,
+          hasOperated: candidate.userId === user?.id ? true : (candidate.hasOperated || false)
+        }));
+        
+        // 检查是否所有人都已操作
+        const allOperated = updatedCandidates.every(c => c.hasOperated);
+        
+        if (!allOperated) {
+          shouldStayAtCurrentStep = true;
+          console.log('🟡 会签模式：不是所有人都已审批，停留在当前步骤', {
+            candidates: updatedCandidates,
+            allOperated
+          });
+        } else {
+          console.log('✅ 会签模式：所有人都已审批，可以流转到下一步', {
+            candidates: updatedCandidates
+          });
+        }
+      }
       
-      console.log('📍 当前步骤位置:', {
-        currentStepIndex,
-        currentStepId,
+      // ========== 使用派发引擎返回的 nextStepIndex，但会签模式可能需要停留 ==========
+      let nextStepIndex;
+      if (shouldStayAtCurrentStep) {
+        // 会签模式且未全部审批：停留在当前步骤
+        nextStepIndex = hazard.currentStepIndex ?? 0;
+        console.log('🟡 会签未完成，停留在步骤:', nextStepIndex);
+      } else {
+        // 正常流转：使用派发引擎返回的下一步
+        nextStepIndex = result.nextStepIndex ?? (hazard.currentStepIndex ?? 0) + 1;
+      }
+      
+      console.log('📍 派发引擎返回的下一步位置:', {
+        nextStepIndex,
+        currentStepIndex: hazard.currentStepIndex,
+        nextStepId: result.currentStep,
         totalSteps: workflowConfig.steps.length
       });
-
-      // 根据动作类型决定下一步
-      let nextStepIndex = currentStepIndex;
-      
-      if (action === 'verify_reject' || action === 'reject_by_responsible') {
-        // 驳回：回退到整改步骤
-        const rectifyStepIndex = workflowConfig.steps.findIndex(s => s.id === 'rectify');
-        nextStepIndex = rectifyStepIndex >= 0 ? rectifyStepIndex : currentStepIndex;
-        console.log('🔙 驳回操作，回退到整改步骤，索引:', nextStepIndex);
-      } else {
-        // 正常流转：前进到下一步
-        nextStepIndex = currentStepIndex + 1;
-        console.log('➡️ 正常流转，前进到下一步，索引:', nextStepIndex);
-      }
 
       // 更新步骤追踪信息
       dispatchedHandlers.currentStepIndex = nextStepIndex;
       dispatchedHandlers.currentStepId = workflowConfig.steps[nextStepIndex]?.id;
 
-      // 设置下一步的执行人
-      if (nextStepIndex < workflowConfig.steps.length) {
+      // 🟢 会签模式未完成：保持当前处理人不变，只更新candidateHandlers
+      if (shouldStayAtCurrentStep) {
+        // 保持当前处理人
+        dispatchedHandlers.dopersonal_ID = hazard.dopersonal_ID;
+        dispatchedHandlers.dopersonal_Name = hazard.dopersonal_Name;
+        dispatchedHandlers.approvalMode = hazard.approvalMode;
+        // candidateHandlers会在后面统一更新
+        
+        console.log('🟡 会签未完成，保持当前处理人:', {
+          dopersonal_ID: dispatchedHandlers.dopersonal_ID,
+          dopersonal_Name: dispatchedHandlers.dopersonal_Name
+        });
+      }
+      // 设置下一步的执行人（仅当流转到下一步时）
+      else if (nextStepIndex < workflowConfig.steps.length) {
         const nextStep = workflowConfig.steps[nextStepIndex];
         
         console.log('🎯 下一步骤:', {
           index: nextStepIndex,
           id: nextStep.id,
-          name: nextStep.name
+          name: nextStep.name,
+          approvalMode: nextStep.handlerStrategy.approvalMode || 'OR'
         });
 
         // 特殊处理：整改步骤的执行人强制为整改责任人
@@ -172,29 +207,63 @@ export function useHazardWorkflow(onSuccess: () => void) {
         } else {
           // 其他步骤：使用派发引擎匹配的处理人
           if (result.handlers.userIds && result.handlers.userIds.length > 0) {
-            const handlerId = result.handlers.userIds[0];
-            const handlerName = result.handlers.userNames[0];
+            const approvalMode = nextStep.handlerStrategy.approvalMode || 'OR';
             
             console.log('🎯 设置下一步执行人:', {
-              handlerId,
-              handlerName,
+              approvalMode,
+              handlerCount: result.handlers.userIds.length,
+              handlerIds: result.handlers.userIds,
+              handlerNames: result.handlers.userNames,
               nextStepId: nextStep.id,
               nextStepName: nextStep.name,
-              matchedBy: result.handlers.matchedBy,
-              allHandlerIds: result.handlers.userIds,
-              allHandlerNames: result.handlers.userNames
+              matchedBy: result.handlers.matchedBy
             });
             
-            dispatchedHandlers.dopersonal_ID = handlerId;
-            dispatchedHandlers.dopersonal_Name = handlerName;
-            dispatchedHandlers.old_personal_ID = [...(hazard.old_personal_ID || []), handlerId];
+            // 🟢 OR模式或AND模式且有多个处理人：设置candidateHandlers
+            if ((approvalMode === 'OR' || approvalMode === 'AND') && result.handlers.userIds.length > 1) {
+              dispatchedHandlers.candidateHandlers = result.handlers.userIds.map((id, idx) => ({
+                userId: id,
+                userName: result.handlers.userNames[idx],
+                hasOperated: false
+              }));
+              dispatchedHandlers.approvalMode = approvalMode; // 保存审批模式
+              
+              // 同时设置dopersonal_ID为第一个处理人（兼容性）
+              dispatchedHandlers.dopersonal_ID = result.handlers.userIds[0];
+              dispatchedHandlers.dopersonal_Name = result.handlers.userNames[0];
+              
+              console.log(`🎯 设置${approvalMode}模式多人处理（${approvalMode === 'OR' ? '或签' : '会签'}）:`, {
+                candidateCount: dispatchedHandlers.candidateHandlers.length,
+                candidates: dispatchedHandlers.candidateHandlers,
+                approvalMode
+              });
+            } else {
+              // 单人模式或CONDITIONAL模式：只设置dopersonal_ID
+              const handlerId = result.handlers.userIds[0];
+              const handlerName = result.handlers.userNames[0];
+              
+              dispatchedHandlers.dopersonal_ID = handlerId;
+              dispatchedHandlers.dopersonal_Name = handlerName;
+              dispatchedHandlers.candidateHandlers = undefined; // 清除候选人列表
+              dispatchedHandlers.approvalMode = undefined; // 清除审批模式
+              
+              console.log('🎯 设置单人执行模式:', handlerName, '(ID:', handlerId, ')');
+            }
             
-            console.log('🎯 下一步执行人（派发引擎匹配）:', handlerName, '(ID:', handlerId, ')');
+            // 将处理人添加到历史经手人
+            result.handlers.userIds.forEach(id => {
+              if (!dispatchedHandlers.old_personal_ID) {
+                dispatchedHandlers.old_personal_ID = [];
+              }
+              if (!dispatchedHandlers.old_personal_ID.includes(id)) {
+                dispatchedHandlers.old_personal_ID.push(id);
+              }
+            });
             
             // 如果是验收步骤，同时更新验收人字段
             if (nextStep.id === 'verify') {
-              dispatchedHandlers.verifierId = handlerId;
-              dispatchedHandlers.verifierName = handlerName;
+              dispatchedHandlers.verifierId = result.handlers.userIds[0];
+              dispatchedHandlers.verifierName = result.handlers.userNames[0];
             }
           } else {
             console.warn('⚠️ 派发引擎未匹配到处理人', {
@@ -208,6 +277,7 @@ export function useHazardWorkflow(onSuccess: () => void) {
         // 已经是最后一步，流程结束
         dispatchedHandlers.dopersonal_ID = null;
         dispatchedHandlers.dopersonal_Name = null;
+        dispatchedHandlers.candidateHandlers = undefined;
         console.log('✅ 已到达最后一步，流程结束');
       }
 
@@ -215,11 +285,14 @@ export function useHazardWorkflow(onSuccess: () => void) {
       const currentOldPersonalIds = dispatchedHandlers.old_personal_ID || hazard.old_personal_ID || [];
       const allOldPersonalIds = [...new Set([...currentOldPersonalIds, ...result.ccUsers.userIds])];
 
+      // 🟢 会签模式未完成时，保持当前状态
+      const finalStatus = shouldStayAtCurrentStep ? hazard.status : result.newStatus;
+
       // 构建更新数据：派发引擎结果 > payload 中的其他数据
       const updates: any = {
         operatorId: user?.id,
         operatorName: user?.name,
-        status: result.newStatus,
+        status: finalStatus,
         actionName: result.log.action,
         logs: [result.log, ...(hazard.logs || [])],
         ccUsers: result.ccUsers.userIds,
@@ -231,6 +304,39 @@ export function useHazardWorkflow(onSuccess: () => void) {
         // 更新历史经手人数组（包含处理人和抄送人）
         old_personal_ID: allOldPersonalIds
       };
+      
+      // 🟢 如果当前步骤有候选处理人（或签/会签模式），标记实际操作人
+      if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0) {
+        updates.candidateHandlers = hazard.candidateHandlers.map(candidate => ({
+          ...candidate,
+          hasOperated: candidate.userId === user?.id ? true : candidate.hasOperated
+        }));
+        
+        console.log('🎯 标记或签/会签模式操作人:', {
+          operatorId: user?.id,
+          operatorName: user?.name,
+          candidateHandlers: updates.candidateHandlers,
+          approvalMode: hazard.approvalMode
+        });
+        
+        // 🟢 生成会签/或签进度通知
+        if (hazard.approvalMode && (hazard.approvalMode === 'OR' || hazard.approvalMode === 'AND')) {
+          const { HazardNotificationService } = await import('@/services/hazardNotification.service');
+          const progressNotifications = HazardNotificationService.generateApprovalProgressNotifications({
+            hazard,
+            candidateHandlers: updates.candidateHandlers,
+            operatorId: user?.id,
+            operatorName: user?.name || '未知用户',
+            approvalMode: hazard.approvalMode
+          });
+          
+          // 将进度通知添加到通知列表
+          if (progressNotifications.length > 0) {
+            result.notifications.push(...progressNotifications);
+            console.log(`📬 已添加 ${progressNotifications.length} 条${hazard.approvalMode === 'AND' ? '会签' : '或签'}进度通知`);
+          }
+        }
+      }
 
       console.log('📦 准备更新的数据:', {
         action,
@@ -262,6 +368,10 @@ export function useHazardWorkflow(onSuccess: () => void) {
 
         const logAction = actionTypeMap[action] || `hazard_${action}`;
         
+        // 获取当前步骤和下一步骤信息
+        const currentStepObj = workflowConfig.steps[hazard.currentStepIndex ?? 0];
+        const nextStepObj = workflowConfig.steps[nextStepIndex];
+        
         // 构建快照数据
         const snapshot = {
           action: result.log.action,
@@ -269,8 +379,8 @@ export function useHazardWorkflow(onSuccess: () => void) {
           operatedAt: new Date().toISOString(),
           hazardCode: hazard.code,
           hazardDesc: hazard.desc,
-          currentStep: workflowConfig.steps[currentStepIndex]?.name,
-          nextStep: workflowConfig.steps[nextStepIndex]?.name,
+          currentStep: currentStepObj?.name || '未知步骤',
+          nextStep: nextStepObj?.name || '流程结束',
           dispatchResult: {
             assignedTo: result.handlers.userNames,
             assignedToIds: result.handlers.userIds,

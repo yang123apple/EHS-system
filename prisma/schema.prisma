@@ -131,6 +131,10 @@ model HazardRecord {
   ccUsers               String?
   logs                  String?
   old_personal_ID       String?
+  dopersonal_ID         String?   // 当前步骤执行人ID（动态字段，随步骤流转更新）
+  dopersonal_Name       String?   // 当前步骤执行人姓名（动态字段，随步骤流转更新）
+  candidateHandlers     String?   // 🟢 或签/会签模式：候选处理人列表（JSON格式）
+  approvalMode          String?   // 🟢 当前步骤的审批模式（OR=或签，AND=会签）
   currentStepIndex      Int?      @default(0)  // 当前步骤索引（用于追踪工作流位置）
   currentStepId         String?   // 当前步骤ID（用于追踪工作流位置）
   createdAt       DateTime @default(now())
@@ -181,16 +185,43 @@ model DocumentHistory {
 }
 
 model SystemLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  userName  String?
-  action    String
-  targetId  String?
-  targetType String? // 'hazard', 'document', 'permit' 等
-  details   String?
-  snapshot  String?  // JSON string: 记录流程快照（引擎解析结果、候选人列表等）
-  ip        String?
-  createdAt DateTime @default(now())
+  id              String   @id @default(cuid())
+  // 用户身份信息（快照）
+  userId          String?
+  userName        String?
+  userRole        String?  // 操作时的角色
+  userDepartment  String?  // 操作时所属部门名称
+  userDepartmentId String? // 操作时所属部门ID
+  userJobTitle    String?  // 操作时的职位
+  
+  // 操作信息
+  action          String   // 操作类型：CREATE, UPDATE, DELETE, EXPORT, APPROVE, REJECT等
+  actionLabel     String?  // 操作类型的中文描述
+  module          String?  // 所属模块：hazard, document, permit, training, user, org等
+  
+  // 操作对象
+  targetId        String?  // 被操作的数据实体ID
+  targetType      String?  // 'hazard', 'document', 'permit' 等
+  targetLabel     String?  // 被操作对象的描述（如：隐患编号、文档标题）
+  
+  // 操作详情
+  details         String?  // 操作的简要描述
+  beforeData      String?  // 操作前的数据快照（JSON）
+  afterData       String?  // 操作后的数据快照（JSON）
+  changes         String?  // 字段变更对比（JSON数组）
+  snapshot        String?  // 其他快照信息（如流程快照、候选人列表等）
+  
+  // 其他信息
+  ip              String?  // IP地址
+  userAgent       String?  // 浏览器UA
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([targetType])
+  @@index([module])
+  @@index([createdAt])
 }
 
 model Notification {

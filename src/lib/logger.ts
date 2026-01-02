@@ -6,7 +6,8 @@ export async function createLog(
   userName: string | undefined, 
   action: string, 
   targetId?: string, 
-  details?: string
+  details?: string,
+  targetType?: string
 ) {
   try {
     await prisma.systemLog.create({
@@ -15,6 +16,7 @@ export async function createLog(
         userName: userName || 'System',
         action,
         targetId,
+        targetType: targetType || null,
         details
       }
     });

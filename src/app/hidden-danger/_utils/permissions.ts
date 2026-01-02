@@ -52,7 +52,30 @@ export function canAssignHazard(hazard: HazardRecord, user: any): boolean {
 export function canRectifyHazard(hazard: HazardRecord, user: any): boolean {
   if (!user) return false;
   
-  // 只有当前步骤执行人可以整改
+  // 🟢 多人模式：检查是否在候选处理人列表中
+  if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0) {
+    const approvalMode = hazard.approvalMode || 'OR'; // 默认OR模式
+    
+    if (approvalMode === 'OR') {
+      // OR模式（或签）：任何一人操作后，其他人不能再操作
+      const someoneOperated = hazard.candidateHandlers.some(h => h.hasOperated);
+      if (someoneOperated) {
+        return false;
+      }
+    } else if (approvalMode === 'AND') {
+      // AND模式（会签）：每个人都可以操作，但只能操作一次
+      const currentUserHandler = hazard.candidateHandlers.find(h => h.userId === user.id);
+      if (currentUserHandler && currentUserHandler.hasOperated) {
+        return false; // 当前用户已操作过
+      }
+    }
+    
+    // 检查当前用户是否在候选人列表中
+    const isCandidate = hazard.candidateHandlers.some(h => h.userId === user.id);
+    if (isCandidate) return true;
+  }
+  
+  // 单人模式：只有当前步骤执行人可以整改
   if (hazard.dopersonal_ID === user.id) return true;
   
   // Admin 也可以代为整改
@@ -67,7 +90,30 @@ export function canRectifyHazard(hazard: HazardRecord, user: any): boolean {
 export function canVerifyHazard(hazard: HazardRecord, user: any): boolean {
   if (!user) return false;
   
-  // 只有当前步骤执行人可以验收
+  // 🟢 多人模式：检查是否在候选处理人列表中
+  if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0) {
+    const approvalMode = hazard.approvalMode || 'OR'; // 默认OR模式
+    
+    if (approvalMode === 'OR') {
+      // OR模式（或签）：任何一人操作后，其他人不能再操作
+      const someoneOperated = hazard.candidateHandlers.some(h => h.hasOperated);
+      if (someoneOperated) {
+        return false;
+      }
+    } else if (approvalMode === 'AND') {
+      // AND模式（会签）：每个人都可以操作，但只能操作一次
+      const currentUserHandler = hazard.candidateHandlers.find(h => h.userId === user.id);
+      if (currentUserHandler && currentUserHandler.hasOperated) {
+        return false; // 当前用户已操作过
+      }
+    }
+    
+    // 检查当前用户是否在候选人列表中
+    const isCandidate = hazard.candidateHandlers.some(h => h.userId === user.id);
+    if (isCandidate) return true;
+  }
+  
+  // 单人模式：只有当前步骤执行人可以验收
   if (hazard.dopersonal_ID === user.id) return true;
   
   // Admin 也可以代为验收
@@ -125,7 +171,19 @@ export function canRejectRectify(hazard: HazardRecord, user: any): boolean {
   // 只有在整改中状态才能驳回
   if (hazard.status !== 'rectifying') return false;
   
-  // 只有当前步骤执行人可以驳回
+  // 🟢 或签模式：检查是否在候选处理人列表中
+  if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0) {
+    // 检查是否已有人操作
+    const someoneOperated = hazard.candidateHandlers.some(h => h.hasOperated);
+    if (someoneOperated) {
+      return false;
+    }
+    
+    const isCandidate = hazard.candidateHandlers.some(h => h.userId === user.id);
+    if (isCandidate) return true;
+  }
+  
+  // 单人模式：只有当前步骤执行人可以驳回
   if (hazard.dopersonal_ID === user.id) return true;
   
   // Admin 也可以驳回

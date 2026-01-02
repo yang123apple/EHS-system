@@ -79,6 +79,16 @@ const notificationTemplates = [
     variables: JSON.stringify(['permit.templateName', 'permit.projectName', 'permit.code']),
     isActive: true,
   },
+  {
+    name: 'permit_approval_progress_default',
+    title: '{{permit.approvalMode}}进度提醒',
+    content: '{{user.name}}已完成【{{permit.templateName}}】{{permit.projectName}}的签核（{{permit.stepName}}），{{permit.approvalMode}}进度：{{permit.operatedCount}}/{{permit.totalCount}}人已处理',
+    type: 'work_permit',
+    triggerEvent: 'permit_approval_progress',
+    triggerCondition: null,
+    variables: JSON.stringify(['permit.templateName', 'permit.projectName', 'permit.stepName', 'permit.approvalMode', 'permit.operatedCount', 'permit.totalCount', 'user.name']),
+    isActive: true,
+  },
 
   // 隐患模块模板
   {
@@ -89,6 +99,16 @@ const notificationTemplates = [
     triggerEvent: 'hazard_created',
     triggerCondition: null,
     variables: JSON.stringify(['hazard.code', 'hazard.location', 'hazard.status', 'hazard.riskLevel']),
+    isActive: true,
+  },
+  {
+    name: 'hazard_approval_progress_default',
+    title: '{{hazard.approvalMode}}进度提醒',
+    content: '{{user.name}}已完成隐患{{hazard.code}}的签核，{{hazard.approvalMode}}进度：{{hazard.operatedCount}}/{{hazard.totalCount}}人已处理',
+    type: 'hazard',
+    triggerEvent: 'hazard_approval_progress',
+    triggerCondition: null,
+    variables: JSON.stringify(['hazard.code', 'hazard.approvalMode', 'hazard.operatedCount', 'hazard.totalCount', 'user.name']),
     isActive: true,
   },
   {

@@ -29,9 +29,16 @@ export interface HazardRecord {
   responsibleDeptName?: string; // 责任部门名称
   responsibleId?: string; // 整改责任人ID（隐患创建时确定，永不改变）
   responsibleName?: string; // 整改责任人姓名（隐患创建时确定，永不改变）
-  dopersonal_ID?: string; // 当前步骤执行人ID（动态字段，随步骤流转更新）
+  dopersonal_ID?: string; // 当前步骤执行人 ID（动态字段，随步骤流转更新）
   dopersonal_Name?: string; // 当前步骤执行人姓名（动态字段，随步骤流转更新）
-  old_personal_ID?: string[]; // 历史经手人ID数组（包括所有处理人和抄送人，永久保留查看权限）
+  // 🟢 或签/会签模式支持：候选处理人列表
+  candidateHandlers?: Array<{
+    userId: string;
+    userName: string;
+    hasOperated?: boolean; // 是否已操作（用于记录实际操作人）
+  }>;
+  approvalMode?: 'OR' | 'AND' | 'CONDITIONAL'; // 当前步骤的审批模式（OR=或签，AND=会签）
+  old_personal_ID?: string[]; // 历史经手人 ID 数组（包括所有处理人和抄送人，永久保留查看权限）
   currentStepIndex?: number; // 当前步骤索引（用于追踪工作流位置，支持动态步骤）
   currentStepId?: string; // 当前步骤ID（用于追踪工作流位置）
   deadline?: string;
