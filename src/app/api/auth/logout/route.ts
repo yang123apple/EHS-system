@@ -17,10 +17,19 @@ export async function POST(req: Request) {
     const clientIP = getClientIP(req);
     await logUserLogout(userId, userName, clientIP);
 
-    return NextResponse.json({ 
+    // 清除认证 cookie
+    const response = NextResponse.json({ 
       success: true, 
       message: '退出成功' 
     });
+    
+    // 清除 ehs_user_id cookie
+    response.cookies.set('ehs_user_id', '', {
+      maxAge: 0,
+      path: '/',
+    });
+
+    return response;
   } catch (error) {
     console.error('Logout error:', error);
     return NextResponse.json(

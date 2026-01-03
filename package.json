@@ -16,6 +16,7 @@
     "restore:full": "node scripts/restore-backup.js",
     "backup:auto": "node scripts/auto-backup.js",
     "backup:test": "node scripts/test-backup-service.js",
+    "restore": "node scripts/restore-from-zip.js",
     "test:backup-api": "node scripts/test-backup-api.js"
   },
   "dependencies": {

@@ -41,6 +41,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    console.log('[API] 创建通知模板 - 接收到的数据:', JSON.stringify(body, null, 2));
+    
     const { 
       name, 
       title, 
@@ -54,6 +56,7 @@ export async function POST(request: NextRequest) {
 
     // 验证必填字段
     if (!name || !title || !content || !type || !triggerEvent) {
+      console.error('[API] 缺少必填字段:', { name, title, content, type, triggerEvent });
       return NextResponse.json(
         { success: false, message: '缺少必填字段' },
         { status: 400 }
@@ -66,34 +69,51 @@ export async function POST(request: NextRequest) {
     });
 
     if (existing) {
+      console.error('[API] 模板名称已存在:', name);
       return NextResponse.json(
         { success: false, message: '模板名称已存在' },
         { status: 400 }
       );
     }
 
+    const templateData = {
+      name,
+      title,
+      content,
+      type,
+      triggerEvent,
+      triggerCondition: triggerCondition ? JSON.stringify(triggerCondition) : null,
+      variables: variables ? JSON.stringify(variables) : null,
+      isActive: isActive !== undefined ? isActive : true,
+    };
+    
+    console.log('[API] 准备创建模板，数据:', JSON.stringify(templateData, null, 2));
+
     const template = await prisma.notificationTemplate.create({
-      data: {
-        name,
-        title,
-        content,
-        type,
-        triggerEvent,
-        triggerCondition: triggerCondition ? JSON.stringify(triggerCondition) : null,
-        variables: variables ? JSON.stringify(variables) : null,
-        isActive: isActive !== undefined ? isActive : true,
-      },
+      data: templateData,
     });
 
+    console.log('[API] ✅ 模板创建成功，ID:', template.id);
+    
     return NextResponse.json({
       success: true,
       data: template,
       message: '创建成功',
     });
-  } catch (error) {
-    console.error('创建通知模板失败:', error);
+  } catch (error: any) {
+    console.error('[API] ❌ 创建通知模板失败:', error);
+    console.error('[API] 错误详情:', {
+      message: error?.message,
+      code: error?.code,
+      meta: error?.meta,
+      stack: error?.stack,
+    });
     return NextResponse.json(
-      { success: false, message: '创建通知模板失败' },
+      { 
+        success: false, 
+        message: '创建通知模板失败',
+        error: error?.message || '未知错误',
+      },
       { status: 500 }
     );
   }
@@ -103,9 +123,12 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
+    console.log('[API] 更新通知模板 - 接收到的数据:', JSON.stringify(body, null, 2));
+    
     const { id, ...data } = body;
 
     if (!id) {
+      console.error('[API] 缺少模板ID');
       return NextResponse.json(
         { success: false, message: '缺少模板ID' },
         { status: 400 }
@@ -122,6 +145,7 @@ export async function PUT(request: NextRequest) {
       });
 
       if (existing) {
+        console.error('[API] 模板名称已存在:', data.name);
         return NextResponse.json(
           { success: false, message: '模板名称已存在' },
           { status: 400 }
@@ -137,20 +161,34 @@ export async function PUT(request: NextRequest) {
       data.variables = JSON.stringify(data.variables);
     }
 
+    console.log('[API] 准备更新模板，ID:', id, '数据:', JSON.stringify(data, null, 2));
+
     const template = await prisma.notificationTemplate.update({
       where: { id },
       data,
     });
+
+    console.log('[API] ✅ 模板更新成功，ID:', template.id);
 
     return NextResponse.json({
       success: true,
       data: template,
       message: '更新成功',
     });
-  } catch (error) {
-    console.error('更新通知模板失败:', error);
+  } catch (error: any) {
+    console.error('[API] ❌ 更新通知模板失败:', error);
+    console.error('[API] 错误详情:', {
+      message: error?.message,
+      code: error?.code,
+      meta: error?.meta,
+      stack: error?.stack,
+    });
     return NextResponse.json(
-      { success: false, message: '更新通知模板失败' },
+      { 
+        success: false, 
+        message: '更新通知模板失败',
+        error: error?.message || '未知错误',
+      },
       { status: 500 }
     );
   }

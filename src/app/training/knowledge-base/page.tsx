@@ -27,7 +27,7 @@ const typeFilters = [
   { value: 'all', label: '全部', icon: Sparkles },
   { value: 'video', label: '视频', icon: Film },
   { value: 'pdf', label: 'PDF', icon: FileText },
-  { value: 'pptx', label: 'PPT', icon: File }
+  { value: 'docx', label: 'DOCX', icon: FileText }
 ];
 
 export default function KnowledgeBasePage() {

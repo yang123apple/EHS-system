@@ -109,6 +109,22 @@ export default function MaterialExamPage({ params }: { params: Promise<{ id: str
         console.error('Failed to submit exam:', error);
       }
     }
+
+    // 无论是否有任务，只要考试通过，都应该记录为已学习
+    if (passed && user) {
+      try {
+        await apiFetch(`/api/training/learned`, {
+          method: 'POST',
+          body: {
+            userId: user.id,
+            materialId: id,
+            examPassed: true
+          }
+        });
+      } catch (error) {
+        console.error('Failed to record learned:', error);
+      }
+    }
   };
 
   if (loading) return <div className="p-10 text-center">加载中...</div>;
@@ -131,7 +147,7 @@ export default function MaterialExamPage({ params }: { params: Promise<{ id: str
                   <p className="font-bold text-yellow-800 mb-1">自由学习模式</p>
                   <p className="text-sm text-yellow-700">
                     您当前处于自由学习模式，考试成绩不会计入任务统计。
-                    如需正式考试，请通过学习任务进入。
+                    但考试通过后仍会记录为已学习。
                   </p>
                 </div>
               </div>
@@ -212,7 +228,7 @@ export default function MaterialExamPage({ params }: { params: Promise<{ id: str
           {!hasTask && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
               <p className="text-sm text-yellow-700">
-                注意：此为练习模式，成绩不会被记录。
+                {isPassed ? '考试通过，已记录为已学习。' : '注意：此为练习模式，成绩不会被记录。'}
               </p>
             </div>
           )}

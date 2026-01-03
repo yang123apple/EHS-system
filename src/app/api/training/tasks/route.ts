@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
-import { setStartOfDay, setEndOfDay, extractDatePart } from '@/utils/dateUtils';
-import { createTrainingNotification } from '@/lib/notificationService';
 
 export const GET = withErrorHandling(
   withAuth(async (req: NextRequest, context, user) => {
@@ -42,13 +40,12 @@ export const POST = withErrorHandling(
     const { title, description, startDate, endDate, materialId, publisherId, targetType, targetConfig } = body;
 
     // 1. Create Task
-    // 开始时间设置为当天的 00:00:00，结束时间设置为当天的 23:59:59.999
     const task = await prisma.trainingTask.create({
       data: {
         title,
         description,
-        startDate: setStartOfDay(extractDatePart(startDate)),
-        endDate: setEndOfDay(extractDatePart(endDate)),
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
         materialId,
         publisherId,
         targetType,
@@ -98,17 +95,19 @@ export const POST = withErrorHandling(
         })
       ));
 
-      // Create Notifications using notification service
-      await createTrainingNotification(
-        'training_assigned',
-        userIds,
-        {
-          id: task.id,
-          title: title,
-          description: description,
-        },
-        user.name
-      );
+      // Create Notifications
+      await Promise.all(userIds.map(uid =>
+        prisma.notification.create({
+          data: {
+            userId: uid,
+            type: 'training_assigned',
+            title: '新培训任务',
+            content: `您有新的培训任务：${title}，请及时完成。`,
+            relatedType: 'training_task',
+            relatedId: task.id
+          }
+        })
+      ));
     }
 
     // 记录操作日志

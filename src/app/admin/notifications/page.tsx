@@ -178,10 +178,7 @@ export default function NotificationsPage() {
 
   const handleSubmit = async () => {
     try {
-      const url = editingTemplate
-        ? '/api/admin/notification-templates'
-        : '/api/admin/notification-templates';
-      
+      const url = '/api/admin/notification-templates';
       const method = editingTemplate ? 'PUT' : 'POST';
       
       const body: any = { ...formData };
@@ -192,18 +189,28 @@ export default function NotificationsPage() {
       // 解析JSON字段
       if (body.triggerCondition) {
         try {
-          body.triggerCondition = JSON.parse(body.triggerCondition);
+          // 如果已经是字符串，尝试解析；如果已经是对象，保持不变
+          body.triggerCondition = typeof body.triggerCondition === 'string' 
+            ? JSON.parse(body.triggerCondition) 
+            : body.triggerCondition;
         } catch (e) {
+          console.warn('解析 triggerCondition 失败:', e);
           body.triggerCondition = null;
         }
       }
       if (body.variables) {
         try {
-          body.variables = JSON.parse(body.variables);
+          // 如果已经是字符串，尝试解析；如果已经是对象，保持不变
+          body.variables = typeof body.variables === 'string'
+            ? JSON.parse(body.variables)
+            : body.variables;
         } catch (e) {
+          console.warn('解析 variables 失败:', e);
           body.variables = null;
         }
       }
+
+      console.log('[前端] 准备保存模板:', { method, url, body });
 
       const response = await fetch(url, {
         method,
@@ -212,15 +219,23 @@ export default function NotificationsPage() {
       });
 
       const result = await response.json();
+      console.log('[前端] API 响应:', result);
+      
       if (result.success) {
+        alert(editingTemplate ? '更新成功' : '创建成功');
         setShowModal(false);
+        setEditingTemplate(null);
         fetchTemplates();
       } else {
-        alert(result.message || '操作失败');
+        const errorMsg = result.error 
+          ? `${result.message}: ${result.error}` 
+          : result.message || '操作失败';
+        console.error('[前端] 保存失败:', errorMsg);
+        alert(errorMsg);
       }
-    } catch (error) {
-      console.error('保存失败:', error);
-      alert('保存失败');
+    } catch (error: any) {
+      console.error('[前端] 保存失败:', error);
+      alert(`保存失败: ${error?.message || '未知错误'}`);
     }
   };
 

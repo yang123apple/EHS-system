@@ -21,51 +21,16 @@ export const GET = withAuth(async (req: NextRequest, context, user) => {
       where.materialId = { in: ids };
     }
 
+    // 直接查询MaterialLearnedRecord，无论是否有学习任务
+    // 已学习和学习任务已解耦，用户学完了就应该显示已学习
     const records = await prisma.materialLearnedRecord.findMany({
       where,
-      include: {
-        material: true
+      select: {
+        materialId: true
       }
     });
 
-    // 分离有考试要求和没有考试要求的材料
-    const materialsWithExam: string[] = [];
-    const materialsWithoutExam: string[] = [];
-    
-    records.forEach(record => {
-      if (record.material.isExamRequired) {
-        materialsWithExam.push(record.materialId);
-      } else {
-        materialsWithoutExam.push(record.materialId);
-      }
-    });
-
-    // 对于有考试要求的材料，批量查询是否通过考试
-    let passedExamMaterials: string[] = [];
-    if (materialsWithExam.length > 0) {
-      const passedAssignments = await prisma.trainingAssignment.findMany({
-        where: {
-          userId,
-          task: {
-            materialId: { in: materialsWithExam }
-          },
-          isPassed: true,
-          status: 'passed'
-        },
-        select: {
-          task: {
-            select: {
-              materialId: true
-            }
-          }
-        }
-      });
-
-      passedExamMaterials = passedAssignments.map(a => a.task.materialId);
-    }
-
-    // 合并结果：没有考试要求的材料 + 通过考试的材料
-    const learnedMaterialIds = [...materialsWithoutExam, ...passedExamMaterials];
+    const learnedMaterialIds = records.map(r => r.materialId);
 
     return NextResponse.json({ learnedMaterialIds });
   } catch (error) {
@@ -78,7 +43,7 @@ export const GET = withAuth(async (req: NextRequest, context, user) => {
 export const POST = withAuth(async (req: NextRequest, context, user) => {
   try {
     const body = await req.json();
-    const { userId, materialId } = body;
+    const { userId, materialId, examPassed } = body; // examPassed: 可选参数，表示是否通过考试
 
     if (!userId || !materialId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -94,25 +59,16 @@ export const POST = withAuth(async (req: NextRequest, context, user) => {
     }
 
     // 如果材料有考试要求，必须通过考试才能标记为已学习
+    // 但现在不再强制要求有assignment，只要examPassed为true即可
     if (material.isExamRequired) {
-      // 检查是否有对应的 assignment 且已通过考试
-      const assignment = await prisma.trainingAssignment.findFirst({
-        where: {
-          userId,
-          task: {
-            materialId
-          },
-          isPassed: true,
-          status: 'passed'
-        }
-      });
-
-      if (!assignment) {
+      if (!examPassed) {
         return NextResponse.json({ 
           error: '该学习内容需要先通过考试才能标记为已学习',
           requiresExam: true
         }, { status: 400 });
       }
+      // 如果examPassed为true，说明已经通过考试，可以直接记录为已学习
+      // 无论是否有学习任务
     }
 
     // 使用upsert避免重复插入

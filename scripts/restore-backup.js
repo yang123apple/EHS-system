@@ -96,23 +96,69 @@ async function extractBackup(zipPath, extractTo) {
 function restoreDatabase(tempDir) {
   console.log('\n📊 恢复数据库...');
   
-  const dbSource = path.join(tempDir, 'dev.db');
+  // 查找数据库文件（可能在 database/ 目录或根目录）
+  let dbSource = path.join(tempDir, 'database', 'dev.db');
+  if (!fs.existsSync(dbSource)) {
+    dbSource = path.join(tempDir, 'dev.db');
+  }
+  if (!fs.existsSync(dbSource)) {
+    dbSource = path.join(tempDir, 'prisma', 'dev.db');
+  }
+  
   const dbTarget = path.join(__dirname, '../prisma/dev.db');
   
   if (!fs.existsSync(dbSource)) {
     console.warn('⚠ 备份中没有找到数据库文件');
+    console.log('  尝试过的路径:');
+    console.log(`    - ${path.join(tempDir, 'database', 'dev.db')}`);
+    console.log(`    - ${path.join(tempDir, 'dev.db')}`);
+    console.log(`    - ${path.join(tempDir, 'prisma', 'dev.db')}`);
     return false;
   }
   
   // 备份当前数据库（如果存在）
   if (fs.existsSync(dbTarget)) {
-    const backupDbPath = path.join(__dirname, '../prisma', `dev.db.before_restore_${Date.now()}`);
+    const backupDir = path.join(__dirname, '../data/backups/pre_restore');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const backupDbPath = path.join(backupDir, `dev.db.${timestamp}`);
     fs.copyFileSync(dbTarget, backupDbPath);
-    console.log(`  ℹ️  当前数据库已备份到: ${path.basename(backupDbPath)}`);
+    console.log(`  ℹ️  当前数据库已备份到: data/backups/pre_restore/${path.basename(backupDbPath)}`);
   }
+  
+  // 确保目标目录存在
+  const targetDir = path.dirname(dbTarget);
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  
+  // 删除现有数据库文件
+  if (fs.existsSync(dbTarget)) {
+    fs.unlinkSync(dbTarget);
+  }
+  const walTarget = dbTarget + '-wal';
+  const shmTarget = dbTarget + '-shm';
+  if (fs.existsSync(walTarget)) fs.unlinkSync(walTarget);
+  if (fs.existsSync(shmTarget)) fs.unlinkSync(shmTarget);
   
   // 复制数据库文件
   fs.copyFileSync(dbSource, dbTarget);
+  console.log(`  ✓ 数据库文件已恢复: ${path.relative(tempDir, dbSource)}`);
+  
+  // 复制 WAL 和 SHM 文件（如果存在）
+  const walSource = dbSource + '-wal';
+  const shmSource = dbSource + '-shm';
+  if (fs.existsSync(walSource)) {
+    fs.copyFileSync(walSource, walTarget);
+    console.log('  ✓ WAL 文件已恢复');
+  }
+  if (fs.existsSync(shmSource)) {
+    fs.copyFileSync(shmSource, shmTarget);
+    console.log('  ✓ SHM 文件已恢复');
+  }
+  
   console.log('✓ 数据库恢复完成');
   return true;
 }

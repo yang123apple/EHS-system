@@ -122,43 +122,185 @@ export const GET = withErrorHandling(
 
     // Handle 'My Tasks' logic server-side
     if (viewMode === 'my_tasks' && userId) {
+      // 对于 ccUsers 字段，它是 JSON 字符串数组，需要使用更复杂的查询
+      // SQLite 的 JSON 查询支持有限，我们需要使用 contains 匹配 JSON 格式的字符串
       where.OR = [
         { reporterId: userId },
         { responsibleId: userId },
         { verifierId: userId },
-        { ccUsers: { contains: userId } }
+        // ccUsers 存储格式为 JSON 字符串，如 ["user1", "user2"]
+        // 使用 contains 匹配包含 userId 的 JSON 字符串
+        { ccUsers: { contains: `"${userId}"` } } // 匹配 JSON 数组中的字符串元素
       ];
     }
 
     if (isPaginated) {
-      const [hazards, total] = await Promise.all([
-        prisma.hazardRecord.findMany({
-          where,
-          skip,
-          take: limit,
-          orderBy: { createdAt: 'desc' },
-          include: { reporter: true, responsible: true }
-        }),
-        prisma.hazardRecord.count({ where })
-      ]);
+      try {
+        const [hazards, total] = await Promise.all([
+          prisma.hazardRecord.findMany({
+            where,
+            skip,
+            take: limit,
+            orderBy: { createdAt: 'desc' },
+            include: { reporter: true, responsible: true }
+          }),
+          prisma.hazardRecord.count({ where })
+        ]);
 
-      return NextResponse.json({
-        data: hazards.map(mapHazard),
-        meta: {
-          total,
+        return NextResponse.json({
+          data: hazards.map(mapHazard),
+          meta: {
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+          }
+        });
+      } catch (dbError: any) {
+        console.error('[Hazard GET] 数据库查询失败:', {
+          error: dbError,
+          code: dbError?.code,
+          message: dbError?.message,
+          meta: dbError?.meta,
+          where,
           page,
           limit,
-          totalPages: Math.ceil(total / limit)
+          stack: dbError?.stack
+        });
+        
+        // 如果是列不存在错误（P2022），说明数据库 schema 未同步，使用原始 SQL 查询
+        if (dbError?.code === 'P2022' || dbError?.message?.includes('does not exist in the current database')) {
+          console.warn('[Hazard GET] 检测到字段不存在错误，可能是数据库迁移未完成，使用原始 SQL 查询');
+          try {
+            // 使用原始 SQL 查询，只选择确实存在的字段
+            const hazardsRaw = await prisma.$queryRaw<any[]>`
+              SELECT id, code, status, "riskLevel", type, location, desc, photos, 
+                     "reporterId", "reporterName", "reportTime",
+                     "responsibleId", "responsibleName", "responsibleDept",
+                     deadline, "rectifyDesc", "rectifyPhotos", "rectifyTime",
+                     "verifierId", "verifierName", "verifyTime",
+                     "rectifyRequirement", "requireEmergencyPlan", 
+                     "emergencyPlanDeadline", "emergencyPlanContent", 
+                     "emergencyPlanSubmitTime", "ccDepts", "ccUsers", logs,
+                     "createdAt", "updatedAt"
+              FROM HazardRecord
+              ORDER BY "createdAt" DESC
+              LIMIT ${limit} OFFSET ${skip}
+            `;
+            
+            const total = await prisma.hazardRecord.count({ where });
+            
+            return NextResponse.json({
+              data: hazardsRaw.map(mapHazard),
+              meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+              }
+            });
+          } catch (fallbackError: any) {
+            console.error('[Hazard GET] 原始 SQL 查询也失败:', fallbackError);
+            // 返回一个友好的错误提示
+            throw new Error('数据库 schema 未同步，请运行: npx prisma migrate deploy');
+          }
         }
-      });
+        
+        // 如果是关联查询错误（如用户不存在），尝试不包含关联数据
+        if (dbError?.code === 'P2025' || dbError?.message?.includes('foreign key') || dbError?.message?.includes('relation')) {
+          console.warn('[Hazard GET] 检测到关联查询错误，尝试不包含关联数据重新查询');
+          try {
+            const [hazardsWithoutRelations, total] = await Promise.all([
+              prisma.hazardRecord.findMany({
+                where,
+                skip,
+                take: limit,
+                orderBy: { createdAt: 'desc' }
+                // 不包含关联数据
+              }),
+              prisma.hazardRecord.count({ where })
+            ]);
+
+            return NextResponse.json({
+              data: hazardsWithoutRelations.map(mapHazard),
+              meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+              }
+            });
+          } catch (fallbackError: any) {
+            console.error('[Hazard GET] 备用查询也失败:', fallbackError);
+            throw fallbackError;
+          }
+        }
+        
+        // 重新抛出错误，让 withErrorHandling 处理
+        throw dbError;
+      }
     }
 
     // Fallback to fetching all if no pagination params
-    const data = await prisma.hazardRecord.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: { reporter: true, responsible: true }
-    });
-    return NextResponse.json(data.map(mapHazard));
+    try {
+      const data = await prisma.hazardRecord.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: { reporter: true, responsible: true }
+      });
+      return NextResponse.json(data.map(mapHazard));
+    } catch (dbError: any) {
+      console.error('[Hazard GET] 数据库查询失败（无分页）:', {
+        error: dbError,
+        code: dbError?.code,
+        message: dbError?.message,
+        meta: dbError?.meta,
+        stack: dbError?.stack
+      });
+      
+      // 如果是列不存在错误（P2022），说明数据库 schema 未同步，使用原始 SQL 查询
+      if (dbError?.code === 'P2022' || dbError?.message?.includes('does not exist in the current database')) {
+        console.warn('[Hazard GET] 检测到字段不存在错误，可能是数据库迁移未完成，使用原始 SQL 查询');
+        try {
+          // 使用原始 SQL 查询，只选择确实存在的字段
+          const dataRaw = await prisma.$queryRaw<any[]>`
+            SELECT id, code, status, "riskLevel", type, location, desc, photos, 
+                   "reporterId", "reporterName", "reportTime",
+                   "responsibleId", "responsibleName", "responsibleDept",
+                   deadline, "rectifyDesc", "rectifyPhotos", "rectifyTime",
+                   "verifierId", "verifierName", "verifyTime",
+                   "rectifyRequirement", "requireEmergencyPlan", 
+                   "emergencyPlanDeadline", "emergencyPlanContent", 
+                   "emergencyPlanSubmitTime", "ccDepts", "ccUsers", logs,
+                   "createdAt", "updatedAt"
+            FROM HazardRecord
+            ORDER BY "createdAt" DESC
+          `;
+          
+          return NextResponse.json(dataRaw.map(mapHazard));
+        } catch (fallbackError: any) {
+          console.error('[Hazard GET] 原始 SQL 查询也失败:', fallbackError);
+          throw new Error('数据库 schema 未同步，请运行: npx prisma migrate deploy');
+        }
+      }
+      
+      // 如果是关联查询错误，尝试不包含关联数据
+      if (dbError?.code === 'P2025' || dbError?.message?.includes('foreign key') || dbError?.message?.includes('relation')) {
+        console.warn('[Hazard GET] 检测到关联查询错误，尝试不包含关联数据重新查询');
+        try {
+          const dataWithoutRelations = await prisma.hazardRecord.findMany({
+            orderBy: { createdAt: 'desc' }
+            // 不包含关联数据
+          });
+          return NextResponse.json(dataWithoutRelations.map(mapHazard));
+        } catch (fallbackError: any) {
+          console.error('[Hazard GET] 备用查询也失败:', fallbackError);
+          throw fallbackError;
+        }
+      }
+      
+      // 重新抛出错误，让 withErrorHandling 处理
+      throw dbError;
+    }
   })
 );
 

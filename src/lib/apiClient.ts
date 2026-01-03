@@ -107,8 +107,36 @@ export class ApiClient {
       }
     }
     
-    const error = await response.json().catch(() => ({ error: 'Network error' }));
-    throw new ApiError(error.error || 'Request failed', response.status, error);
+    // 尝试解析错误响应
+    let error: any;
+    const contentType = response.headers.get('content-type');
+    
+    // 先尝试读取响应文本（只能读取一次）
+    try {
+      const text = await response.text();
+      
+      // 如果是 JSON 类型，尝试解析
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          error = JSON.parse(text);
+        } catch (e) {
+          // JSON 解析失败，使用原始文本
+          error = { error: '响应解析失败', details: text || '未知错误' };
+        }
+      } else {
+        // 非 JSON 响应，直接使用文本
+        error = { error: text || '请求失败' };
+      }
+    } catch (e) {
+      // 读取响应失败
+      error = { error: '无法读取错误响应', details: '未知错误' };
+    }
+    
+    // 提取错误信息：优先使用 error.error，其次是 error.message，最后是 error
+    const errorMessage = error.error || error.message || (typeof error === 'string' ? error : '请求失败');
+    
+    // 保留完整的错误信息，包括 details 和 code（用于数据库错误等）
+    throw new ApiError(errorMessage, response.status, error);
   }
 
   /**

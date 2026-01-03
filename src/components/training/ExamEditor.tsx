@@ -15,9 +15,15 @@ interface Props {
 }
 
 export default function ExamEditor({ questions, onChange }: Props) {
+  // 规范化问题数据，确保每个问题都有有效的 answer 数组
+  const normalizedQuestions = questions.map(q => ({
+    ...q,
+    answer: Array.isArray(q.answer) ? q.answer : [],
+    options: Array.isArray(q.options) ? q.options : [],
+  }));
 
   const addQuestion = () => {
-    onChange([...questions, {
+    onChange([...normalizedQuestions, {
       type: 'single',
       question: '',
       options: [
@@ -32,7 +38,7 @@ export default function ExamEditor({ questions, onChange }: Props) {
   };
 
   const updateQuestion = (index: number, field: keyof Question, value: any) => {
-    const newQs = [...questions];
+    const newQs = [...normalizedQuestions];
     newQs[index] = { ...newQs[index], [field]: value };
     // Clear answers if type changes to prevent inconsistencies
     if (field === 'type') {
@@ -42,14 +48,19 @@ export default function ExamEditor({ questions, onChange }: Props) {
   };
 
   const updateOption = (qIndex: number, oIndex: number, text: string) => {
-    const newQs = [...questions];
+    const newQs = [...normalizedQuestions];
     newQs[qIndex].options[oIndex].text = text;
     onChange(newQs);
   };
 
   const toggleAnswer = (qIndex: number, label: string) => {
-      const newQs = [...questions];
+      const newQs = [...normalizedQuestions];
       const q = newQs[qIndex];
+      
+      // 确保 answer 是数组
+      if (!Array.isArray(q.answer)) {
+          q.answer = [];
+      }
 
       if (q.type === 'single') {
           q.answer = [label];
@@ -64,12 +75,12 @@ export default function ExamEditor({ questions, onChange }: Props) {
   };
 
   const removeQuestion = (index: number) => {
-      onChange(questions.filter((_, i) => i !== index));
+      onChange(normalizedQuestions.filter((_, i) => i !== index));
   };
 
   return (
     <div className="space-y-6">
-       {questions.map((q, i) => (
+       {normalizedQuestions.map((q, i) => (
            <div key={i} className="border p-4 rounded-lg bg-slate-50 relative group">
                <button onClick={() => removeQuestion(i)} className="absolute top-2 right-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
                    <Trash size={18}/>
@@ -109,7 +120,7 @@ export default function ExamEditor({ questions, onChange }: Props) {
 
                <div className="space-y-2">
                    {q.options.map((opt, oIdx) => {
-                       const isCorrect = q.answer.includes(opt.label);
+                       const isCorrect = Array.isArray(q.answer) && q.answer.includes(opt.label);
                        return (
                            <div key={oIdx} className="flex items-center gap-2">
                                <button

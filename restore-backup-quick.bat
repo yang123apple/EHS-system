@@ -3,11 +3,12 @@ REM ========================================================================
 REM EHS 系统快速恢复脚本（简化版）
 REM ========================================================================
 REM 使用方法：restore-backup-quick.bat [备份文件路径]
-REM 示例：restore-backup-quick.bat backups\full_backup_2026-01-02.zip
+REM 示例：restore-backup-quick.bat data\backups\full_backup_2026-01-02.zip
 REM ========================================================================
 
 setlocal enabledelayedexpansion
-chcp 65001 >nul
+REM 设置控制台编码为 GBK（Windows 中文系统默认编码）
+chcp 936 >nul 2>&1
 
 echo.
 echo ================================
@@ -20,12 +21,12 @@ if "%~1"=="" (
     echo 用法：%0 [备份文件路径]
     echo.
     echo 示例：
-    echo   %0 backups\full_backup_2026-01-02.zip
+    echo   %0 data\backups\full_backup_2026-01-02.zip
     echo.
     
     REM 显示最新的备份文件
-    for /f "delims=" %%f in ('dir /b /o-d backups\full_backup_*.zip 2^>nul') do (
-        set "latest=backups\%%f"
+    for /f "delims=" %%f in ('dir /b /o-d data\backups\full_backup_*.zip 2^>nul') do (
+        set "latest=data\backups\%%f"
         goto :found_latest
     )
     
