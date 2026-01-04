@@ -309,12 +309,20 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
     };
 
     // 🟢 统一创建字段的辅助函数
-    const createField = (cellKey: string, label: string, r: number, c: number, fixedType?: ParsedField['fieldType']): ParsedField => {
+    const createField = (
+      cellKey: string, 
+      label: string, 
+      r: number, 
+      c: number, 
+      fixedType?: ParsedField['fieldType'],
+      group?: string,
+      isSafetyMeasure?: boolean
+    ): ParsedField => {
       const cleanLabel = stripOptionMarkers(label).trim();
       const baseFieldName = inferFieldName(cleanLabel);
       const fieldName = getUniqueFieldName(baseFieldName, r);
       const fieldType = fixedType || inferFieldType(cleanLabel);
-      return {
+      const field: ParsedField = {
         cellKey,
         label: cleanLabel,
         fieldName,
@@ -323,6 +331,13 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
         rowIndex: r,
         colIndex: c
       };
+      if (group) {
+        field.group = group;
+      }
+      if (isSafetyMeasure !== undefined) {
+        field.isSafetyMeasure = isSafetyMeasure;
+      }
+      return field;
     };
 
     // ===== STEP 1: 解析所有有值的单元格 =====
@@ -435,8 +450,40 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
     const processEmptyCell = (r: number, c: number, cellKey: string) => {
       if (processedCells.has(cellKey)) return;
 
+      // 🟢 规则1：检查左侧单元格是否为"£其他"
+      if (c > 0) {
+        const leftCell = data[r]?.[c - 1];
+        if (!isEmptyCellValue(leftCell)) {
+          const leftCellStr = String(leftCell).trim();
+          // 检查是否为"£其他"（支持多种选项标记符）
+          if (/[£￡]其他/.test(leftCellStr) || leftCellStr === '其他') {
+            fields.push(createField(cellKey, '其他', r, c, 'text'));
+            processedCells.add(cellKey);
+            return; // 已处理，直接返回
+          }
+        }
+      }
+
       // 1. 尝试向左找标签（智能策略：允许跨越最多5个空白，遇到已识别输入框则停止）
       let finalLabel = '';
+      let group: string | undefined;
+      let isSafetyMeasure: boolean | undefined;
+
+      // 🟢 规则2：检查上方是否有"安全措施"文本（识别到"安全措施"时，下方的类型默认为"安全措施"）
+      // 向上查找最多15行，检查同一列是否有"安全措施"文本
+      for (let upOffset = 1; upOffset <= 15 && r - upOffset >= 0; upOffset++) {
+        const upRow = r - upOffset;
+        const upCell = data[upRow]?.[c];
+        if (!isEmptyCellValue(upCell)) {
+          const upCellStr = String(upCell).trim();
+          // 检查是否包含"安全措施"（精确匹配或包含）
+          if (upCellStr === '安全措施' || upCellStr.includes('安全措施')) {
+            group = '安全措施';
+            isSafetyMeasure = true;
+            break; // 找到后停止向上查找
+          }
+        }
+      }
 
       // 使用顶层 isIgnorableLabel 过滤标签
 
@@ -446,7 +493,7 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
         const leftCol = c - offset;
         if (leftCol < 0) break;
         const leftKey = `R${r + 1}C${leftCol + 1}`;
-        // 遇到左侧已被解析为输入框的单元格，则停止向左“认领”标签
+        // 遇到左侧已被解析为输入框的单元格，则停止向左"认领"标签
         if (processedCells.has(leftKey)) break;
 
         const candidate = data[r]?.[leftCol];
@@ -463,8 +510,8 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
         // 无效标签（选项或标题），继续向左尝试
       }
 
-      // 2. 如果左边无效（没字，或者是“是/否”这种选项），尝试向上找
-      // 这会让代码穿透上面的空行，一直找到表头的“确认人”
+      // 2. 如果左边无效（没字，或者是"是/否"这种选项），尝试向上找
+      // 这会让代码穿透上面的空行，一直找到表头的"确认人"
       if (!finalLabel) {
         const topLabel = findTopLabel(data, r, c);
         // 向上找的时候，只要不是纯选项符号就行
@@ -475,7 +522,7 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
 
       // 3. 创建字段
       if (finalLabel) {
-        fields.push(createField(cellKey, finalLabel, r, c));
+        fields.push(createField(cellKey, finalLabel, r, c, undefined, group, isSafetyMeasure));
         processedCells.add(cellKey);
       }
     };

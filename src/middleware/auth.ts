@@ -226,7 +226,7 @@ export async function logApiOperation(
   details?: Record<string, any>
 ) {
   try {
-    // 模块名到 targetType 的映射
+    // 模块名到 targetType 和 LogModule 的映射
     const moduleToTargetType: Record<string, string> = {
       'hidden_danger': 'hazard',
       'doc_sys': 'document',
@@ -234,13 +234,65 @@ export async function logApiOperation(
       'training': 'training',
     };
     
+    const moduleToLogModule: Record<string, string> = {
+      'hidden_danger': 'HAZARD',
+      'doc_sys': 'DOCUMENT',
+      'work_permit': 'WORK_PERMIT',
+      'training': 'TRAINING',
+    };
+    
     const targetType = (moduleToTargetType[module] || module) as any;
+    const logModule = moduleToLogModule[module] || 'SYSTEM';
+    
+    // 操作类型映射（将 action 转换为标准操作类型）
+    const actionMap: Record<string, string> = {
+      'upload': 'UPLOAD',
+      'create': 'CREATE',
+      'update': 'UPDATE',
+      'delete': 'DELETE',
+      'edit': 'UPDATE',
+      'remove': 'DELETE',
+    };
+    
+    const standardAction = actionMap[action.toLowerCase()] || action.toUpperCase();
+    
+    // 操作标签映射
+    const actionLabelMap: Record<string, string> = {
+      'upload': '上传',
+      'create': '创建',
+      'update': '更新',
+      'delete': '删除',
+      'edit': '编辑',
+      'remove': '移除',
+    };
+    
+    const actionLabel = actionLabelMap[action.toLowerCase()] || action;
+    
+    // 从 details 中提取 targetId 和 targetLabel
+    // 对于文档，优先使用 fullNum（业务编号），否则使用 documentId
+    const targetId = details?.fullNum || details?.documentId || details?.targetId || null;
+    const targetLabel = details?.fileName || details?.name || details?.targetLabel || null;
+    
+    // 获取用户部门信息
+    // 注意：department 可能是对象（包含 name 属性）或字符串，需要兼容处理
+    const userDepartment = (user.department && typeof user.department === 'object' && 'name' in user.department) 
+      ? (user.department as any).name 
+      : (typeof user.department === 'string' ? user.department : null);
+    const userDepartmentId = user.departmentId || null;
     
     await SystemLogService.createLog({
       userId: user.id,
       userName: user.name,
-      action: `${module}.${action}`,
+      userRole: user.role,
+      userDepartment,
+      userDepartmentId,
+      userJobTitle: user.jobTitle || null,
+      action: standardAction,
+      actionLabel: `${actionLabel}${targetType === 'document' ? '文档' : targetType === 'hazard' ? '隐患' : targetType === 'permit' ? '作业票' : ''}`,
+      module: logModule,
+      targetId,
       targetType,
+      targetLabel,
       details: JSON.stringify({
         ...details,
         userRole: user.role,

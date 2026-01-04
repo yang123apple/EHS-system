@@ -265,6 +265,7 @@ export class SystemLogService {
     module?: string;
     startDate?: string;
     endDate?: string;
+    excludeLoginLogs?: boolean; // 是否排除登录日志，默认为 true
   }) {
     const {
       page = 1,
@@ -275,26 +276,51 @@ export class SystemLogService {
       module,
       startDate,
       endDate,
+      excludeLoginLogs = true, // 默认排除登录日志
     } = options;
 
     const skip = (page - 1) * limit;
 
+    // 登录日志的识别方式（新老双轨策略）
+    const LOGIN_ACTIONS = ['login', 'logout', 'LOGIN', 'LOGOUT', '用户登录', '用户退出'];
+    const AUTH_MODULE = 'AUTH';
+
     const where: any = {};
+    
+    // 构建基础筛选条件
+    const baseConditions: any[] = [];
+    
     if (targetType) {
-      // 使用 contains 实现忽略大小写的匹配（SQLite 中 contains 默认不区分大小写）
-      where.targetType = { contains: targetType };
+      baseConditions.push({ targetType: { contains: targetType } });
     }
-    if (action) where.action = { contains: action };
-    if (userId) where.userId = userId;
+    if (action) {
+      baseConditions.push({ action: { contains: action } });
+    }
+    if (userId) {
+      baseConditions.push({ userId: userId });
+    }
     if (module) {
-      // 使用 contains 实现忽略大小写的匹配（SQLite 中 contains 默认不区分大小写）
-      where.module = { contains: module };
+      baseConditions.push({ module: { contains: module } });
     }
     if (startDate || endDate) {
-      where.createdAt = {};
+      const dateCondition: any = {};
       // 开始时间设置为当天的 00:00:00，结束时间设置为当天的 23:59:59.999
-      if (startDate) where.createdAt.gte = setStartOfDay(extractDatePart(startDate));
-      if (endDate) where.createdAt.lte = setEndOfDay(extractDatePart(endDate));
+      if (startDate) dateCondition.gte = setStartOfDay(extractDatePart(startDate));
+      if (endDate) dateCondition.lte = setEndOfDay(extractDatePart(endDate));
+      baseConditions.push({ createdAt: dateCondition });
+    }
+
+    // 排除登录日志：既不是 AUTH 模块，也不包含登录相关动作
+    if (excludeLoginLogs) {
+      baseConditions.push(
+        { module: { not: AUTH_MODULE } },
+        { action: { notIn: LOGIN_ACTIONS } }
+      );
+    }
+
+    // 组合所有条件
+    if (baseConditions.length > 0) {
+      where.AND = baseConditions;
     }
 
     try {
