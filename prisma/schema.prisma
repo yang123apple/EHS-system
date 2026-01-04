@@ -381,3 +381,18 @@ model AIApiLog {
   ip            String?
   createdAt     DateTime @default(now())
 }
+
+// AI API 用户限流策略
+model AIApiRateLimit {
+  id            String   @id @default(cuid())
+  userId        String?  // 用户ID，如果为null则应用于所有用户
+  departmentId  String?  // 部门ID，如果为null则应用于所有部门
+  dailyLimit    Int      @default(100) // 每日API调用总次数限制
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([userId, departmentId], name: "userId_departmentId") // 确保每个用户/部门组合只有一个限流策略
+  @@index([userId])
+  @@index([departmentId])
+}

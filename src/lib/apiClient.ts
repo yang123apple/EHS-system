@@ -25,8 +25,12 @@ function getCurrentUser() {
 /**
  * 增强的 fetch 函数，自动添加认证头
  * 所有前端API请求都应该使用此函数而不是原生fetch
+ * 支持对象类型的 body，会自动转换为 JSON
  */
-export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function apiFetch(
+  url: string, 
+  options: Omit<RequestInit, 'body'> & { body?: RequestInit['body'] | Record<string, any> } = {}
+): Promise<Response> {
   const user = getCurrentUser();
   
   // 如果是需要认证的请求（非登录接口）但用户不存在，直接返回 401 响应

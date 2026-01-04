@@ -41,7 +41,7 @@ export interface SystemLogData {
   
   // 操作对象
   targetId?: string;
-  targetType?: 'hazard' | 'document' | 'permit' | 'config' | 'user' | 'org' | 'training';
+  targetType?: 'hazard' | 'document' | 'permit' | 'config' | 'user' | 'org' | 'training' | 'ai_api_rate_limit' | 'ai_api_call' | 'ai_api_config';
   targetLabel?: string;
   
   // 操作详情
@@ -280,10 +280,16 @@ export class SystemLogService {
     const skip = (page - 1) * limit;
 
     const where: any = {};
-    if (targetType) where.targetType = targetType;
+    if (targetType) {
+      // 使用 contains 实现忽略大小写的匹配（SQLite 中 contains 默认不区分大小写）
+      where.targetType = { contains: targetType };
+    }
     if (action) where.action = { contains: action };
     if (userId) where.userId = userId;
-    if (module) where.module = module;
+    if (module) {
+      // 使用 contains 实现忽略大小写的匹配（SQLite 中 contains 默认不区分大小写）
+      where.module = { contains: module };
+    }
     if (startDate || endDate) {
       where.createdAt = {};
       // 开始时间设置为当天的 00:00:00，结束时间设置为当天的 23:59:59.999

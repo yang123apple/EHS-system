@@ -212,19 +212,18 @@ export const GET = withErrorHandling(
 
     // 只返回有用户的部门（过滤掉所有统计都为0的部门树节点）
     function filterEmptyStats(stats: DepartmentStat[]): DepartmentStat[] {
-      return stats
-        .map(stat => {
-          const filteredChildren = stat.children ? filterEmptyStats(stat.children) : undefined;
-          // 如果当前节点有用户或有子节点，则保留
-          if (stat.total > 0 || (filteredChildren && filteredChildren.length > 0)) {
-            return {
-              ...stat,
-              children: filteredChildren
-            };
-          }
-          return null;
-        })
-        .filter((stat): stat is DepartmentStat => stat !== null);
+      const result: DepartmentStat[] = [];
+      for (const stat of stats) {
+        const filteredChildren = stat.children ? filterEmptyStats(stat.children) : undefined;
+        // 如果当前节点有用户或有子节点，则保留
+        if (stat.total > 0 || (filteredChildren && filteredChildren.length > 0)) {
+          result.push({
+            ...stat,
+            children: filteredChildren
+          });
+        }
+      }
+      return result;
     }
 
     const filteredRootStats = filterEmptyStats(rootStats);

@@ -209,7 +209,7 @@ export async function createTrainingNotification(
  * 快捷创建作业票通知
  */
 export async function createPermitNotification(
-  event: 'permit_submitted' | 'permit_approved' | 'permit_rejected' | 'permit_pending_approval',
+  event: 'permit_submitted' | 'permit_approved' | 'permit_rejected' | 'permit_pending_approval' | 'permit_approval_progress',
   recipientIds: string[],
   permitData: {
     id: string;
@@ -218,6 +218,9 @@ export async function createPermitNotification(
     projectName?: string;
     stepName?: string;
     stepNumber?: number;
+    approvalMode?: string;
+    operatedCount?: number;
+    totalCount?: number;
   },
   operatorName?: string
 ) {

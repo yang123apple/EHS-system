@@ -262,6 +262,63 @@ export class AuditService {
     });
   }
 
+  /**
+   * 记录查看操作（敏感数据查看审计）
+   * 
+   * 该方法用于记录敏感数据的查看行为，如查看员工健康档案、查看事故调查核心证据等。
+   * 只有当 isSensitive 为 true 时，才会真正写入数据库，避免普通列表页访问产生大量日志。
+   * 
+   * @param params 日志记录参数（不包含 action，会自动设置为 VIEW）
+   * @param isSensitive 是否为敏感数据查看，只有为 true 时才会记录
+   * @param reason 查看理由或说明（可选），会记录在 details 中
+   * @returns 创建的日志记录，如果 isSensitive 为 false 或失败则返回 null
+   * 
+   * @example
+   * ```typescript
+   * // 查看敏感数据 - 会记录
+   * await AuditService.logView({
+   *   module: LogModule.HAZARD,
+   *   businessId: 'HZ-2024-001',
+   *   targetLabel: '事故调查报告详情',
+   *   operator: currentUser,
+   *   request,
+   * }, true, '调查事故原因');
+   * 
+   * // 查看普通列表 - 不会记录
+   * await AuditService.logView({
+   *   module: LogModule.HAZARD,
+   *   operator: currentUser,
+   *   request,
+   * }, false);
+   * ```
+   */
+  static async logView(
+    params: Omit<LogRecordParams, 'action'>,
+    isSensitive: boolean = false,
+    reason?: string
+  ): Promise<any | null> {
+    // 如果不是敏感数据查看，直接返回，不执行数据库操作
+    if (!isSensitive) {
+      return null;
+    }
+
+    // 构建描述信息，包含查看理由
+    let description = params.description;
+    if (reason) {
+      const reasonText = `查看理由：${reason}`;
+      description = description 
+        ? `${description}；${reasonText}` 
+        : reasonText;
+    }
+
+    // 调用底层的 recordLog 方法
+    return this.recordLog({
+      ...params,
+      action: 'VIEW' as LogAction,
+      description,
+    });
+  }
+
   // ========== 查询方法 ==========
 
   /**

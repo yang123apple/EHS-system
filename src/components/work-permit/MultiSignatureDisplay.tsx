@@ -4,7 +4,7 @@ import { Plus, X } from 'lucide-react';
 import SignatureImage from './SignatureImage';
 
 interface MultiSignatureDisplayProps {
-  signatures: string[]; // base64 签名数组
+  signatures: string | string[]; // base64 签名数组或字符串（兼容旧数据）
   onAddSignature: () => void; // 添加签名回调
   onRemoveSignature?: (index: number) => void; // 删除签名回调（可选）
   maxWidth?: number;

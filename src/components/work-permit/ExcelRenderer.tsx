@@ -688,8 +688,8 @@ export default function ExcelRenderer({
                 signatures={signatureArray}
                 onAddSignature={() => {}}
                 readonly={true}
-                maxWidth={Math.min(styleObj.width as number || 200, 200)}
-                maxHeight={Math.min(styleObj.height as number || 100, 100)}
+                maxWidth={Math.min((styleObj as any).width as number || 200, 200)}
+                maxHeight={Math.min((styleObj as any).height as number || 100, 100)}
               />
             ) : (
               <span className="text-slate-300 text-xs">/</span>
@@ -716,8 +716,8 @@ export default function ExcelRenderer({
                 newArray.splice(index, 1);
                 handleInputChange(rIndex, cIndex, newArray.length > 0 ? newArray : '');
               }}
-              maxWidth={Math.min(styleObj.width as number || 200, 200)}
-              maxHeight={Math.min(styleObj.height as number || 100, 100)}
+              maxWidth={Math.min((styleObj as any).width as number || 200, 200)}
+              maxHeight={Math.min((styleObj as any).height as number || 100, 100)}
               readonly={false}
             />
           </div>

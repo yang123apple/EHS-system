@@ -16,6 +16,8 @@ export enum LogModule {
   DOCUMENT = 'DOCUMENT',
   /** 用户管理 */
   USER = 'USER',
+  /** 认证授权（登录/登出） */
+  AUTH = 'AUTH',
   /** 组织架构管理 */
   ORGANIZATION = 'ORGANIZATION',
   /** 系统设置 */

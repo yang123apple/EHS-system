@@ -3,6 +3,7 @@
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
+import { useToast } from '@/components/common/Toast';
 import { 
   Activity, 
   User, 
@@ -17,7 +18,10 @@ import {
   Filter,
   Download,
   RefreshCw,
-  Globe
+  Globe,
+  Archive,
+  Eye,
+  X
 } from 'lucide-react';
 
 interface SystemLog {
@@ -47,10 +51,18 @@ interface LogStats {
   dailyStats: Array<{ date: string; count: number }>;
 }
 
+interface ArchiveFile {
+  fileName: string;
+  size: number;
+  sizeFormatted: string;
+  createdAt: string;
+}
+
 export default function LogsPage() {
   const { user } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'login' | 'operation' | 'stats'>('login');
+  const toast = useToast();
+  const [activeTab, setActiveTab] = useState<'login' | 'operation' | 'stats' | 'archives'>('login');
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [stats, setStats] = useState<LogStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -63,6 +75,8 @@ export default function LogsPage() {
     startDate: '',
     endDate: '',
   });
+  const [archiveFiles, setArchiveFiles] = useState<ArchiveFile[]>([]);
+  const [previewArchiveFile, setPreviewArchiveFile] = useState<string | null>(null);
 
   // 权限检查
   if (user && user.role !== 'admin') {
@@ -82,6 +96,8 @@ export default function LogsPage() {
   useEffect(() => {
     if (activeTab === 'stats') {
       fetchStats();
+    } else if (activeTab === 'archives') {
+      fetchArchiveFiles();
     } else {
       fetchLogs();
     }
@@ -131,6 +147,109 @@ export default function LogsPage() {
     }
   };
 
+  const fetchArchiveFiles = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/admin/system/archive-logs');
+      const result = await response.json();
+
+      if (result.success) {
+        setArchiveFiles(result.data.files || []);
+      }
+    } catch (error) {
+      console.error('获取归档文件列表失败:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLoadArchive = async (fileName: string) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/admin/system/archive-logs?file=${encodeURIComponent(fileName)}`);
+      const result = await response.json();
+
+      if (result.success && result.data.logs) {
+        // 将归档日志转换为 SystemLog 格式
+        const archiveLogs: SystemLog[] = result.data.logs.map((log: any) => ({
+          id: log.id,
+          userId: log.userId,
+          userName: log.userName,
+          action: log.action,
+          targetId: log.targetId,
+          targetType: log.targetType,
+          details: log.details,
+          ip: log.ip,
+          createdAt: log.createdAt,
+        }));
+
+        setLogs(archiveLogs);
+        setTotal(archiveLogs.length);
+        setPreviewArchiveFile(fileName);
+        
+        // 根据日志内容自动切换 tab
+        // 检查是否有登录相关的日志
+        const hasLoginLogs = archiveLogs.some(log => 
+          log.action?.toLowerCase().includes('login') || 
+          log.action?.toLowerCase().includes('登录')
+        );
+        
+        if (hasLoginLogs) {
+          setActiveTab('login');
+        } else {
+          setActiveTab('operation');
+        }
+
+        // 显示 Toast 提示
+        toast.success('已加载归档数据', `已加载 ${archiveLogs.length} 条归档日志`);
+      }
+    } catch (error) {
+      console.error('加载归档文件失败:', error);
+      alert('加载归档文件失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownloadArchive = async (fileName: string) => {
+    try {
+      const response = await fetch(`/api/admin/system/archive-logs?file=${encodeURIComponent(fileName)}`);
+      const result = await response.json();
+
+      if (result.success) {
+        // 创建 Blob 并下载
+        const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error('下载归档文件失败:', error);
+      alert('下载归档文件失败');
+    }
+  };
+
+  const handleExitPreview = () => {
+    setPreviewArchiveFile(null);
+    setLogs([]);
+    setTotal(0);
+    setPage(1);
+    // 重新获取最新数据库日志
+    // 如果当前在 login 或 operation tab，重新获取日志
+    if (activeTab === 'login' || activeTab === 'operation') {
+      fetchLogs();
+    } else {
+      // 如果不在日志 tab，切换到 login tab 并获取日志
+      setActiveTab('login');
+      // useEffect 会自动触发 fetchLogs
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString('zh-CN', {
@@ -163,7 +282,15 @@ export default function LogsPage() {
             </div>
             <div className="flex gap-3">
               <button
-                onClick={() => activeTab !== 'stats' ? fetchLogs() : fetchStats()}
+                onClick={() => {
+                  if (activeTab === 'stats') {
+                    fetchStats();
+                  } else if (activeTab === 'archives') {
+                    fetchArchiveFiles();
+                  } else {
+                    fetchLogs();
+                  }
+                }}
                 className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
               >
                 <RefreshCw size={16} />
@@ -177,10 +304,37 @@ export default function LogsPage() {
           </div>
         </div>
 
+        {/* 预览模式警告条 */}
+        {previewArchiveFile && (
+          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="w-5 h-5 text-yellow-600" />
+                <div>
+                  <p className="font-medium text-yellow-800">
+                    当前正在预览归档文件：<span className="font-bold">{previewArchiveFile}</span>
+                  </p>
+                  <p className="text-sm text-yellow-700 mt-1">这是归档的冷存储数据，不是实时数据库日志</p>
+                </div>
+              </div>
+              <button
+                onClick={handleExitPreview}
+                className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 flex items-center gap-2 transition-colors"
+              >
+                <X size={16} />
+                返回实时日志
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Tab 切换 */}
         <div className="bg-white rounded-lg shadow-sm p-1 mb-6 flex gap-1">
           <button
-            onClick={() => setActiveTab('login')}
+            onClick={() => {
+              setActiveTab('login');
+              setPreviewArchiveFile(null);
+            }}
             className={`flex-1 py-3 px-4 rounded-md font-medium transition-colors ${
               activeTab === 'login'
                 ? 'bg-blue-600 text-white'
@@ -191,7 +345,10 @@ export default function LogsPage() {
             登录日志
           </button>
           <button
-            onClick={() => setActiveTab('operation')}
+            onClick={() => {
+              setActiveTab('operation');
+              setPreviewArchiveFile(null);
+            }}
             className={`flex-1 py-3 px-4 rounded-md font-medium transition-colors ${
               activeTab === 'operation'
                 ? 'bg-blue-600 text-white'
@@ -202,7 +359,10 @@ export default function LogsPage() {
             操作日志
           </button>
           <button
-            onClick={() => setActiveTab('stats')}
+            onClick={() => {
+              setActiveTab('stats');
+              setPreviewArchiveFile(null);
+            }}
             className={`flex-1 py-3 px-4 rounded-md font-medium transition-colors ${
               activeTab === 'stats'
                 ? 'bg-blue-600 text-white'
@@ -211,6 +371,20 @@ export default function LogsPage() {
           >
             <TrendingUp className="inline-block mr-2" size={18} />
             统计分析
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('archives');
+              setPreviewArchiveFile(null);
+            }}
+            className={`flex-1 py-3 px-4 rounded-md font-medium transition-colors ${
+              activeTab === 'archives'
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            <Archive className="inline-block mr-2" size={18} />
+            归档记录
           </button>
         </div>
 
@@ -339,8 +513,85 @@ export default function LogsPage() {
           </div>
         )}
 
+        {/* 归档记录视图 */}
+        {activeTab === 'archives' && (
+          <div className="bg-white rounded-xl shadow-sm">
+            <div className="p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <Archive size={20} className="text-blue-600" />
+                归档文件列表
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">查看和管理已归档的日志文件</p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">归档文件名</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">文件大小</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">归档时间</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                        <RefreshCw className="animate-spin inline-block mr-2" size={20} />
+                        加载中...
+                      </td>
+                    </tr>
+                  ) : archiveFiles.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                        暂无归档文件
+                      </td>
+                    </tr>
+                  ) : (
+                    archiveFiles.map((file) => (
+                      <tr key={file.fileName} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="flex items-center gap-2">
+                            <FileText size={16} className="text-gray-400" />
+                            <span className="font-mono text-xs">{file.fileName}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {file.sizeFormatted}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {formatDate(file.createdAt)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleLoadArchive(file.fileName)}
+                              className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-1.5 transition-colors"
+                            >
+                              <Eye size={14} />
+                              加载预览
+                            </button>
+                            <button
+                              onClick={() => handleDownloadArchive(file.fileName)}
+                              className="px-3 py-1.5 bg-gray-600 text-white rounded-md hover:bg-gray-700 flex items-center gap-1.5 transition-colors"
+                            >
+                              <Download size={14} />
+                              下载
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* 日志列表视图 */}
-        {activeTab !== 'stats' && (
+        {activeTab !== 'stats' && activeTab !== 'archives' && (
           <div className="bg-white rounded-xl shadow-sm">
             {/* 过滤器 */}
             <div className="p-6 border-b border-gray-200">

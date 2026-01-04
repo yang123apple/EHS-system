@@ -6,7 +6,7 @@ import { apiFetch } from '@/lib/apiClient';
 import { sanitizeHtml } from '@/lib/htmlSanitizer';
 
 interface Props {
-  url: String;
+  url: string;
   type: string;
   onProgress?: (progress: number) => void; // 0-100
   onComplete?: () => void;

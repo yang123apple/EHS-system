@@ -28,7 +28,8 @@ export async function parseTableFile(file: File): Promise<ParsedTable> {
   // 默认按 CSV 处理
   const buffer = await file.arrayBuffer();
   const uint8 = new Uint8Array(buffer);
-  const detected = jschardet.detect(Buffer.from(uint8));
+  // 将 ArrayBuffer 直接转换为 Buffer，避免类型推断问题
+  const detected = jschardet.detect(Buffer.from(buffer));
   let encoding = (detected?.encoding || 'utf-8').toLowerCase();
   if (encoding === 'gb2312' || encoding === 'gb18030') encoding = 'gbk';
   let text = '';

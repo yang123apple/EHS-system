@@ -2,7 +2,9 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { PeopleFinder } from '@/lib/peopleFinder';
-import { logUserLogin, getClientIP } from '@/services/systemLogService';
+import { getClientIP } from '@/services/systemLogService';
+import AuditService from '@/services/audit.service';
+import { LogModule } from '@/types/audit';
 
 export async function POST(req: Request) {
   try {
@@ -51,14 +53,28 @@ export async function POST(req: Request) {
       };
 
       // 记录登录日志（不阻塞登录流程）
-      // 暂时注释掉，以排查问题
-      // try {
-      //   const clientIP = getClientIP(req);
-      //   await logUserLogin(user.id, user.name, clientIP);
-      // } catch (logError) {
-      //   console.error('记录登录日志失败:', logError);
-      //   // 日志记录失败不影响登录流程
-      // }
+      try {
+        const clientIP = getClientIP(req);
+        await AuditService.logLogin({
+          module: LogModule.AUTH,
+          businessId: user.id,
+          targetType: 'user',
+          targetLabel: user.name,
+          operator: {
+            id: user.id,
+            name: user.name,
+            role: user.role,
+            departmentId: user.departmentId || undefined,
+            departmentName: user.department?.name || undefined,
+            jobTitle: user.jobTitle || undefined,
+          },
+          request: req,
+          clientInfo: { ip: clientIP },
+        });
+      } catch (logError) {
+        console.error('记录登录日志失败:', logError);
+        // 日志记录失败不影响登录流程
+      }
 
       // 创建响应并设置 cookie，用于 Server Component 认证
       const response = NextResponse.json({ success: true, user: safeUser });

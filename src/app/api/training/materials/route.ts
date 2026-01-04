@@ -4,7 +4,7 @@ import { convertToPdf } from '@/lib/converter';
 import path from 'path';
 import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
 
-export const GET = withErrorHandling(withAuth(async (req: NextRequest, user) => {
+export const GET = withErrorHandling(withAuth(async (req: NextRequest, context, user) => {
   const { searchParams } = new URL(req.url);
   const publicOnly = searchParams.get('publicOnly') === 'true';
 
@@ -19,7 +19,7 @@ export const GET = withErrorHandling(withAuth(async (req: NextRequest, user) => 
 }));
 
 export const POST = withErrorHandling(
-  withPermission('training', 'create_material', async (req: NextRequest, user) => {
+  withPermission('training', 'create_material', async (req: NextRequest, context, user) => {
     console.log('[Training Materials API] 开始创建学习材料...');
     const body = await req.json();
     console.log('[Training Materials API] 接收到的数据:', JSON.stringify(body, null, 2));

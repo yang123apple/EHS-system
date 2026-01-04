@@ -7,13 +7,15 @@ export async function createLog(
   action: string, 
   targetId?: string, 
   details?: string,
-  targetType?: string
+  targetType?: string,
+  module: string = 'SYSTEM' // 默认模块为 SYSTEM
 ) {
   try {
     await prisma.systemLog.create({
       data: {
         userId: userId || 'system',
         userName: userName || 'System',
+        module,
         action,
         targetId,
         targetType: targetType || null,

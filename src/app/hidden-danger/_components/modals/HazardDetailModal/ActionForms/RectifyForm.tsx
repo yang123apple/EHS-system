@@ -13,7 +13,7 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
     
     // 验证文件格式
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
-    const fileExtension = file.name.toLowerCase().split('.').pop();
+    const fileExtension = file.name.toLowerCase().split('.').pop() || '';
     const allowedExtensions = ['jpg', 'jpeg', 'png'];
     
     if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {

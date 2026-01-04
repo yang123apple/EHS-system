@@ -16,6 +16,7 @@ export const ModuleLabels: Record<LogModule, string> = {
   [LogModule.ORGANIZATION]: '组织架构',
   [LogModule.SYSTEM]: '系统设置',
   [LogModule.NOTIFICATION]: '通知中心',
+  [LogModule.AUTH]: '认证',
 };
 
 // ============ 操作类型中文映射 ============

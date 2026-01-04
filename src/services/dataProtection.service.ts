@@ -350,7 +350,7 @@ export class DataProtectionService {
       const [deptCount, userCount, hazardCount, trainingCount] = await Promise.all([
         this.prisma.department.count().catch(() => 0),
         this.prisma.user.count().catch(() => 0),
-        this.prisma.hazard.count().catch(() => 0),
+        this.prisma.hazardRecord.count().catch(() => 0),
         this.prisma.trainingTask.count().catch(() => 0),
       ]);
 

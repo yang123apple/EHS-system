@@ -254,93 +254,98 @@ export async function logApiOperation(
 
 /**
  * 包装API处理函数，自动处理认证和权限
+ * Next.js 16: context 参数现在是必需的
  */
-export function withAuth<T = any>(
+export function withAuth<T extends { params: Promise<any> } = { params: Promise<{}> }>(
   handler: (req: NextRequest, context: T, user: User) => Promise<NextResponse>
 ) {
-  return async (req: NextRequest, context?: T): Promise<NextResponse> => {
+  return async (req: NextRequest, context: T): Promise<NextResponse> => {
     const authResult = await requireAuth(req);
     
     if (authResult instanceof NextResponse) {
       return authResult;
     }
     
-    return handler(req, context as T, authResult.user);
+    return handler(req, context, authResult.user);
   };
 }
 
 /**
  * 包装API处理函数，自动处理权限检查
+ * Next.js 16: context 参数现在是必需的
  */
-export function withPermission<T = any>(
+export function withPermission<T extends { params: Promise<any> } = { params: Promise<{}> }>(
   module: string,
   permission: string,
   handler: (req: NextRequest, context: T, user: User) => Promise<NextResponse>
 ) {
-  return async (req: NextRequest, context?: T): Promise<NextResponse> => {
+  return async (req: NextRequest, context: T): Promise<NextResponse> => {
     const permResult = await requirePermission(req, module, permission);
     
     if (permResult instanceof NextResponse) {
       return permResult;
     }
     
-    return handler(req, context as T, permResult.user);
+    return handler(req, context, permResult.user);
   };
 }
 
 /**
  * 包装API处理函数，自动处理资源权限检查（支持创建人检查）
+ * Next.js 16: context 参数现在是必需的
  * @param module 模块名
  * @param permissionBase 权限基础名称（如 'edit_material'）
  * @param getCreatorId 获取资源创建人ID的函数
  * @param handler API处理函数
  */
-export function withResourcePermission<T = any>(
+export function withResourcePermission<T extends { params: Promise<any> } = { params: Promise<{}> }>(
   module: string,
   permissionBase: string,
   getCreatorId: (req: NextRequest, context: T) => Promise<string | null | undefined>,
   handler: (req: NextRequest, context: T, user: User) => Promise<NextResponse>
 ) {
-  return async (req: NextRequest, context?: T): Promise<NextResponse> => {
+  return async (req: NextRequest, context: T): Promise<NextResponse> => {
     const permResult = await requireResourcePermission(
       req,
       module,
       permissionBase,
-      () => getCreatorId(req, context as T)
+      () => getCreatorId(req, context)
     );
     
     if (permResult instanceof NextResponse) {
       return permResult;
     }
     
-    return handler(req, context as T, permResult.user);
+    return handler(req, context, permResult.user);
   };
 }
 
 /**
  * 包装API处理函数，要求管理员权限
+ * Next.js 16: context 参数现在是必需的
  */
-export function withAdmin<T = any>(
+export function withAdmin<T extends { params: Promise<any> } = { params: Promise<{}> }>(
   handler: (req: NextRequest, context: T, user: User) => Promise<NextResponse>
 ) {
-  return async (req: NextRequest, context?: T): Promise<NextResponse> => {
+  return async (req: NextRequest, context: T): Promise<NextResponse> => {
     const adminResult = await requireAdmin(req);
     
     if (adminResult instanceof NextResponse) {
       return adminResult;
     }
     
-    return handler(req, context as T, adminResult.user);
+    return handler(req, context, adminResult.user);
   };
 }
 
 /**
  * 统一错误处理包装器
+ * Next.js 16: context 参数现在是必需的，即使路由没有动态参数，也会包含 params: Promise<{}>
  */
-export function withErrorHandling<T = any>(
-  handler: (req: NextRequest, context?: T) => Promise<NextResponse>
+export function withErrorHandling<T extends { params: Promise<any> } = { params: Promise<{}> }>(
+  handler: (req: NextRequest, context: T) => Promise<NextResponse>
 ) {
-  return async (req: NextRequest, context?: T): Promise<NextResponse> => {
+  return async (req: NextRequest, context: T): Promise<NextResponse> => {
     try {
       return await handler(req, context);
     } catch (error) {

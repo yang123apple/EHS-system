@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { LogModule } from '@/types/audit';
+
+// 定义所有可能的登录动作（包含大小写变体）
+const LOGIN_ACTIONS = ['login', 'logout', 'LOGIN', 'LOGOUT', '用户登录', '用户退出'];
 
 // 获取系统日志列表
 export async function GET(request: NextRequest) {
@@ -19,30 +23,45 @@ export async function GET(request: NextRequest) {
     // 构建查询条件
     const where: any = {};
 
-    // 登录日志：action = 'login' 或 'logout' 或中文的 '用户登录' 或 '用户退出'
-    // 操作日志：其他所有action
+    // 新老双轨策略：登录日志筛选
+    // 条件A（新）：module === AUTH
+    // 条件B（旧）：action 包含 LOGIN/LOGOUT 等字符串
+    // 这样可以同时匹配新产生的日志（使用 AUTH 模块）和历史日志（使用 action 字符串）
     if (type === 'login') {
-      where.action = { in: ['login', 'logout', '用户登录', '用户退出'] };
+      where.OR = [
+        { module: LogModule.AUTH },
+        { action: { in: LOGIN_ACTIONS } },
+      ];
     } else if (type === 'operation') {
-      where.action = { notIn: ['login', 'logout', '用户登录', '用户退出'] };
+      // 操作日志：既不是 AUTH 模块，也不包含登录相关动作
+      where.AND = [
+        { module: { not: LogModule.AUTH } },
+        { action: { notIn: LOGIN_ACTIONS } },
+      ];
     }
 
     // 如果指定了 action 筛选，需要结合 type 条件
     if (action) {
       if (type === 'login') {
-        // 在登录日志中搜索，需要同时满足两个条件
+        // 在登录日志中搜索，需要同时满足：
+        // 1. (module === AUTH OR action IN LOGIN_ACTIONS) - 新老双轨策略
+        // 2. action 包含搜索关键字
+        const loginCondition = {
+          OR: [
+            { module: LogModule.AUTH },
+            { action: { in: LOGIN_ACTIONS } },
+          ],
+        };
         where.AND = [
-          { action: { in: ['login', 'logout', '用户登录', '用户退出'] } },
-          { action: { contains: action } }
+          loginCondition,
+          { action: { contains: action } },
         ];
-        delete where.action;
+        delete where.OR;
       } else if (type === 'operation') {
-        // 在操作日志中搜索，需要同时满足两个条件
-        where.AND = [
-          { action: { notIn: ['login', 'logout', '用户登录', '用户退出'] } },
-          { action: { contains: action } }
-        ];
-        delete where.action;
+        // 在操作日志中搜索，需要同时满足：
+        // 1. NOT (module === AUTH OR action IN LOGIN_ACTIONS) - 新老双轨策略（已在上面设置）
+        // 2. action 包含搜索关键字
+        where.AND.push({ action: { contains: action } });
       } else {
         // 没有指定类型，直接按 action 搜索
         where.action = { contains: action };
@@ -135,10 +154,13 @@ export async function POST(request: NextRequest) {
           where: { createdAt: { gte: today } },
         }),
         
-        // 今日登录数（包含登录和退出）
+        // 今日登录数（包含登录和退出）- 使用新老双轨策略
         prisma.systemLog.count({
-          where: { 
-            action: { in: ['login', 'logout', '用户登录', '用户退出'] },
+          where: {
+            OR: [
+              { module: LogModule.AUTH },
+              { action: { in: LOGIN_ACTIONS } },
+            ],
             createdAt: { gte: today },
           },
         }),
@@ -152,14 +174,24 @@ export async function POST(request: NextRequest) {
           },
         }).then(result => result.length),
         
-        // 登录日志数（包含登录和退出）
+        // 登录日志数（包含登录和退出）- 使用新老双轨策略
         prisma.systemLog.count({
-          where: { action: { in: ['login', 'logout', '用户登录', '用户退出'] } },
+          where: {
+            OR: [
+              { module: LogModule.AUTH },
+              { action: { in: LOGIN_ACTIONS } },
+            ],
+          },
         }),
         
-        // 操作日志数
+        // 操作日志数 - 使用新老双轨策略
         prisma.systemLog.count({
-          where: { action: { notIn: ['login', 'logout', '用户登录', '用户退出'] } },
+          where: {
+            AND: [
+              { module: { not: LogModule.AUTH } },
+              { action: { notIn: LOGIN_ACTIONS } },
+            ],
+          },
         }),
         
         // 错误日志数（包含"失败"或"错误"的action）

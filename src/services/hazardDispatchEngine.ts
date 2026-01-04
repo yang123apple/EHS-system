@@ -487,10 +487,12 @@ export class HazardDispatchEngine {
   static validateDispatch(
     hazard: HazardRecord,
     action: DispatchAction,
-    operator: { id: string; name: string }
+    operator: { id: string; name: string },
+    workflowSteps: HazardWorkflowStep[] = []
   ): { valid: boolean; error?: string } {
     // 1. 检查状态流转是否合法
-    const transition = this.getTransition(hazard.status, action);
+    const stepIndex = hazard.currentStepIndex ?? 0;
+    const transition = this.getTransition(stepIndex, action, workflowSteps, hazard.status);
     if (!transition.success) {
       return { valid: false, error: transition.error };
     }

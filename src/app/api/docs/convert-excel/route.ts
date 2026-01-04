@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import { withErrorHandling, withAuth } from '@/middleware/auth';
 
 export const GET = withErrorHandling(
-  withAuth(async (req: NextRequest) => {
+  withAuth(async (req: NextRequest, context: { params: Promise<{}> }, user) => {
     const { searchParams } = new URL(req.url);
     const url = searchParams.get('url');
 

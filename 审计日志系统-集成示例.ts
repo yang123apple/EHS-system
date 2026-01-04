@@ -114,7 +114,7 @@ export async function PATCH_AssignHazard(request: NextRequest) {
     // 4. 🟢 记录审计日志（自动计算 Diff）
     await AuditService.logAssign({
       module: LogModule.HAZARD,
-      businessId: oldHazard.code,
+      businessId: oldHazard.code || undefined,
       targetType: 'hazard',
       targetLabel: oldHazard.desc?.substring(0, 50),
       targetLink: `/hazard/${hazardId}`,
@@ -184,7 +184,7 @@ export async function PATCH_SubmitRectification(request: NextRequest) {
     await AuditService.recordLog({
       module: LogModule.HAZARD,
       action: LogAction.SUBMIT,
-      businessId: oldHazard.code,
+      businessId: oldHazard.code || undefined,
       targetType: 'hazard',
       targetLabel: oldHazard.desc?.substring(0, 50),
       targetLink: `/hazard/${hazardId}`,
@@ -249,7 +249,7 @@ export async function PATCH_VerifyHazard(request: NextRequest) {
       await AuditService.recordLog({
         module: LogModule.HAZARD,
         action: LogAction.APPROVE,
-        businessId: oldHazard.code,
+        businessId: oldHazard.code || undefined,
         targetType: 'hazard',
         targetLabel: oldHazard.desc?.substring(0, 50),
         targetLink: `/hazard/${hazardId}`,
@@ -267,7 +267,7 @@ export async function PATCH_VerifyHazard(request: NextRequest) {
     } else {
       await AuditService.logReject({
         module: LogModule.HAZARD,
-        businessId: oldHazard.code,
+        businessId: oldHazard.code || undefined,
         targetType: 'hazard',
         targetLabel: oldHazard.desc?.substring(0, 50),
         targetLink: `/hazard/${hazardId}`,
