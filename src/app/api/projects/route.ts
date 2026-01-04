@@ -129,9 +129,11 @@ export async function POST(req: Request) {
       createLog(
         userId,
         userName,
-        'CREATE_PROJECT',
+        'CREATE',
         newProject.id,
-        `创建项目: ${name}`
+        `创建工程项目: ${name}`,
+        'project',
+        'WORK_PERMIT'
       );
     }
 
@@ -165,9 +167,11 @@ export async function PATCH(req: Request) {
       createLog(
         userId,
         userName,
-        'UPDATE_PROJECT',
+        'UPDATE',
         id,
-        '更新项目信息'
+        '更新工程项目信息',
+        'project',
+        'WORK_PERMIT'
       );
     }
 
@@ -198,9 +202,11 @@ export async function DELETE(req: Request) {
       createLog(
         userId,
         userName,
-        'DELETE_PROJECT',
+        'DELETE',
         id,
-        '删除项目'
+        '删除工程项目',
+        'project',
+        'WORK_PERMIT'
       );
     }
 

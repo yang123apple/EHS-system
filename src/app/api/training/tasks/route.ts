@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { runRuleScan } from '@/services/autoAssign.service';
 import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
 
 export const GET = withErrorHandling(
@@ -37,7 +38,7 @@ export const GET = withErrorHandling(
 export const POST = withErrorHandling(
   withPermission('training', 'create_task', async (req: NextRequest, context, user) => {
     const body = await req.json();
-    const { title, description, startDate, endDate, materialId, publisherId, targetType, targetConfig } = body;
+    const { title, description, startDate, endDate, materialId, publisherId, targetType, targetConfig, autoAssign } = body;
 
     // 1. Create Task
     const task = await prisma.trainingTask.create({
@@ -52,6 +53,25 @@ export const POST = withErrorHandling(
         targetConfig: JSON.stringify(targetConfig)
       }
     });
+
+    // 如果前端提交了 autoAssign 配置，保存为 AutoAssignRule
+    if (autoAssign) {
+      try {
+        // 支持 array 或 单个对象
+        const rules = Array.isArray(autoAssign) ? autoAssign : [autoAssign];
+        await Promise.all(rules.map((r: any) => prisma.autoAssignRule.create({
+          data: {
+            taskId: task.id,
+            mode: r.mode || 'event',
+            eventType: r.eventType || null,
+            condition: r.condition ? JSON.stringify(r.condition) : null,
+            isActive: r.isActive === undefined ? true : !!r.isActive
+          }
+        })));
+      } catch (e) {
+        console.error('保存 autoAssign 规则失败', e);
+      }
+    }
 
     // 2. Resolve Users and Create Assignments
     let userIds: string[] = [];

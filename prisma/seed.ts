@@ -49,6 +49,27 @@ async function main() {
     data: { managerId: admin.id }
   })
 
+  // 4. 初始化隐患配置
+  await prisma.hazardConfig.upsert({
+    where: { key: 'hazard_types' },
+    update: {},
+    create: {
+      key: 'hazard_types',
+      value: JSON.stringify(['火灾', '爆炸', '中毒', '窒息', '触电', '机械伤害']),
+      description: '隐患分类配置'
+    }
+  })
+
+  await prisma.hazardConfig.upsert({
+    where: { key: 'hazard_areas' },
+    update: {},
+    create: {
+      key: 'hazard_areas',
+      value: JSON.stringify(['施工现场', '仓库', '办公室', '车间', '其他']),
+      description: '发现区域配置'
+    }
+  })
+
   console.log('Seeding finished.')
 }
 

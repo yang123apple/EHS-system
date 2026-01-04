@@ -100,9 +100,29 @@ export const PUT = withAdmin<{ params: Promise<{ id: string }> }>(async (req, co
         return NextResponse.json({ error: '更新失败' }, { status: 500 });
     }
 
+    // 触发调岗（job change）事件：若职位发生变化则入队，由 worker 处理
+    try {
+      if (existingUser.jobTitle !== updatedUser.jobTitle) {
+        try {
+          const { enqueueAutoAssign } = await import('@/services/queue.service');
+          await enqueueAutoAssign('job_changed', { userId: id, oldJob: existingUser.jobTitle, newJob: updatedUser.jobTitle });
+        } catch (e) {
+          // 入队失败则回退为直接异步触发
+          import('@/services/autoAssign.service').then(mod => {
+            mod.processEvent('job_changed', { userId: id, oldJob: existingUser.jobTitle, newJob: updatedUser.jobTitle })
+              .then(res => console.log('autoAssign job_changed fallback result', res))
+              .catch(err => console.error('autoAssign job_changed fallback error', err));
+          }).catch(err => console.error('load autoAssign.service failed', err));
+        }
+      }
+    } catch (e) {
+      console.error('检测/触发 job_changed 失败', e);
+    }
+
     return NextResponse.json({ success: true, user: updatedUser });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: '更新失败' }, { status: 500 });
   }
 });
+

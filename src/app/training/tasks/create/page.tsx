@@ -6,6 +6,7 @@ import PeopleSelector from '@/components/common/PeopleSelector';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/apiClient';
 import { useDateRange } from '@/hooks/useDateRange';
+import AutoAssignBuilder from '@/components/training/AutoAssignBuilder';
 
 export default function CreateTaskPage() {
   const router = useRouter();
@@ -21,6 +22,11 @@ export default function CreateTaskPage() {
   const { startDate, endDate, setStartDate, setEndDate, endDateMin, isValid } = useDateRange();
   const [targetType, setTargetType] = useState('all'); // all, dept, user
   const [targetConfig, setTargetConfig] = useState<any[]>([]); // ids
+  // 自动派发配置
+  const [enableAutoAssign, setEnableAutoAssign] = useState(false);
+  const [autoAssignMode, setAutoAssignMode] = useState<'event'|'rule'>('event');
+  const [autoAssignEventType, setAutoAssignEventType] = useState('user_first_login');
+  const [autoAssignCondition, setAutoAssignCondition] = useState(''); // JSON 文本
 
   // Modals
   const [showDeptModal, setShowDeptModal] = useState(false);
@@ -78,18 +84,36 @@ export default function CreateTaskPage() {
 
     setSubmitting(true);
     try {
+        const payload: any = {
+            title,
+            description: '',
+            startDate,
+            endDate,
+            materialId,
+            publisherId: user.id,
+            targetType,
+            targetConfig
+        };
+
+        if (enableAutoAssign) {
+          try {
+            const cond = autoAssignCondition ? JSON.parse(autoAssignCondition) : {};
+            payload.autoAssign = {
+              mode: autoAssignMode,
+              eventType: autoAssignMode === 'event' ? autoAssignEventType : null,
+              condition: cond,
+              isActive: true
+            };
+          } catch (e) {
+            alert('自动派发配置 JSON 格式错误');
+            setSubmitting(false);
+            return;
+          }
+        }
+
         const res = await apiFetch('/api/training/tasks', {
             method: 'POST',
-            body: {
-                title,
-                description: '',
-                startDate,
-                endDate,
-                materialId,
-                publisherId: user.id,
-                targetType,
-                targetConfig
-            }
+            body: payload
         });
 
         if (res.ok) router.push('/training/tasks');
@@ -428,6 +452,49 @@ export default function CreateTaskPage() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+
+          {/* Auto-assign Configuration */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <Users size={16} className="text-slate-400" />
+              自动派发 (可选)
+            </label>
+
+            <div className="flex items-center gap-3">
+              <input type="checkbox" id="enableAutoAssign" checked={enableAutoAssign} onChange={e => setEnableAutoAssign(e.target.checked)} />
+              <label htmlFor="enableAutoAssign" className="text-sm text-slate-600">启用自动派发</label>
+            </div>
+
+            {enableAutoAssign && (
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                <div className="flex items-center gap-3">
+                  <label className="text-sm font-medium">模式</label>
+                  <select value={autoAssignMode} onChange={e => setAutoAssignMode(e.target.value as any)} className="px-3 py-2 rounded border">
+                    <option value="event">事件驱动 (Event-Driven)</option>
+                    <option value="rule">规则驱动 (Rule-Based)</option>
+                  </select>
+                </div>
+
+                {autoAssignMode === 'event' && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">事件类型</label>
+                    <select value={autoAssignEventType} onChange={e => setAutoAssignEventType(e.target.value)} className="px-3 py-2 rounded border w-full">
+                      <option value="user_first_login">用户首次登录 (首次登录后触发)</option>
+                      <option value="job_changed">岗位变动 (岗位变为指定岗位时触发)</option>
+                      <option value="document_updated">文档更新 (指定文档更新时触发)</option>
+                      <option value="exam_finished">考试结束 (考试结束后触发)</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">条件配置 (可视化)</label>
+                  <AutoAssignBuilder onChange={val => setAutoAssignCondition(JSON.stringify(val))} value={autoAssignCondition ? JSON.parse(autoAssignCondition) : undefined} />
+                  <p className="text-xs text-slate-400">说明：使用可视化编辑器配置触发条件；后台会把规则序列化为 JSON 存储。</p>
+                </div>
               </div>
             )}
           </div>

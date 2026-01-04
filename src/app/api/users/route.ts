@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
+import { assignOnboardingPlanToUser } from '@/services/onboardingService';
 import { withAuth, withAdmin } from '@/middleware/auth';
 
 // GET: 获取所有用户 (Support Pagination)
@@ -110,6 +111,16 @@ export const POST = withAdmin(async (req, context, user) => {
         // 所以我们假设前端传了正确的 departmentId
       }
     });
+
+    // 在用户创建成功后异步触发入职培训任务指派（非阻塞）
+    // 选择非阻塞的原因是避免延长管理端创建用户的响应时延；如果需要保证同步完成，可以将下面的调用改为 `await`。
+    assignOnboardingPlanToUser(newUser.id)
+      .then((res) => {
+        if (res?.created) console.log(`Assigned ${res.created} onboarding tasks to user ${newUser.id}`);
+      })
+      .catch((err) => {
+        console.error('assignOnboardingPlanToUser failed for user', newUser.id, err);
+      });
 
     // 为了返回完整对象，可能需要 reload department
     return NextResponse.json({ success: true, user: newUser });

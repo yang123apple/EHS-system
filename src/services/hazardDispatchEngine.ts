@@ -157,7 +157,8 @@ export class HazardDispatchEngine {
         transition.newStatus,
         comment,
         handlerResult.userNames,
-        ccResult.userNames
+        ccResult.userNames,
+        nextStep.name  // 传入步骤名称
       );
 
       // 7. 生成通知数据（不直接创建通知）
@@ -373,7 +374,8 @@ export class HazardDispatchEngine {
     newStatus: HazardStatus,
     comment?: string,
     handlerNames?: string[],
-    ccUserNames?: string[]
+    ccUserNames?: string[],
+    stepName?: string  // 新增：自定义步骤名称
   ): HazardLog {
     const actionNames: Record<DispatchAction, string> = {
       [DispatchAction.SUBMIT]: '提交上报',
@@ -392,7 +394,9 @@ export class HazardDispatchEngine {
       'closed': '已闭环'
     };
 
-    let changes = `${actionNames[action]} → 状态变更为"${statusNames[newStatus]}"`;
+    // 优先使用自定义步骤名称，否则使用默认动作名称
+    const displayActionName = stepName || actionNames[action];
+    let changes = `${displayActionName} → 状态变更为"${statusNames[newStatus]}"`;
     
     if (handlerNames && handlerNames.length > 0) {
       changes += `\n处理人: ${handlerNames.join('、')}`;
@@ -404,7 +408,7 @@ export class HazardDispatchEngine {
 
     return {
       operatorName: operator.name,
-      action: actionNames[action],
+      action: displayActionName,  // 使用实际显示的名称
       time: new Date().toISOString(),
       changes,
       ccUsers: ccUserNames && ccUserNames.length > 0 ? ccUserNames.map(name => name) : undefined,

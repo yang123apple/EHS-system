@@ -302,6 +302,20 @@ model TrainingTask {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   assignments   TrainingAssignment[]
+  autoAssignRules AutoAssignRule[]
+}
+
+// 自动派发规则：用于把培训任务与事件/规则绑定
+model AutoAssignRule {
+  id          String   @id @default(cuid())
+  taskId      String
+  task        TrainingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  mode        String   // 'event' | 'rule'
+  eventType   String?  // 例如: 'user_first_login','job_changed','document_updated','exam_finished'
+  condition   String?  // 存储触发条件与目标配置的 JSON 字符串，例如 { jobTitle: '操作工' } 或 { documentId: '...' }
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model TrainingAssignment {

@@ -41,7 +41,7 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
     setIsLoading(true);
     try {
       const params = new URLSearchParams({
-        targetType: 'hazard',
+        targetType: 'hazard',  // 使用targetType查询隐患日志
         page: page.toString(),
         pageSize: pageSize.toString(),
       });

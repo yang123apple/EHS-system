@@ -53,7 +53,7 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
       const params = new URLSearchParams({
         page: page.toString(),
         pageSize: pageSize.toString(),
-        targetType: 'document'
+        targetType: 'document'  // 使用targetType查询文档日志
       });
       
       if (actionFilter) params.append('action', actionFilter);

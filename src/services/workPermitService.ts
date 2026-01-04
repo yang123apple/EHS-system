@@ -39,21 +39,27 @@ export const ProjectService = {
   },
   /** 创建新项目 */
   create: async (data: Partial<Project>): Promise<Project> => {
+    const body = attachUserContext(data);
     return request<Project>('/projects', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(body),
     });
   },
   /** 更新项目 (用于工期调整等) */
   update: async (id: string, data: Partial<Project>): Promise<Project> => {
+    const body = attachUserContext({ id, ...data });
     return request<Project>('/projects', {
       method: 'PATCH',
-      body: JSON.stringify({ id, ...data }),
+      body: JSON.stringify(body),
     });
   },
   /** 删除项目 */
   delete: async (id: string): Promise<void> => {
-    return request<void>(`/projects?id=${id}`, {
+    const { userId, userName } = attachUserContext();
+    const query = new URLSearchParams({ id });
+    if (userId) query.set('userId', userId);
+    if (userName) query.set('userName', userName);
+    return request<void>(`/projects?${query.toString()}`, {
       method: 'DELETE',
     });
   },
@@ -122,10 +128,10 @@ export const PermitService = {
     proposedCode?: string; // 🟢 新增：预览编号
   }): Promise<PermitRecord> => {
     // 确保 dataJson 是字符串，如果传了对象则转换
-    const body = {
+    const body = attachUserContext({
       ...payload,
       dataJson: typeof payload.dataJson === 'string' ? payload.dataJson : JSON.stringify(payload.dataJson),
-    };
+    });
     return request<PermitRecord>('/permits', {
       method: 'POST',
       body: JSON.stringify(body),
@@ -136,9 +142,10 @@ export const PermitService = {
    * 用于: 回复评论(更新 approvalLogs), 修改状态等非审批动作
    */
   update: async (id: string, data: Partial<PermitRecord>): Promise<PermitRecord> => {
+    const body = attachUserContext({ id, ...data });
     return request<PermitRecord>('/permits', {
       method: 'PATCH',
-      body: JSON.stringify({ id, ...data }),
+      body: JSON.stringify(body),
     });
   },
   /**
@@ -160,7 +167,11 @@ export const PermitService = {
   },
   /** 删除作业单 */
   delete: async (id: string): Promise<void> => {
-    return request<void>(`/permits?id=${id}`, {
+    const { userId, userName } = attachUserContext();
+    const query = new URLSearchParams({ id });
+    if (userId) query.set('userId', userId);
+    if (userName) query.set('userName', userName);
+    return request<void>(`/permits?${query.toString()}`, {
       method: 'DELETE',
     });
   },

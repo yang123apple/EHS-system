@@ -101,10 +101,11 @@ export async function POST(req: Request) {
       await createLog(
         userId,
         userName,
-        '创建作业票模板',
+        'CREATE',
         newTemplate.id,
-        `创建模板: ${name}`,
-        'template'
+        `创建作业票模板: ${name}`,
+        'template',
+        'WORK_PERMIT'
       );
     }
 
@@ -141,10 +142,11 @@ export async function DELETE(req: Request) {
       await createLog(
         userId,
         userName,
-        '删除作业票模板',
+        'DELETE',
         id,
-        '删除模板',
-        'template'
+        '删除作业票模板',
+        'template',
+        'WORK_PERMIT'
       );
     }
 
@@ -231,10 +233,11 @@ export async function PATCH(req: Request) {
       await createLog(
         userId,
         userName,
-        '更新作业票模板',
+        'UPDATE',
         id,
-        '更新模板',
-        'template'
+        '更新作业票模板',
+        'template',
+        'WORK_PERMIT'
       );
     }
 

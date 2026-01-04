@@ -317,6 +317,17 @@ export const PUT = withErrorHandling(
       }
     );
 
+    // 触发文档更新事件：入队，由 worker 处理
+    try {
+      const { enqueueAutoAssign } = await import('@/services/queue.service');
+      await enqueueAutoAssign('document_updated', { documentId: id, changedFields: Object.keys(updateData) });
+    } catch (e) {
+      // 如果入队失败，回退为直接异步触发
+      import('@/services/autoAssign.service').then(mod => {
+        mod.processEvent('document_updated', { documentId: id, changedFields: Object.keys(updateData) }).catch(err => console.error('autoAssign document_updated fallback error', err));
+      }).catch(err => console.error('load autoAssign.service failed', err));
+    }
+
     return NextResponse.json({ 
       success: true,
       doc: {

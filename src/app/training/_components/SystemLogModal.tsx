@@ -49,7 +49,7 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
       const params = new URLSearchParams({
         page: page.toString(),
         pageSize: pageSize.toString(),
-        targetType: 'training'
+        targetType: 'training'  // 使用targetType查询培训日志
       });
       
       if (actionFilter) params.append('action', actionFilter);

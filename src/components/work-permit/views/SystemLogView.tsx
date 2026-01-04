@@ -25,7 +25,12 @@ export default function SystemLogView() {
         page: pageNum.toString(),
         limit: limit.toString(),
       });
-      if (targetType) params.append('targetType', targetType);
+      // 兼容查询：同时匹配module或targetType
+      if (!targetType) {
+        params.append('targetType', 'permit');
+      } else {
+        params.append('targetType', targetType);
+      }
       if (actionFilter) params.append('action', actionFilter);
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);

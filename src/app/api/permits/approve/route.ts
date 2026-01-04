@@ -198,13 +198,15 @@ export const POST = withPermission('work_permit', 'approve', async (req: Request
     });
 
     // 🟢 插入日志
-    const actionType = action === 'pass' ? 'APPROVE_PASS' : 'APPROVE_REJECT';
+    const actionType = action === 'pass' ? 'APPROVE' : 'REJECT';
     createLog(
       userId, 
       userName, 
       actionType, 
       recordId, 
-      `审批意见: ${opinion}`
+      `审批意见: ${opinion}`,
+      'permit',
+      'WORK_PERMIT'
     );
 
     // 记录权限系统审计日志

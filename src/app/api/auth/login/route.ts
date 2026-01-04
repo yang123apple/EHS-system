@@ -24,6 +24,26 @@ export async function POST(req: Request) {
 
     // 简单的明文密码比对（实际生产应使用 bcrypt 等）
     if (user && user.password === password) {
+        // 检测是否为首次登录：查询历史登录日志数量
+        try {
+          const priorLogins = await prisma.systemLog.count({ where: { userId: user.id, action: 'LOGIN' } });
+          const isFirstLogin = priorLogins === 0;
+
+          if (isFirstLogin) {
+            // 将事件放入队列，由 worker 负责处理（提高可靠性且可重试）
+            try {
+              const { enqueueAutoAssign } = await import('@/services/queue.service');
+              await enqueueAutoAssign('user_first_login', { userId: user.id });
+            } catch (e) {
+              // 回退：如果队列失败，仍尝试直接触发（非阻塞）
+              import('@/services/autoAssign.service').then(mod => {
+                mod.processEvent('user_first_login', { userId: user.id }).catch(err => console.error('autoAssign first login fallback error', err));
+              }).catch(err => console.error('load autoAssign.service fallback failed', err));
+            }
+          }
+        } catch (e) {
+          console.error('首次登录检测失败', e);
+        }
       // 递归查找 directManagerId（如果用户没有设置，则通过部门层级查找）
       // 如果用户已设置 directManagerId，优先使用；否则通过递归查找部门层级来确定
       let directManagerId = user.directManagerId;
