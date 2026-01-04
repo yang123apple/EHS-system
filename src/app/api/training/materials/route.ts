@@ -24,7 +24,7 @@ export const POST = withErrorHandling(
     const body = await req.json();
     console.log('[Training Materials API] 接收到的数据:', JSON.stringify(body, null, 2));
     
-    const { title, description, type, category, url, duration, isExamRequired, passingScore, isPublic, uploaderId, questions } = body;
+    const { title, description, type, category, url, duration, isExamRequired, passingScore, examMode, randomQuestionCount, isPublic, uploaderId, questions } = body;
 
     // 验证必需字段
     if (!title || !type || !url || !uploaderId) {
@@ -68,6 +68,8 @@ export const POST = withErrorHandling(
         duration: duration ? parseInt(duration) : null,
         isExamRequired,
         passingScore: passingScore ? parseInt(passingScore) : null,
+        examMode: examMode || 'standard',
+        randomQuestionCount: examMode === 'random' && randomQuestionCount ? randomQuestionCount : null,
         isPublic: isPublic !== undefined ? isPublic : true,
         uploaderId,
         questions: isExamRequired && questions ? {

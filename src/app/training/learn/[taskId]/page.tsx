@@ -115,6 +115,11 @@ export default function LearnPage({ params }: { params: Promise<{ taskId: string
                 onComplete={handleComplete}
                 isExamRequired={material.isExamRequired}
                 onStartExam={() => {
+                    // 检查是否已通过
+                    if (assignment.isPassed) {
+                        alert('您已通过考试，不能再次参加');
+                        return;
+                    }
                     // 跳转到考试页面
                     router.push(`/training/exam/${assignment.id}`);
                 }}
@@ -129,13 +134,29 @@ export default function LearnPage({ params }: { params: Promise<{ taskId: string
 
                         {material.isExamRequired ? (
                             <div className="space-y-3">
-                                <p className="text-slate-600 mb-6">该课程需要通过考试才能结业。</p>
-                                <button onClick={() => router.push(`/training/exam/${assignment.id}`)} className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-200">
-                                    进入考试
-                                </button>
-                                <button onClick={() => router.push('/training/my-tasks')} className="w-full py-3 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200">
-                                    返回任务列表
-                                </button>
+                                {assignment.isPassed ? (
+                                    <>
+                                        <p className="text-slate-600 mb-6">恭喜！您已通过考试，不能再次参加。</p>
+                                        {assignment.examScore !== null && (
+                                            <div className="text-2xl font-bold text-blue-600 mb-4">
+                                                考试成绩: {assignment.examScore} 分
+                                            </div>
+                                        )}
+                                        <button onClick={() => router.push('/training/my-tasks')} className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-200">
+                                            返回任务列表
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="text-slate-600 mb-6">该课程需要通过考试才能结业。</p>
+                                        <button onClick={() => router.push(`/training/exam/${assignment.id}`)} className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-200">
+                                            进入考试
+                                        </button>
+                                        <button onClick={() => router.push('/training/my-tasks')} className="w-full py-3 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200">
+                                            返回任务列表
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         ) : (
                             <div>

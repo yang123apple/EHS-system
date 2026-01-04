@@ -8,6 +8,7 @@ export default function ExamPage({ params }: { params: Promise<{ taskId: string 
   const router = useRouter();
   const { taskId } = use(params);
   const [assignment, setAssignment] = useState<any>(null);
+  const [material, setMaterial] = useState<any>(null);
   const [questions, setQuestions] = useState<any[]>([]);
   const [answers, setAnswers] = useState<Record<string, string[]>>({}); // qId -> ['A']
   const [result, setResult] = useState<{ score: number, passed: boolean } | null>(null);
@@ -16,29 +17,33 @@ export default function ExamPage({ params }: { params: Promise<{ taskId: string 
   useEffect(() => {
     async function load() {
         try {
-            const assignRes = await apiFetch(`/api/training/assignment/${taskId}`);
-            const assignData = await assignRes.json();
-            setAssignment(assignData);
+            // 使用新的开始考试 API（taskId 实际上是 assignmentId）
+            const examRes = await apiFetch(`/api/training/exam/${taskId}/start`);
+            
+            if (!examRes.ok) {
+              const errorData = await examRes.json();
+              if (examRes.status === 403 && errorData.isPassed) {
+                alert('您已通过考试，不能再次参加');
+                router.push('/training/my-tasks');
+                return;
+              }
+              throw new Error(errorData.error || '获取考试题目失败');
+            }
 
-            const matRes = await apiFetch(`/api/training/materials/${assignData.task.materialId}`);
-            const matData = await matRes.json();
-
-            // Parse options if string
-            const parsedQuestions = matData.questions.map((q: any) => ({
-                ...q,
-                options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options,
-                answer: typeof q.answer === 'string' ? JSON.parse(q.answer) : q.answer
-            }));
-
-            setQuestions(parsedQuestions);
-        } catch (e) {
+            const examData = await examRes.json();
+            setAssignment(examData.assignment);
+            setMaterial(examData.material);
+            setQuestions(examData.questions);
+        } catch (e: any) {
             console.error(e);
+            alert(e.message || '加载考试失败');
+            router.push('/training/my-tasks');
         } finally {
             setLoading(false);
         }
     }
     load();
-  }, [taskId]);
+  }, [taskId, router]);
 
   const toggleAnswer = (qId: string, label: string, type: string) => {
       const current = answers[qId] || [];
@@ -70,7 +75,8 @@ export default function ExamPage({ params }: { params: Promise<{ taskId: string 
           }
       });
 
-      const passed = score >= assignment.task.material.passingScore;
+      const passingScore = material?.passingScore || 60;
+      const passed = score >= passingScore;
       setResult({ score, passed });
 
       // Save to backend
@@ -85,7 +91,7 @@ export default function ExamPage({ params }: { params: Promise<{ taskId: string 
   };
 
   if (loading) return <div className="p-10 text-center">加载试卷中...</div>;
-  if (!assignment) return <div>Error</div>;
+  if (!assignment || questions.length === 0) return <div className="p-10 text-center">加载中...</div>;
 
   if (result) {
       return (
@@ -114,8 +120,10 @@ export default function ExamPage({ params }: { params: Promise<{ taskId: string 
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="bg-white border-b px-6 py-4 sticky top-0 z-10 shadow-sm flex justify-between items-center">
           <div>
-              <h1 className="font-bold text-lg">{assignment.task.material.title} - 考试</h1>
-              <div className="text-xs text-slate-500">及格分: {assignment.task.material.passingScore}</div>
+              <h1 className="font-bold text-lg">{material?.title || '考试'}</h1>
+              <div className="text-xs text-slate-500">
+                题目数: {questions.length} | 总分: {questions.reduce((sum, q) => sum + q.score, 0)}分 | 及格分: {material?.passingScore || 60}分
+              </div>
           </div>
           <div className="text-sm font-mono bg-slate-100 px-3 py-1 rounded">
              已答: {Object.keys(answers).length}/{questions.length}

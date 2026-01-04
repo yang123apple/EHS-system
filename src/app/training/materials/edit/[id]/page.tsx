@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import ExamEditor from '@/components/training/ExamEditor';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/apiClient';
+import { Download, Upload } from 'lucide-react';
 
 export default function EditMaterialPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -20,8 +21,11 @@ export default function EditMaterialPage({ params }: { params: Promise<{ id: str
   const [isPublic, setIsPublic] = useState<boolean>(true);
   const [isExam, setIsExam] = useState<boolean>(false);
   const [passingScore, setPassingScore] = useState<number>(60);
+  const [examMode, setExamMode] = useState<string>('standard');
+  const [randomQuestionCount, setRandomQuestionCount] = useState<number>(10);
   const [questions, setQuestions] = useState<any[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [importing, setImporting] = useState<boolean>(false);
 
   useEffect(() => {
     if (!user) {
@@ -57,6 +61,8 @@ export default function EditMaterialPage({ params }: { params: Promise<{ id: str
       setIsPublic(data.isPublic !== false);
       setIsExam(data.isExamRequired || false);
       setPassingScore(data.passingScore || 60);
+      setExamMode(data.examMode || 'standard');
+      setRandomQuestionCount(data.randomQuestionCount || 10);
       
       console.log('[Edit Page] 设置的表单数据:', {
         title: data.title,
@@ -103,6 +109,8 @@ export default function EditMaterialPage({ params }: { params: Promise<{ id: str
         isPublic,
         isExamRequired: isExam,
         passingScore,
+        examMode: isExam ? examMode : 'standard',
+        randomQuestionCount: isExam && examMode === 'random' ? randomQuestionCount : null,
         questions: isExam ? questions.map(q => ({
           type: q.type,
           question: q.question,
@@ -193,15 +201,140 @@ export default function EditMaterialPage({ params }: { params: Promise<{ id: str
               {isExam && (
                 <div className="flex items-center gap-2">
                   <span className="text-sm">及格分数:</span>
-                  <input type="number" value={passingScore} onChange={e => setPassingScore(parseInt(e.target.value))} className="border rounded w-20 p-1"/>
+                  <input type="number" value={passingScore} onChange={e => setPassingScore(parseInt(e.target.value) || 60)} className="border rounded w-20 p-1"/>
                 </div>
               )}
             </div>
+
+            {isExam && (
+              <div className="space-y-4 border-t pt-4">
+                <div>
+                  <label className="block font-bold mb-2">考试模式</label>
+                  <select 
+                    className="w-full border rounded p-2" 
+                    value={examMode} 
+                    onChange={e => setExamMode(e.target.value)}
+                  >
+                    <option value="standard">标准模式（包含所有题目）</option>
+                    <option value="random">随机题库模式（随机抽取题目）</option>
+                  </select>
+                </div>
+
+                {examMode === 'random' && (
+                  <div>
+                    <label className="block font-bold mb-2">
+                      抽取题目数量
+                      <span className="text-sm text-slate-500 font-normal ml-2">
+                        （当前题库共 {questions.length} 道题）
+                      </span>
+                    </label>
+                    <input 
+                      type="number" 
+                      className="w-full border rounded p-2" 
+                      value={randomQuestionCount} 
+                      onChange={e => {
+                        const count = parseInt(e.target.value) || 1;
+                        const maxCount = questions.length || 1;
+                        setRandomQuestionCount(Math.min(Math.max(1, count), maxCount));
+                      }}
+                      min={1}
+                      max={questions.length || 1}
+                    />
+                    {questions.length > 0 && randomQuestionCount > questions.length && (
+                      <p className="text-sm text-red-500 mt-1">
+                        抽取数量不能超过题库总数（{questions.length}）
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {isExam && (
             <div>
-              <h3 className="font-bold mb-4">考试题目</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold">考试题目</h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await apiFetch(`/api/training/materials/${id}/download-template`);
+                        if (!res.ok) throw new Error('下载失败');
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `题目导入模板_${new Date().toISOString().split('T')[0]}.xlsx`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                      } catch (e) {
+                        console.error(e);
+                        alert('下载模板失败');
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 border rounded hover:bg-slate-50 text-sm"
+                  >
+                    <Download size={16} />
+                    下载导入模板
+                  </button>
+                  <label className="flex items-center gap-2 px-4 py-2 border rounded hover:bg-slate-50 text-sm cursor-pointer">
+                    <Upload size={16} />
+                    批量导入题目
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        setImporting(true);
+                        try {
+                          const formData = new FormData();
+                          formData.append('file', file);
+
+                          const res = await apiFetch(`/api/training/materials/${id}/import-questions`, {
+                            method: 'POST',
+                            body: formData
+                          });
+
+                          const result = await res.json();
+
+                          if (res.ok) {
+                            alert(`导入成功！共导入 ${result.imported} 道题目${result.errors ? `，${result.errors.length} 条错误` : ''}`);
+                            // 重新加载题目
+                            const materialRes = await apiFetch(`/api/training/materials/${id}`);
+                            const materialData = await materialRes.json();
+                            if (materialData.questions && materialData.questions.length > 0) {
+                              const loadedQuestions = materialData.questions.map((q: any) => ({
+                                type: q.type,
+                                question: q.question,
+                                options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options,
+                                answer: typeof q.answer === 'string' ? JSON.parse(q.answer) : q.answer,
+                                score: q.score || 10
+                              }));
+                              setQuestions(loadedQuestions);
+                            }
+                          } else {
+                            alert(`导入失败: ${result.error}${result.errors ? '\n' + result.errors.join('\n') : ''}`);
+                          }
+                        } catch (error: any) {
+                          console.error(error);
+                          alert('导入失败: ' + (error.message || '未知错误'));
+                        } finally {
+                          setImporting(false);
+                          // 清空文件输入
+                          e.target.value = '';
+                        }
+                      }}
+                      disabled={importing}
+                    />
+                  </label>
+                </div>
+              </div>
               <ExamEditor questions={questions} onChange={setQuestions} />
             </div>
           )}

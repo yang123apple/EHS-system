@@ -262,6 +262,8 @@ model TrainingMaterial {
   duration      Int?     // seconds, for video
   isExamRequired Boolean @default(false)
   passingScore  Int?
+  examMode      String   @default("standard") // standard, random
+  randomQuestionCount Int? // 随机模式下的题目数量
   isPublic      Boolean  @default(true) // 是否放入公共知识库
   uploaderId    String
   uploader      User     @relation(fields: [uploaderId], references: [id])

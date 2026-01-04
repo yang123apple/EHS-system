@@ -38,7 +38,7 @@ export const PUT = withErrorHandling(
       const body = await req.json();
       console.log('[Edit Material API] 接收到的数据:', JSON.stringify(body, null, 2));
       
-      const { title, description, category, isPublic, isExamRequired, passingScore, questions } = body;
+      const { title, description, category, isPublic, isExamRequired, passingScore, examMode, randomQuestionCount, questions } = body;
 
       // 更新材料信息
       const material = await prisma.trainingMaterial.update({
@@ -49,7 +49,9 @@ export const PUT = withErrorHandling(
           category,
           isPublic,
           isExamRequired,
-          passingScore
+          passingScore,
+          examMode: examMode || 'standard',
+          randomQuestionCount: examMode === 'random' && randomQuestionCount ? randomQuestionCount : null
         }
       });
 
@@ -67,7 +69,7 @@ export const PUT = withErrorHandling(
           question: q.question,
           type: q.type,
           options: JSON.stringify(q.options),
-          correctAnswer: JSON.stringify(q.correctAnswer || q.answer),
+          answer: JSON.stringify(q.correctAnswer || q.answer),
           score: q.score || 10
         }))
       });
