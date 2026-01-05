@@ -72,11 +72,13 @@ export default function LogsPage() {
     userId: '',
     action: '',
     targetType: '',
+    targetId: '',
     startDate: '',
     endDate: '',
   });
   const [archiveFiles, setArchiveFiles] = useState<ArchiveFile[]>([]);
   const [previewArchiveFile, setPreviewArchiveFile] = useState<string | null>(null);
+  const [selectedDetailsLog, setSelectedDetailsLog] = useState<SystemLog | null>(null);
 
   // 权限检查
   if (user && user.role !== 'admin') {
@@ -599,7 +601,7 @@ export default function LogsPage() {
                 <Filter size={18} className="text-gray-600" />
                 <h3 className="font-semibold text-gray-800">筛选条件</h3>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <input
                   type="text"
                   placeholder="用户ID"
@@ -619,6 +621,13 @@ export default function LogsPage() {
                   placeholder="目标类型"
                   value={filters.targetType}
                   onChange={(e) => setFilters({ ...filters, targetType: e.target.value })}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <input
+                  type="text"
+                  placeholder="对象ID"
+                  value={filters.targetId}
+                  onChange={(e) => setFilters({ ...filters, targetId: e.target.value })}
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <input
@@ -705,10 +714,21 @@ export default function LogsPage() {
                               </div>
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-500">
-                              <div className="flex items-center gap-2">
-                                <Monitor size={14} className="text-gray-400" />
-                                {log.details || '未知设备'}
-                              </div>
+                              {log.details ? (
+                                <button
+                                  onClick={() => setSelectedDetailsLog(log)}
+                                  className="flex items-center gap-2 hover:text-blue-600 transition-colors cursor-pointer text-left"
+                                  title="点击查看完整详情"
+                                >
+                                  <Monitor size={14} className="text-gray-400" />
+                                  <span>{log.details.length > 50 ? log.details.substring(0, 50) + '...' : log.details}</span>
+                                </button>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <Monitor size={14} className="text-gray-400" />
+                                  <span>未知设备</span>
+                                </div>
+                              )}
                             </td>
                           </>
                         )}
@@ -720,8 +740,18 @@ export default function LogsPage() {
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {log.targetId || '-'}
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
-                              {log.details || '-'}
+                            <td className="px-6 py-4 text-sm text-gray-500">
+                              {log.details ? (
+                                <button
+                                  onClick={() => setSelectedDetailsLog(log)}
+                                  className="text-left hover:text-blue-600 transition-colors cursor-pointer max-w-xs block"
+                                  title="点击查看完整详情"
+                                >
+                                  {log.details.length > 35 ? log.details.substring(0, 35) + '...' : log.details}
+                                </button>
+                              ) : (
+                                <span>-</span>
+                              )}
                             </td>
                           </>
                         )}
@@ -756,6 +786,93 @@ export default function LogsPage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* 详情查看弹窗 */}
+        {selectedDetailsLog && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
+              <div className="p-6 border-b flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">操作详情</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {formatDate(selectedDetailsLog.createdAt)} · {selectedDetailsLog.userName || '未知'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedDetailsLog(null)}
+                  className="p-2 hover:bg-gray-100 rounded-full text-gray-500"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-auto p-6">
+                <div className="space-y-4">
+                  {/* 基本信息 */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">操作类型</label>
+                      <div className="mt-1">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${getActionColor(selectedDetailsLog.action)}`}>
+                          {selectedDetailsLog.action}
+                        </span>
+                      </div>
+                    </div>
+                    {selectedDetailsLog.targetType && (
+                      <div>
+                        <label className="text-xs font-medium text-gray-500">目标类型</label>
+                        <div className="mt-1 text-sm text-gray-900">
+                          {selectedDetailsLog.targetType}
+                        </div>
+                      </div>
+                    )}
+                    {selectedDetailsLog.targetId && (
+                      <div>
+                        <label className="text-xs font-medium text-gray-500">目标ID</label>
+                        <div className="mt-1 text-sm text-gray-900 font-mono">
+                          {selectedDetailsLog.targetId}
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">操作人</label>
+                      <div className="mt-1 text-sm text-gray-900">
+                        {selectedDetailsLog.userName || '未知'}
+                      </div>
+                    </div>
+                    {selectedDetailsLog.ip && (
+                      <div>
+                        <label className="text-xs font-medium text-gray-500">IP地址</label>
+                        <div className="mt-1 text-sm text-gray-900 font-mono">
+                          {selectedDetailsLog.ip}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 详情描述 */}
+                  {selectedDetailsLog.details && (
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">详情描述</label>
+                      <div className="mt-1 p-3 bg-gray-50 rounded-lg text-sm text-gray-700 whitespace-pre-wrap break-words">
+                        {selectedDetailsLog.details}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-6 border-t bg-gray-50 flex justify-end">
+                <button
+                  onClick={() => setSelectedDetailsLog(null)}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

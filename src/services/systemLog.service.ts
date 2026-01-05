@@ -260,6 +260,7 @@ export class SystemLogService {
     page?: number;
     limit?: number;
     targetType?: string;
+    targetId?: string;
     action?: string;
     userId?: string;
     module?: string;
@@ -271,6 +272,7 @@ export class SystemLogService {
       page = 1,
       limit = 50,
       targetType,
+      targetId,
       action,
       userId,
       module,
@@ -292,6 +294,9 @@ export class SystemLogService {
     
     if (targetType) {
       baseConditions.push({ targetType: { contains: targetType } });
+    }
+    if (targetId) {
+      baseConditions.push({ targetId: { contains: targetId } });
     }
     if (action) {
       baseConditions.push({ action: { contains: action } });

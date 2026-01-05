@@ -270,8 +270,16 @@ export async function logApiOperation(
     
     // 从 details 中提取 targetId 和 targetLabel
     // 对于文档，优先使用 fullNum（业务编号），否则使用 documentId
-    const targetId = details?.fullNum || details?.documentId || details?.targetId || null;
+    // 对于作业票，使用 permitId
+    const targetId = details?.fullNum || details?.documentId || details?.permitId || details?.targetId || null;
     const targetLabel = details?.fileName || details?.name || details?.targetLabel || null;
+    
+    // 提取 details 字段（如果存在），否则使用完整的 details 对象转为 JSON
+    const detailsText = details?.details || (details ? JSON.stringify({
+      ...details,
+      userRole: user.role,
+      timestamp: new Date().toISOString(),
+    }) : null);
     
     // 获取用户部门信息
     // 注意：department 可能是对象（包含 name 属性）或字符串，需要兼容处理
@@ -293,11 +301,7 @@ export async function logApiOperation(
       targetId,
       targetType,
       targetLabel,
-      details: JSON.stringify({
-        ...details,
-        userRole: user.role,
-        timestamp: new Date().toISOString(),
-      }),
+      details: detailsText,
     });
   } catch (error) {
     console.error('[API Log] 记录操作日志失败:', error);

@@ -126,12 +126,26 @@ export async function POST(req: Request) {
 
     // 🟢 插入日志
     if (userId && userName) {
+      // 格式化日期显示（YYYY/MM/DD）
+      const formattedStartDate = startDate ? new Date(startDate).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '';
+      const formattedEndDate = endDate ? new Date(endDate).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '';
+      
+      const logDetails = [
+        `创建工程项目: ${name}`,
+        `编号: ${autoCode}`,
+        `地点: ${location}`,
+        formattedStartDate,
+        formattedEndDate,
+        requestDept ? `申请部门: ${requestDept}` : '',
+        supplierName ? `供应商: ${supplierName}` : ''
+      ].filter(Boolean).join('，');
+      
       createLog(
         userId,
         userName,
         'CREATE',
         newProject.id,
-        `创建工程项目: ${name}`,
+        logDetails,
         'project',
         'WORK_PERMIT'
       );
@@ -191,6 +205,16 @@ export async function DELETE(req: Request) {
     const userName = searchParams.get('userName');
     if (!id) return NextResponse.json({ error: '缺少 ID' }, { status: 400 });
     
+    // 🟢 先查询工程信息，用于日志记录
+    const projectToDelete = await prisma.project.findUnique({
+      where: { id },
+      select: { name: true, code: true }
+    });
+
+    if (!projectToDelete) {
+      return NextResponse.json({ error: '工程不存在' }, { status: 404 });
+    }
+    
     // 🟢 软删除：更新 deletedAt 字段
     await prisma.project.update({ 
       where: { id },
@@ -204,7 +228,7 @@ export async function DELETE(req: Request) {
         userName,
         'DELETE',
         id,
-        '删除工程项目',
+        `删除工程项目: ${projectToDelete.name}，编号: ${projectToDelete.code}`,
         'project',
         'WORK_PERMIT'
       );

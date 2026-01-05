@@ -27,9 +27,11 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
   const [pageSize] = useState(20);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedSnapshot, setSelectedSnapshot] = useState<any>(null);
+  const [selectedDetailsLog, setSelectedDetailsLog] = useState<SystemLog | null>(null);
   
   // 筛选条件
   const [filters, setFilters] = useState({
+    targetId: '',
     action: '',
     startDate: '',
     endDate: '',
@@ -46,6 +48,7 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
         pageSize: pageSize.toString(),
       });
 
+      if (filters.targetId) params.append('targetId', filters.targetId);
       if (filters.action) params.append('action', filters.action);
       if (filters.startDate) params.append('startDate', filters.startDate);
       if (filters.endDate) params.append('endDate', filters.endDate);
@@ -81,6 +84,7 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
   // 重置筛选
   const resetFilters = () => {
     setFilters({
+      targetId: '',
       action: '',
       startDate: '',
       endDate: '',
@@ -146,7 +150,7 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
         >
           <Filter size={16} />
           筛选
-          {(filters.action || filters.startDate || filters.endDate) && (
+          {(filters.targetId || filters.action || filters.startDate || filters.endDate) && (
             <span className="ml-1 w-2 h-2 bg-blue-500 rounded-full"></span>
           )}
         </button>
@@ -155,7 +159,20 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
       {/* 筛选面板 */}
       {showFilters && (
         <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                对象ID
+              </label>
+              <input
+                type="text"
+                value={filters.targetId}
+                onChange={(e) => setFilters({ ...filters, targetId: e.target.value })}
+                placeholder="输入对象ID..."
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 操作类型
@@ -289,12 +306,21 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 text-sm text-slate-600">
-                        <FileText size={14} className="text-slate-400 flex-shrink-0" />
-                        <span className="line-clamp-2" title={log.details || ''}>
-                          {log.details || '-'}
-                        </span>
-                      </div>
+                      {log.details ? (
+                        <button
+                          onClick={() => setSelectedDetailsLog(log)}
+                          className="flex items-center gap-2 text-sm text-slate-600 hover:text-blue-600 transition-colors cursor-pointer text-left w-full"
+                          title="点击查看完整详情"
+                        >
+                          <FileText size={14} className="text-slate-400 flex-shrink-0" />
+                          <span>{log.details.length > 35 ? log.details.substring(0, 35) + '...' : log.details}</span>
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-2 text-sm text-slate-600">
+                          <FileText size={14} className="text-slate-400 flex-shrink-0" />
+                          <span>-</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {log.snapshot && Object.keys(log.snapshot).length > 0 ? (
@@ -341,6 +367,81 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
           </div>
         )}
       </div>
+
+      {/* 详情查看弹窗 */}
+      {selectedDetailsLog && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
+            <div className="p-6 border-b flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">操作详情</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  {formatTime(selectedDetailsLog.createdAt)} · {selectedDetailsLog.userName || 'System'}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedDetailsLog(null)}
+                className="p-2 hover:bg-slate-100 rounded-full text-slate-500"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-6">
+              <div className="space-y-4">
+                {/* 基本信息 */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">操作类型</label>
+                    <div className="mt-1">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getActionColor(selectedDetailsLog.action)}`}>
+                        {getActionLabel(selectedDetailsLog.action)}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">目标类型</label>
+                    <div className="mt-1 text-sm text-slate-900">
+                      {selectedDetailsLog.targetType || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">目标ID</label>
+                    <div className="mt-1 text-sm text-slate-900 font-mono">
+                      {selectedDetailsLog.targetId || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">操作人</label>
+                    <div className="mt-1 text-sm text-slate-900">
+                      {selectedDetailsLog.userName || 'System'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 详情描述 */}
+                {selectedDetailsLog.details && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">操作描述</label>
+                    <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-700 whitespace-pre-wrap break-words">
+                      {selectedDetailsLog.details}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-6 border-t bg-slate-50 flex justify-end">
+              <button
+                onClick={() => setSelectedDetailsLog(null)}
+                className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 快照查看弹窗 */}
       {selectedSnapshot && (

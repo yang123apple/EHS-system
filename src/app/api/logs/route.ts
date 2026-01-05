@@ -10,6 +10,7 @@ export async function GET(req: Request) {
   // 支持 limit 和 pageSize 两种参数名
   const limit = parseInt(searchParams.get('limit') || searchParams.get('pageSize') || '50');
   const targetType = searchParams.get('targetType') || '';
+  const targetId = searchParams.get('targetId') || '';
   const action = searchParams.get('action') || '';
   const userId = searchParams.get('userId') || '';
   const startDate = searchParams.get('startDate') || '';
@@ -21,6 +22,7 @@ export async function GET(req: Request) {
       page,
       limit,
       targetType,
+      targetId,
       action,
       userId,
       startDate,

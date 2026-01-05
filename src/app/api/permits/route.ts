@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createLog } from '@/lib/logger';
 import { withAuth, withPermission, logApiOperation } from '@/middleware/auth';
 export const dynamic = 'force-dynamic';
 
@@ -143,25 +142,15 @@ export const PATCH = withPermission('work_permit', 'edit', async (req: Request, 
       data: updateData,
     });
 
-    // 🟢 插入日志
-    if (userId && userName) {
-      createLog(
-        userId,
-        userName,
-        'UPDATE',
-        id,
-        '更新作业票记录',
-        'permit',
-        'WORK_PERMIT'
-      );
-    }
-
-    // 记录权限系统审计日志
+    // 记录权限系统审计日志（合并系统日志和权限审计日志）
     await logApiOperation(
       user,
       'work_permit',
       'update_permit',
-      { permitId: id }
+      { 
+        permitId: id,
+        details: '更新作业票记录'
+      }
     );
 
     return NextResponse.json(updatedRecord);
@@ -301,25 +290,18 @@ export const POST = withPermission('work_permit', 'create', async (req: Request,
       }
     });
 
-    // 🟢 插入日志
-    if (userId && userName) {
-      createLog(
-        userId,
-        userName,
-        'CREATE',
-        newRecord.id,
-        `创建作业票记录 - 项目 ID: ${projectId}`,
-        'permit',
-        'WORK_PERMIT'
-      );
-    }
-
-    // 记录权限系统审计日志
+    // 记录权限系统审计日志（合并系统日志和权限审计日志）
     await logApiOperation(
       user,
       'work_permit',
       'create_permit',
-      { permitCode, projectId, templateId }
+      { 
+        permitId: newRecord.id,
+        permitCode, 
+        projectId, 
+        templateId,
+        details: `创建作业票记录 - 作业类别: ${templateType}，作业单编号: ${permitCode}`
+      }
     );
 
     return NextResponse.json(newRecord);
@@ -340,25 +322,15 @@ export const DELETE = withPermission('work_permit', 'delete', async (req: Reques
 
     await prisma.workPermitRecord.delete({ where: { id } });
 
-    // 🟢 插入日志
-    if (userId && userName) {
-      createLog(
-        userId,
-        userName,
-        'DELETE',
-        id,
-        '删除作业票记录',
-        'permit',
-        'WORK_PERMIT'
-      );
-    }
-
-    // 记录权限系统审计日志
+    // 记录权限系统审计日志（合并系统日志和权限审计日志）
     await logApiOperation(
       user,
       'work_permit',
       'delete_permit',
-      { permitId: id }
+      { 
+        permitId: id,
+        details: '删除作业票记录'
+      }
     );
 
     return NextResponse.json({ success: true });

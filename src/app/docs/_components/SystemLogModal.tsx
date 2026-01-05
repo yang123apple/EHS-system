@@ -30,6 +30,7 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
   
   // 筛选状态
   const [actionFilter, setActionFilter] = useState('');
+  const [targetIdFilter, setTargetIdFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [userFilter, setUserFilter] = useState('');
@@ -40,12 +41,15 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
   // 快照查看
   const [viewingSnapshot, setViewingSnapshot] = useState<any>(null);
   const [showSnapshotModal, setShowSnapshotModal] = useState(false);
+  
+  // 详情查看
+  const [selectedDetailsLog, setSelectedDetailsLog] = useState<SystemLog | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       loadLogs();
     }
-  }, [isOpen, page, actionFilter, startDate, endDate, userFilter]);
+  }, [isOpen, page, actionFilter, targetIdFilter, startDate, endDate, userFilter]);
 
   const loadLogs = async () => {
     setLoading(true);
@@ -57,6 +61,7 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
       });
       
       if (actionFilter) params.append('action', actionFilter);
+      if (targetIdFilter) params.append('targetId', targetIdFilter);
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
       if (userFilter) params.append('userId', userFilter);
@@ -168,7 +173,7 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
             </div>
 
             {/* 筛选器 */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
               <div>
                 <label className="text-xs text-slate-600 mb-1 block">操作类型</label>
                 <select
@@ -183,6 +188,17 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
                   <option value="document_info_updated">修改信息</option>
                   <option value="document_history_deleted">删除历史版本</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-600 mb-1 block">对象ID</label>
+                <input
+                  type="text"
+                  value={targetIdFilter}
+                  onChange={(e) => { setTargetIdFilter(e.target.value); setPage(1); }}
+                  placeholder="输入对象ID..."
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm"
+                />
               </div>
 
               <div>
@@ -213,10 +229,11 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
               </div>
 
               <div className="flex items-end">
-                {(actionFilter || startDate || endDate) && (
+                {(actionFilter || targetIdFilter || startDate || endDate) && (
                   <button
                     onClick={() => {
                       setActionFilter('');
+                      setTargetIdFilter('');
                       setStartDate('');
                       setEndDate('');
                       setPage(1);
@@ -260,9 +277,17 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
                           </span>
                         </div>
                         
-                        <p className="text-sm text-slate-700 mb-2" title={log.details || ''}>
-                          {log.details || '-'}
-                        </p>
+                        {log.details ? (
+                          <button
+                            onClick={() => setSelectedDetailsLog(log)}
+                            className="text-left text-sm text-slate-700 mb-2 hover:text-blue-600 transition-colors cursor-pointer w-full"
+                            title="点击查看完整详情"
+                          >
+                            <p>{log.details.length > 35 ? log.details.substring(0, 35) + '...' : log.details}</p>
+                          </button>
+                        ) : (
+                          <p className="text-sm text-slate-700 mb-2">-</p>
+                        )}
                         
                         <div className="flex items-center gap-4 text-xs text-slate-500">
                           <div className="flex items-center gap-1">
@@ -320,6 +345,81 @@ export default function SystemLogModal({ isOpen, onClose }: SystemLogModalProps)
           )}
         </div>
       </div>
+
+      {/* 详情查看弹窗 */}
+      {selectedDetailsLog && (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
+            <div className="p-6 border-b flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">操作详情</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  {new Date(selectedDetailsLog.createdAt).toLocaleString('zh-CN')} · {selectedDetailsLog.userName || 'System'}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedDetailsLog(null)}
+                className="p-2 hover:bg-slate-100 rounded-full text-slate-500"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-6">
+              <div className="space-y-4">
+                {/* 基本信息 */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">操作类型</label>
+                    <div className="mt-1">
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${getActionColor(selectedDetailsLog.action)}`}>
+                        {getActionLabel(selectedDetailsLog.action)}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">目标类型</label>
+                    <div className="mt-1 text-sm text-slate-900">
+                      {selectedDetailsLog.targetType || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">目标ID</label>
+                    <div className="mt-1 text-sm text-slate-900 font-mono">
+                      {selectedDetailsLog.targetId || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">操作人</label>
+                    <div className="mt-1 text-sm text-slate-900">
+                      {selectedDetailsLog.userName || 'System'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 详情描述 */}
+                {selectedDetailsLog.details && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">操作描述</label>
+                    <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-700 whitespace-pre-wrap break-words">
+                      {selectedDetailsLog.details}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-6 border-t bg-slate-50 flex justify-end">
+              <button
+                onClick={() => setSelectedDetailsLog(null)}
+                className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 快照查看弹窗 */}
       {showSnapshotModal && viewingSnapshot && (

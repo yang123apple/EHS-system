@@ -285,9 +285,9 @@ export default function WorkPermitPage() {
   // === 6. 事件处理程序 (Handlers) ===
   // 项目相关
   const handleDeleteProject = async (id: string, name: string) => {
-    if(!confirm(`确定要删除项目“${name}”吗？`)) return;
+    if(!confirm(`确定要删除项目"${name}"吗？`)) return;
     try {
-      await apiFetch(`/api/projects?id=${id}`, { method: 'DELETE' });
+      await apiFetch(`/api/projects?id=${id}&userId=${user?.id || ''}&userName=${encodeURIComponent(user?.name || '')}`, { method: 'DELETE' });
       fetchProjects(projectPage);
       fetchAllRecords(recordPage);
     } catch(e) {}

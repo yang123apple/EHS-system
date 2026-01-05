@@ -6,6 +6,7 @@ export default function SystemLogView() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedLog, setSelectedLog] = useState<any | null>(null);
+  const [selectedDetailsLog, setSelectedDetailsLog] = useState<any | null>(null);
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -14,6 +15,7 @@ export default function SystemLogView() {
 
   // Filters
   const [targetType, setTargetType] = useState('');
+  const [targetIdFilter, setTargetIdFilter] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -25,12 +27,17 @@ export default function SystemLogView() {
         page: pageNum.toString(),
         limit: limit.toString(),
       });
-      // 兼容查询：同时匹配module或targetType
+      // 使用 module 参数查询 WORK_PERMIT 模块的所有日志（包括 project 和 permit）
+      // 如果用户选择了特定的 targetType，则同时使用 targetType 过滤
       if (!targetType) {
-        params.append('targetType', 'permit');
+        // 默认查询 WORK_PERMIT 模块的所有日志
+        params.append('module', 'WORK_PERMIT');
       } else {
+        // 用户选择了特定类型，同时使用 module 和 targetType 过滤
+        params.append('module', 'WORK_PERMIT');
         params.append('targetType', targetType);
       }
+      if (targetIdFilter) params.append('targetId', targetIdFilter);
       if (actionFilter) params.append('action', actionFilter);
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
@@ -59,7 +66,7 @@ export default function SystemLogView() {
 
   useEffect(() => {
     fetchLogs(1);
-  }, [targetType, actionFilter, startDate, endDate]);
+  }, [targetType, targetIdFilter, actionFilter, startDate, endDate]);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
@@ -89,13 +96,17 @@ export default function SystemLogView() {
             className="px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">全部类型</option>
-            <option value="hazard">隐患排查</option>
-            <option value="document">文档管理</option>
+            <option value="project">工程项目</option>
             <option value="permit">作业许可</option>
-            <option value="config">系统配置</option>
-            <option value="user">用户管理</option>
-            <option value="org">组织架构</option>
           </select>
+
+          <input
+            type="text"
+            placeholder="对象ID..."
+            value={targetIdFilter}
+            onChange={(e) => setTargetIdFilter(e.target.value)}
+            className="px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 w-48"
+          />
 
           <input
             type="text"
@@ -119,10 +130,11 @@ export default function SystemLogView() {
             className="px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
           />
 
-          {(targetType || actionFilter || startDate || endDate) && (
+          {(targetType || targetIdFilter || actionFilter || startDate || endDate) && (
             <button
               onClick={() => {
                 setTargetType('');
+                setTargetIdFilter('');
                 setActionFilter('');
                 setStartDate('');
                 setEndDate('');
@@ -180,8 +192,18 @@ export default function SystemLogView() {
                   <td className="p-4 text-slate-400 text-xs font-mono select-all">
                     {log.targetId || '-'}
                   </td>
-                  <td className="p-4 text-slate-600" title={log.details || ''}>
-                    <span className="line-clamp-2">{log.details || '-'}</span>
+                  <td className="p-4 text-slate-600">
+                    {log.details ? (
+                      <button
+                        onClick={() => setSelectedDetailsLog(log)}
+                        className="text-left w-full hover:text-blue-600 transition-colors cursor-pointer"
+                        title="点击查看完整详情"
+                      >
+                        <span>{log.details.length > 35 ? log.details.substring(0, 35) + '...' : log.details}</span>
+                      </button>
+                    ) : (
+                      <span>-</span>
+                    )}
                   </td>
                   <td className="p-4">
                     {log.snapshot && (typeof log.snapshot === 'object' ? Object.keys(log.snapshot).length > 0 : log.snapshot) && (
@@ -226,6 +248,86 @@ export default function SystemLogView() {
             </div>
         )}
       </div>
+
+      {/* 详情查看弹窗 */}
+      {selectedDetailsLog && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
+            <div className="p-6 border-b flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">操作详情</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  {new Date(selectedDetailsLog.createdAt).toLocaleString()} · {selectedDetailsLog.userName || 'System'}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedDetailsLog(null)}
+                className="p-2 hover:bg-slate-100 rounded-full text-slate-500"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-6">
+              <div className="space-y-4">
+                {/* 基本信息 */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">操作类型</label>
+                    <div className="mt-1">
+                      <span className={`inline-block px-3 py-1 rounded text-sm font-bold ${
+                        selectedDetailsLog.action.includes('DELETE') ? 'bg-red-100 text-red-700' :
+                        selectedDetailsLog.action.includes('APPROVE') ? 'bg-green-100 text-green-700' :
+                        selectedDetailsLog.action.includes('ASSIGN') ? 'bg-purple-100 text-purple-700' :
+                        'bg-blue-50 text-blue-700'
+                      }`}>
+                        {selectedDetailsLog.action}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">目标类型</label>
+                    <div className="mt-1 text-sm text-slate-900">
+                      {selectedDetailsLog.targetType || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">目标ID</label>
+                    <div className="mt-1 text-sm text-slate-900 font-mono">
+                      {selectedDetailsLog.targetId || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">操作人</label>
+                    <div className="mt-1 text-sm text-slate-900">
+                      {selectedDetailsLog.userName || 'System'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 详情描述 */}
+                {selectedDetailsLog.details && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">操作描述</label>
+                    <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-700 whitespace-pre-wrap break-words">
+                      {selectedDetailsLog.details}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-6 border-t bg-slate-50 flex justify-end">
+              <button
+                onClick={() => setSelectedDetailsLog(null)}
+                className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 快照查看弹窗 */}
       {selectedLog && (

@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     const action = searchParams.get('action') || '';
     const userId = searchParams.get('userId') || '';
     const targetType = searchParams.get('targetType') || '';
+    const targetId = searchParams.get('targetId') || '';
     const startDate = searchParams.get('startDate') || '';
     const endDate = searchParams.get('endDate') || '';
     const type = searchParams.get('type') || ''; // 'login' | 'operation'
@@ -74,6 +75,10 @@ export async function GET(request: NextRequest) {
 
     if (targetType) {
       where.targetType = targetType;
+    }
+
+    if (targetId) {
+      where.targetId = { contains: targetId };
     }
 
     if (startDate || endDate) {
