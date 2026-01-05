@@ -272,7 +272,7 @@ export default function AddPermitModal({
         <div className="flex-1 overflow-hidden flex">
           {/* 左侧选择器 */}
           <div className={`${mobileStep === 'select' ? 'flex' : 'hidden'} lg:flex w-full lg:w-64 border-r p-4 overflow-y-auto bg-slate-50/50 flex-col`}>
-             {templates.filter(t => !t.isLocked).map(t => (
+             {templates.filter(t => !t.isLocked && t.level !== 'secondary').map(t => (
                <div key={t.id} onClick={() => { setSelectedTemplate(t); setPermitFormData({}); setOrientation((t.orientation as any) || 'portrait'); }}
                     className={`p-3 mb-2 rounded-lg cursor-pointer border ${selectedTemplate?.id === t.id ? 'bg-blue-50 border-blue-300 font-bold' : 'bg-white border-slate-200'}`}>
                  {t.name}
@@ -377,7 +377,11 @@ export default function AddPermitModal({
             parentParsedFields={selectedParsedFields}
             existingData={permitFormData[`SECTION_${sectionInfo.cellKey}`]}
             onSave={handleSectionSave}
-            onClose={() => { setSectionModalOpen(false); setCurrentSectionCell(null); }}
+            onClose={() => { 
+              console.log('🔵 关闭子表单，当前保存的数据:', permitFormData[`SECTION_${sectionInfo.cellKey}`]);
+              setSectionModalOpen(false); 
+              setCurrentSectionCell(null); 
+            }}
           />
         ) : (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white p-6 rounded-xl">⚠️ 未绑定二级模板 <button onClick={() => setSectionModalOpen(false)} className="block mt-4 w-full py-2 bg-slate-100 rounded">关闭</button></div></div>

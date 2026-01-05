@@ -390,11 +390,29 @@ export default function ExcelRenderer({
         });
     }
 
-    // 3. 更新状态
-    const mergedJson = JSON.stringify(mergedData || {});
-    const currentJson = JSON.stringify(formDataRef.current || {});
-    if (mergedJson !== currentJson) {
-        setFormData(mergedData);
+    // 3. 更新状态：智能合并策略，保护用户输入
+    // - 优先使用 mergedData（来自 initialData）的值
+    // - 但如果 currentData 中有值而 mergedData 中对应字段为空/未定义，保留 currentData 的值（用户输入）
+    const currentData = formDataRef.current || {};
+    const finalData = { ...mergedData };
+    
+    // 保留用户在当前 formData 中输入的数据（这些数据可能还没有同步到 initialData）
+    // 只有当 mergedData 中对应字段为空/未定义时，才保留 currentData 的值
+    Object.keys(currentData).forEach(key => {
+      const mergedValue = mergedData[key];
+      const currentValue = currentData[key];
+      // 如果 mergedData 中没有该字段，或者值为空/未定义，但 currentData 中有有效值，保留 currentData 的值
+      if ((mergedValue === undefined || mergedValue === null || mergedValue === '') && 
+          currentValue !== undefined && currentValue !== null && currentValue !== '') {
+        finalData[key] = currentValue;
+      }
+    });
+    
+    // 只有当合并后的数据与当前数据不同时才更新
+    const finalJson = JSON.stringify(finalData);
+    const currentJson = JSON.stringify(currentData);
+    if (finalJson !== currentJson) {
+        setFormData(finalData);
     }
   }, [JSON.stringify(initialData), JSON.stringify(approvalLogs), JSON.stringify(workflowConfig)]);
 
@@ -688,8 +706,8 @@ export default function ExcelRenderer({
                 signatures={signatureArray}
                 onAddSignature={() => {}}
                 readonly={true}
-                maxWidth={Math.min((styleObj as any).width as number || 200, 200)}
-                maxHeight={Math.min((styleObj as any).height as number || 100, 100)}
+                maxWidth={Math.min((styleObj as any).width as number || 200, 100)}
+                maxHeight={Math.min((styleObj as any).height as number || 100, 50)}
               />
             ) : (
               <span className="text-slate-300 text-xs">/</span>
@@ -716,8 +734,8 @@ export default function ExcelRenderer({
                 newArray.splice(index, 1);
                 handleInputChange(rIndex, cIndex, newArray.length > 0 ? newArray : '');
               }}
-              maxWidth={Math.min((styleObj as any).width as number || 200, 200)}
-              maxHeight={Math.min((styleObj as any).height as number || 100, 100)}
+              maxWidth={Math.min((styleObj as any).width as number || 200, 100)}
+              maxHeight={Math.min((styleObj as any).height as number || 100, 50)}
               readonly={false}
             />
           </div>
@@ -868,7 +886,9 @@ export default function ExcelRenderer({
     }
 
     // 🟢 处理选项字段：区分互斥选项组（单选）和普通选项（多选）
-    if (/^[£R□☑]/.test(valStr) || valStr.includes("£") || valStr.includes("□")) {
+    // 排除单个字母"R"，只有当"R"后面还有其他内容时才识别为选项符号
+    const isOptionField = (valStr !== "R" && /^[£R□☑]/.test(valStr)) || valStr.includes("£") || valStr.includes("□");
+    if (isOptionField) {
       // 检查是否为互斥选项组（单元格中有多个 £）
       const optionMatches = valStr.match(/[£￡][^£￡]+/g);
       

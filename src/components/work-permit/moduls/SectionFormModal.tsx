@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Save, FileText } from 'lucide-react';
 import { Template, ParsedField } from '@/types/work-permit';
 import ExcelRenderer from '../ExcelRenderer';
@@ -43,6 +43,8 @@ export default function SectionFormModal({
 }: Props) {
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  // 使用 ref 跟踪是否已经初始化过，避免无限循环
+  const initializedRef = useRef<string | null>(null);
 
   // 生成二级编号：父编号-字段名简写
   const sectionCode = useMemo(() => {
@@ -225,24 +227,56 @@ export default function SectionFormModal({
   // 初始化表单数据（合并继承数据）
   useEffect(() => {
     if (isOpen) {
-      if (existingData?.data) {
+      // 生成一个唯一标识，用于判断是否需要重新初始化
+      const dataKey = existingData?.code || 'new';
+      const existingDataStr = JSON.stringify(existingData?.data || {});
+      const inheritedDataStr = JSON.stringify(inheritedData);
+      const currentKey = `${dataKey}-${existingDataStr}-${inheritedDataStr}`;
+      
+      // 如果已经初始化过相同的数据，跳过
+      if (initializedRef.current === currentKey) {
+        return;
+      }
+      
+      console.log('🔵 子表单打开，检查 existingData:', existingData);
+      console.log('🔵 existingData?.data:', existingData?.data);
+      console.log('🔵 inheritedData:', inheritedData);
+      
+      if (existingData?.data && Object.keys(existingData.data).length > 0) {
         // 编辑模式：合并已有数据和继承数据（继承数据优先级更低）
+        // 注意：已有数据的优先级更高，覆盖继承数据
         const mergedData = { ...inheritedData, ...existingData.data };
+        console.log('🔵 子单合并数据:', { 
+          inheritedData, 
+          existingData: existingData.data, 
+          mergedData,
+          mergedDataKeys: Object.keys(mergedData),
+          mergedDataSample: Object.keys(mergedData).slice(0, 5).reduce((acc, key) => {
+            acc[key] = mergedData[key];
+            return acc;
+          }, {} as Record<string, any>)
+        });
+        // 强制更新，确保数据正确加载
         setFormData(mergedData);
-        console.log('🔵 子单合并数据:', { inheritedData, existingData: existingData.data, mergedData });
+        initializedRef.current = currentKey;
       } else {
         // 新建时使用继承的数据
         console.log('🔵 子单初始化数据 - inheritedData:', inheritedData);
+        // 强制更新，确保数据正确加载
         setFormData(inheritedData);
-        console.log('🔵 子单设置formData完成');
+        initializedRef.current = currentKey;
       }
       
       // 🟢 V3.4 初始化纸张方向
       if (boundTemplate?.orientation) {
         setOrientation(boundTemplate.orientation as 'portrait' | 'landscape');
       }
+    } else {
+      // 关闭时清空表单数据和初始化标记，确保下次打开时能正确加载
+      setFormData({});
+      initializedRef.current = null;
     }
-  }, [isOpen, existingData, inheritedData, boundTemplate?.orientation]);
+  }, [isOpen, existingData?.code, JSON.stringify(existingData?.data || {}), JSON.stringify(inheritedData), boundTemplate?.orientation]);
 
   const handleSave = () => {
     if (!boundTemplate) return;
@@ -352,14 +386,9 @@ export default function SectionFormModal({
               maxWidth: '100%',
             }}
           >
-            {/* 二级表单编号显示 */}
-            <div className="absolute top-0 right-0 px-2 py-1 text-[10px] text-purple-600 font-mono bg-purple-50 border-b border-l border-purple-200 rounded-bl z-10">
-              {sectionCode}
-            </div>
-
             {templateData && (
               <ExcelRenderer
-                key={`${boundTemplate?.id}-${JSON.stringify(formData)}`}
+                key={`${boundTemplate?.id}-${isOpen ? 'open' : 'closed'}-${existingData?.code || 'new'}`}
                 templateData={templateData}
                 initialData={formData}
                 parsedFields={parsedFields}
