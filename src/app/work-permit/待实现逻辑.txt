@@ -1,0 +1,120 @@
+要实现“软删除”（Soft Delete），你需要修改 **数据库模型** 和 **后端 API 逻辑**。前端代码通常不需要改动（因为前端只负责调用 DELETE 接口，至于后端是真删还是假删，前端无感知）。
+
+以下是具体的修改步骤和文件位置：
+
+### 第一步：修改数据库模型 (Prisma Schema)
+
+这是最基础的一步。你需要给表增加一个标记删除时间的字段。
+
+**文件：** `prisma/schema.prisma` (该文件你未上传，但在项目根目录下)
+
+**修改内容：**
+找到 `model WorkPermitRecord`，给它增加一个可选的 `deletedAt` 字段。
+
+```prisma
+model WorkPermitRecord {
+  id          String   @id @default(cuid())
+  // ... 其他字段保持不变
+  
+  // 🟢 新增：删除时间 (为空代表未删除，有时间代表已删除)
+  deletedAt   DateTime? 
+}
+
+```
+
+*修改完后，记得运行 `npx prisma db push` 或 `npx prisma migrate dev` 来同步数据库结构。*
+
+---
+
+### 第二步：修改后端 API (`route.ts`)
+
+你需要修改 **查询逻辑（GET）** 和 **删除逻辑（DELETE）**。
+
+**文件：** `src/app/api/permits/route.ts`
+
+#### 1. 修改 GET 方法 (只查未删除的)
+
+找到 `export async function GET(req: Request)` 函数，修改查询条件。
+
+```typescript
+// src/app/api/permits/route.ts
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const projectId = searchParams.get('projectId');
+
+  try {
+    // 🟢 修改前：const whereCondition = projectId ? { projectId } : {};
+    
+    // 🟢 修改后：强制增加 deletedAt: null 条件
+    const whereCondition = {
+      ...(projectId ? { projectId } : {}), // 如果有 projectId 就加上
+      deletedAt: null                      // ✅ 只查询 deletedAt 为空的记录
+    };
+
+    const records = await prisma.workPermitRecord.findMany({
+      where: whereCondition,
+      include: { 
+        template: true, 
+        project: true   
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    return NextResponse.json(records);
+  } catch (error) {
+    return NextResponse.json({ error: '获取记录失败' }, { status: 500 });
+  }
+}
+
+```
+
+#### 2. 修改 DELETE 方法 (执行软删除)
+
+找到 `export async function DELETE(req: Request)` 函数，把 `delete` 换成 `update`。
+
+```typescript
+// src/app/api/permits/route.ts
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+    if (!id) return NextResponse.json({ error: '缺少 ID' }, { status: 400 });
+
+    // 🔴 修改前 (硬删除)：
+    // await prisma.workPermitRecord.delete({ where: { id } });
+
+    // 🟢 修改后 (软删除)：
+    await prisma.workPermitRecord.update({
+      where: { id },
+      data: { 
+        deletedAt: new Date() // ✅ 不删数据，只打上时间戳
+      }
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ error: '删除失败' }, { status: 500 });
+  }
+}
+
+```
+
+---
+
+### 第三步：(可选) 项目的软删除
+
+如果你希望“项目 (Project)”也支持软删除，你需要对 `src/app/api/projects/route.ts` 做同样的修改：
+
+1. `schema.prisma` 里的 `model Project` 增加 `deletedAt DateTime?`。
+2. `api/projects/route.ts` 里的 `GET` 增加 `where: { deletedAt: null }`。
+3. `api/projects/route.ts` 里的 `DELETE` 改为 `update` 设置 `deletedAt`。
+
+### 总结
+
+你只需要动两个地方：
+
+1. **数据库** (`schema.prisma`)：加字段。
+2. **后端** (`route.ts`)：GET 时过滤，DELETE 时更新。
+
+前端页面 (`page.tsx` 等) 不需要修改，因为软删除后，API 返回的列表自然就不包含已删除的数据了，视觉效果和真删一样，但数据在数据库里是安全的。

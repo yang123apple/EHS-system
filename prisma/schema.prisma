@@ -1,0 +1,437 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Project {
+  id              String             @id @default(cuid())
+  code            String             @unique @default(cuid())
+  name            String
+  contractNo      String?
+  location        String
+  startDate       DateTime
+  endDate         DateTime
+  requestDept     String
+  requestHead     String
+  requestContact  String
+  mgmtDept        String?
+  mgmtHead        String?
+  mgmtContact     String?
+  supplierName    String
+  supplierHead    String
+  supplierContact String
+  attachments     String?
+  deletedAt       DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  permits         WorkPermitRecord[]
+}
+
+model WorkPermitTemplate {
+  id               String             @id @default(cuid())
+  name             String
+  type             String
+  structureJson    String
+  workflowConfig   String?
+  parsedFields     String?
+  level            String             @default("primary")
+  sectionBindings  String?
+  orientation      String             @default("portrait")
+  mobileFormConfig String?
+  isLocked         Boolean            @default(false)
+  createdAt        DateTime           @default(now())
+  records          WorkPermitRecord[]
+}
+
+model WorkPermitRecord {
+  id                String             @id @default(cuid())
+  code              String?            @unique
+  projectId         String
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  templateId        String
+  template          WorkPermitTemplate @relation(fields: [templateId], references: [id])
+  dataJson          String
+  status            String             @default("draft")
+  currentStep       Int                @default(0)
+  approvalLogs      String?
+  attachments       String?
+  parsedFieldValues String?
+  createdAt         DateTime           @default(now())
+}
+
+model User {
+  id                  String                  @id @default(cuid())
+  username            String                  @unique
+  name                String
+  password            String
+  avatar              String                  @default("/image/default_avatar.jpg")
+  role                String                  @default("user")
+  departmentId        String?
+  department          Department?             @relation(fields: [departmentId], references: [id])
+  jobTitle            String?
+  directManagerId     String?
+  permissions         String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  reportedHazards     HazardRecord[]          @relation("Reporter")
+  assignedHazards     HazardRecord[]          @relation("Responsible")
+  uploadedMaterials   TrainingMaterial[]
+  publishedTasks      TrainingTask[]          @relation("TaskPublisher")
+  trainingAssignments TrainingAssignment[]
+  learnedRecords      MaterialLearnedRecord[]
+  uploadedFiles       FileMetadata[]          @relation("FileUploader")
+}
+
+model Department {
+  id        String       @id @default(cuid())
+  name      String
+  parentId  String?
+  parent    Department?  @relation("DeptHierarchy", fields: [parentId], references: [id])
+  children  Department[] @relation("DeptHierarchy")
+  managerId String?
+  level     Int          @default(1)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  users     User[]
+}
+
+model HazardRecord {
+  id                      String    @id @default(cuid())
+  code                    String?   @unique
+  status                  String    @default("reported")
+  riskLevel               String    @default("low")
+  type                    String
+  location                String
+  desc                    String
+  photos                  String?
+  reporterId              String
+  reporter                User      @relation("Reporter", fields: [reporterId], references: [id])
+  reporterName            String
+  reportTime              DateTime  @default(now())
+  responsibleId           String?
+  responsible             User?     @relation("Responsible", fields: [responsibleId], references: [id])
+  responsibleName         String?
+  responsibleDept         String?
+  deadline                DateTime?
+  rectifyDesc             String?
+  rectifyPhotos           String?
+  rectifyTime             DateTime?
+  verifierId              String?
+  verifierName            String?
+  verifyTime              DateTime?
+  rectifyRequirement      String?
+  requireEmergencyPlan    Boolean   @default(false)
+  emergencyPlanDeadline   DateTime?
+  emergencyPlanContent    String?
+  emergencyPlanSubmitTime DateTime?
+  ccDepts                 String?
+  ccUsers                 String?
+  logs                    String?
+  old_personal_ID         String?
+  dopersonal_ID           String? // 当前步骤执行人ID（动态字段，随步骤流转更新）
+  dopersonal_Name         String? // 当前步骤执行人姓名（动态字段，随步骤流转更新）
+  candidateHandlers       String? // 🟢 或签/会签模式：候选处理人列表（JSON格式）
+  approvalMode            String? // 🟢 当前步骤的审批模式（OR=或签，AND=会签）
+  currentStepIndex        Int?      @default(0) // 当前步骤索引（用于追踪工作流位置）
+  currentStepId           String? // 当前步骤ID（用于追踪工作流位置）
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+}
+
+model HazardConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Document {
+  id         String            @id @default(cuid())
+  name       String
+  type       String
+  docxPath   String?
+  pdfPath    String?
+  prefix     String?
+  suffix     Int?
+  fullNum    String?
+  level      Int
+  parentId   String?
+  parent     Document?         @relation("DocHierarchy", fields: [parentId], references: [id])
+  children   Document[]        @relation("DocHierarchy")
+  dept       String?
+  uploader   String?
+  uploadTime DateTime          @default(now())
+  searchText String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  history    DocumentHistory[]
+}
+
+model DocumentHistory {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  type       String // 'docx', 'xlsx', 'pdf'
+  name       String
+  path       String
+  uploader   String?
+  uploadTime DateTime @default(now())
+  createdAt  DateTime @default(now())
+}
+
+model SystemLog {
+  id String @id @default(cuid())
+
+  // ============ 操作人身份信息（快照） ============
+  userId           String?
+  userName         String?
+  userRole         String? // 操作时的系统角色（admin/user/manager等）
+  userDepartment   String? // 操作时所属部门名称
+  userDepartmentId String? // 操作时所属部门ID
+  userJobTitle     String? // 操作时的职位
+  userRoleInAction String? // 用户在本次操作中的业务角色（上报人/整改人/验收人/审批人等）
+
+  // ============ 操作信息 ============
+  module       String // 所属模块：HAZARD, WORK_PERMIT, TRAINING, USER, ORG, SYSTEM 等
+  action       String // 操作类型：CREATE, UPDATE, DELETE, APPROVE, REJECT, EXPORT, LOGIN 等
+  actionLabel  String? // 操作类型的中文描述（自动生成，如："创建隐患"、"审批作业票"）
+  businessCode String? // 标准业务编码（如：HD_CRT_001, WP_APV_001），遵循业务编号规范
+
+  // ============ 操作对象 ============
+  targetId    String? // 被操作的业务实体编号（如：HZ-2024-001, JOB-2024-001）⚠️ 使用业务编号，非数据库ID
+  targetType  String? // 操作对象类型（hazard, document, permit, training_task, user 等）
+  targetLabel String? // 被操作对象的描述（如：隐患简述前50字、文档标题、作业类型）
+  targetLink  String? // 🔗 操作对象的详情页链接（用于日志追溯跳转）
+
+  // ============ 审计细节（核心） ============
+  snapshot   String? // 📸 操作后的完整对象快照（JSON），清洗敏感字段后存储，用于完整还原当时的状态
+  diff       String? // 📊 修改前后的差异对比（JSON），格式：{ fieldName: { old: value, new: value } }
+  changes    String? // ⚠️ 保留字段，向下兼容，优先使用 diff
+  beforeData String? // ⚠️ 保留字段，向下兼容，新系统使用 snapshot 和 diff
+  afterData  String? // ⚠️ 保留字段，向下兼容，新系统使用 snapshot 和 diff
+
+  // ============ 客户端环境信息 ============
+  clientInfo String? // 📱 客户端环境信息（JSON），包含：{ ip, userAgent, device, browser, os }
+  ip         String? // ⚠️ 保留字段，向下兼容，新系统存入 clientInfo
+  userAgent  String? // ⚠️ 保留字段，向下兼容，新系统存入 clientInfo
+
+  // ============ 其他信息 ============
+  details String? // 操作的自然语言描述（如："张三 审批通过了 作业票 [JOB-2024-001]"）
+
+  createdAt DateTime @default(now())
+
+  // ============ 性能优化索引 ============
+  @@index([userId]) // 按用户查询
+  @@index([module]) // 按模块查询
+  @@index([action]) // 按操作类型查询
+  @@index([targetType]) // 按对象类型查询
+  @@index([targetId]) // 按业务编号查询（高频）
+  @@index([businessCode]) // 按业务编码查询
+  @@index([createdAt]) // 按时间排序
+  @@index([module, targetId]) // 复合查询：某模块下的某个对象的全生命周期日志
+  @@index([userId, createdAt]) // 复合查询：某用户的操作时间线
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String
+  title       String
+  content     String
+  relatedType String?
+  relatedId   String?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TrainingMaterial {
+  id                  String                  @id @default(cuid())
+  title               String
+  description         String?
+  type                String // video, pdf, docx
+  category            String? // 学习类型分类
+  url                 String
+  convertedUrl        String? // PDF version of docx
+  thumbnail           String? // 缩略图路径
+  duration            Int? // seconds, for video
+  isExamRequired      Boolean                 @default(false)
+  passingScore        Int?
+  examMode            String                  @default("standard") // standard, random
+  randomQuestionCount Int? // 随机模式下的题目数量
+  isPublic            Boolean                 @default(true) // 是否放入公共知识库
+  uploaderId          String
+  uploader            User                    @relation(fields: [uploaderId], references: [id])
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  questions           ExamQuestion[]
+  tasks               TrainingTask[]
+  learnedRecords      MaterialLearnedRecord[]
+}
+
+model ExamQuestion {
+  id         String           @id @default(cuid())
+  materialId String
+  material   TrainingMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  type       String // single, multiple
+  question   String
+  options    String // JSON string
+  answer     String // JSON string
+  score      Int
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+}
+
+model TrainingTask {
+  id              String               @id @default(cuid())
+  title           String
+  description     String?
+  startDate       DateTime
+  endDate         DateTime
+  materialId      String
+  material        TrainingMaterial     @relation(fields: [materialId], references: [id])
+  publisherId     String
+  publisher       User                 @relation("TaskPublisher", fields: [publisherId], references: [id])
+  targetType      String // all, dept, user
+  targetConfig    String? // JSON string
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  assignments     TrainingAssignment[]
+  autoAssignRules AutoAssignRule[]
+}
+
+// 自动派发规则：用于把培训任务与事件/规则绑定
+model AutoAssignRule {
+  id        String       @id @default(cuid())
+  taskId    String
+  task      TrainingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  mode      String // 'event' | 'rule'
+  eventType String? // 例如: 'user_first_login','job_changed','document_updated','exam_finished'
+  condition String? // 存储触发条件与目标配置的 JSON 字符串，例如 { jobTitle: '操作工' } 或 { documentId: '...' }
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model TrainingAssignment {
+  id          String       @id @default(cuid())
+  taskId      String
+  task        TrainingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  status      String // assigned, in-progress, completed, passed, failed
+  progress    Int // 0-100 or seconds watched
+  isPassed    Boolean      @default(false)
+  examScore   Int?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([taskId, userId])
+}
+
+model MaterialLearnedRecord {
+  id         String           @id @default(cuid())
+  materialId String
+  material   TrainingMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learnedAt  DateTime         @default(now())
+
+  @@unique([materialId, userId])
+}
+
+// 通知模板管理
+model NotificationTemplate {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  title            String // 支持变量占位符，如 {{user.name}}
+  content          String // 支持变量占位符
+  type             String // hazard, training, work_permit, system
+  triggerEvent     String // 触发事件：hazard_created, hazard_assigned, etc
+  triggerCondition String? // JSON配置：条件规则
+  isActive         Boolean  @default(true)
+  variables        String? // JSON数组：可用变量列表
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// AI API 配置
+model AIApiConfig {
+  id                 String     @id @default(cuid())
+  name               String     @unique
+  provider           String // openai, azure, custom
+  apiKey             String // 加密存储
+  endpoint           String
+  model              String? // gpt-4, gpt-3.5-turbo, etc
+  maxTokens          Int        @default(2000)
+  temperature        Float      @default(0.7)
+  isActive           Boolean    @default(true)
+  rateLimitPerMinute Int        @default(1000) // 限流策略：每分钟最大调用次数
+  rateLimitPerDay    Int        @default(50000) // 每天最大调用次数
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  logs               AIApiLog[]
+}
+
+// AI API 调用日志
+model AIApiLog {
+  id              String      @id @default(cuid())
+  configId        String
+  config          AIApiConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  requestBy       String? // 调用者用户ID或系统名称
+  requestSource   String? // hazard, training, work_permit, custom
+  requestPayload  String? // JSON：请求内容
+  responsePayload String? // JSON：响应内容
+  tokens          Int? // 消耗的token数
+  duration        Int? // 响应时间（毫秒）
+  status          String // success, error, rate_limited
+  errorMessage    String?
+  ip              String?
+  createdAt       DateTime    @default(now())
+}
+
+// AI API 用户限流策略
+model AIApiRateLimit {
+  id           String   @id @default(cuid())
+  userId       String? // 用户ID，如果为null则应用于所有用户
+  departmentId String? // 部门ID，如果为null则应用于所有部门
+  dailyLimit   Int      @default(100) // 每日API调用总次数限制
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, departmentId], name: "userId_departmentId") // 确保每个用户/部门组合只有一个限流策略
+  @@index([userId])
+  @@index([departmentId])
+}
+
+// 文件元数据表 - 用于文件索引和增量备份
+model FileMetadata {
+  id             String    @id @default(cuid())
+  filePath       String    @unique // 文件相对路径，如 /uploads/docs/DOCX-xxx.docx
+  fileName       String // 原始文件名
+  fileType       String // docx, pdf, xlsx, mp4, jpg, png等
+  fileSize       Int // 文件大小（字节）
+  md5Hash        String    @unique // MD5哈希值，用于去重和增量备份
+  category       String // docs, training, avatar, thumbnail, other
+  uploaderId     String?
+  uploader       User?     @relation("FileUploader", fields: [uploaderId], references: [id])
+  uploadedAt     DateTime  @default(now())
+  lastAccessedAt DateTime? // 最后访问时间，用于归档策略
+  isArchived     Boolean   @default(false) // 是否已归档到冷存储
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([md5Hash])
+  @@index([category])
+  @@index([uploadedAt])
+  @@index([lastAccessedAt])
+  @@index([isArchived])
+}

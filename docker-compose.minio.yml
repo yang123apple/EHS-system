@@ -1,0 +1,45 @@
+services:
+  # MinIO Server
+  minio:
+    image: minio/minio:RELEASE.2023-12-09T18-15-09Z
+    container_name: ehs-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"   # API 端口
+      - "9001:9001"   # Console 端口
+    environment:
+      # 初始 Root User 和 Password（从环境变量读取，默认值）
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-now}
+    volumes:
+      # 持久化数据到宿主机
+      - minio-data:/data
+      # 配置文件（可选）
+      - minio-config:/root/.minio
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - ehs-network
+
+volumes:
+  minio-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD:-./data/minio-data}
+  minio-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD:-./data/minio-config}
+
+networks:
+  ehs-network:
+    driver: bridge
+

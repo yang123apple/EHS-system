@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数据库修复与备份同步工具</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .header h1 {
+      color: #333;
+      font-size: 28px;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .status-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .status-card h2 {
+      color: #333;
+      font-size: 20px;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .status-item {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+
+    .status-item label {
+      display: block;
+      color: #666;
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+
+    .status-item value {
+      display: block;
+      color: #333;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+      color: white;
+    }
+
+    .btn-success:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(17, 153, 142, 0.4);
+    }
+
+    .result-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      display: none;
+    }
+
+    .result-card.show {
+      display: block;
+    }
+
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .result-header h3 {
+      color: #333;
+      font-size: 18px;
+    }
+
+    .result-badge {
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .result-badge.success {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .result-badge.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .result-badge.warning {
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    .steps-list {
+      list-style: none;
+      margin-top: 15px;
+    }
+
+    .step-item {
+      padding: 12px;
+      margin-bottom: 8px;
+      border-radius: 6px;
+      background: #f8f9fa;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .step-item.success {
+      background: #d4edda;
+      border-left: 4px solid #28a745;
+    }
+
+    .step-item.error {
+      background: #f8d7da;
+      border-left: 4px solid #dc3545;
+    }
+
+    .step-item.warning {
+      background: #fff3cd;
+      border-left: 4px solid #ffc107;
+    }
+
+    .step-item.running {
+      background: #d1ecf1;
+      border-left: 4px solid #17a2b8;
+    }
+
+    .step-icon {
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .step-content {
+      flex: 1;
+    }
+
+    .step-name {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 4px;
+    }
+
+    .step-message {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .backup-list {
+      margin-top: 15px;
+    }
+
+    .backup-item {
+      padding: 12px;
+      margin-bottom: 8px;
+      border-radius: 6px;
+      background: #f8f9fa;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .backup-info {
+      flex: 1;
+    }
+
+    .backup-name {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 4px;
+    }
+
+    .backup-meta {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .error-list {
+      margin-top: 15px;
+      padding: 15px;
+      background: #f8d7da;
+      border-radius: 6px;
+      border-left: 4px solid #dc3545;
+    }
+
+    .error-item {
+      color: #721c24;
+      margin-bottom: 5px;
+    }
+
+    .summary {
+      margin-top: 15px;
+      padding: 15px;
+      background: #e7f3ff;
+      border-radius: 6px;
+      border-left: 4px solid #2196F3;
+    }
+
+    .summary-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .summary-label {
+      color: #666;
+    }
+
+    .summary-value {
+      color: #333;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔧 数据库修复与备份同步工具</h1>
+      <p>快速修复数据库并同步所有增量+全量备份</p>
+    </div>
+
+    <div class="status-card">
+      <h2>📊 系统状态</h2>
+      <div class="status-grid" id="statusGrid">
+        <div class="status-item">
+          <label>数据库文件</label>
+          <value id="dbExists">检查中...</value>
+        </div>
+        <div class="status-item">
+          <label>数据库大小</label>
+          <value id="dbSize">-</value>
+        </div>
+        <div class="status-item">
+          <label>全量备份数</label>
+          <value id="fullBackupCount">-</value>
+        </div>
+        <div class="status-item">
+          <label>增量备份数</label>
+          <value id="incrementalBackupCount">-</value>
+        </div>
+      </div>
+      <div class="action-buttons">
+        <button class="btn btn-primary" onclick="repairDatabase()" id="repairBtn">
+          <span>🔧</span>
+          <span>修复数据库</span>
+        </button>
+        <button class="btn btn-success" onclick="syncBackups()" id="syncBtn">
+          <span>📦</span>
+          <span>同步备份</span>
+        </button>
+        <button class="btn btn-primary" onclick="refreshStatus()" id="refreshBtn">
+          <span>🔄</span>
+          <span>刷新状态</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="result-card" id="repairResult">
+      <div class="result-header">
+        <h3>🔧 数据库修复结果</h3>
+        <span class="result-badge" id="repairBadge">处理中...</span>
+      </div>
+      <ul class="steps-list" id="repairSteps"></ul>
+      <div id="repairErrors"></div>
+      <div class="summary" id="repairSummary"></div>
+    </div>
+
+    <div class="result-card" id="syncResult">
+      <div class="result-header">
+        <h3>📦 备份同步结果</h3>
+        <span class="result-badge" id="syncBadge">处理中...</span>
+      </div>
+      <ul class="steps-list" id="syncSteps"></ul>
+      <div id="syncErrors"></div>
+      <div class="backup-list" id="backupList"></div>
+      <div class="summary" id="syncSummary"></div>
+    </div>
+  </div>
+
+  <script>
+    // 刷新状态
+    async function refreshStatus() {
+      try {
+        const response = await fetch('/api/status');
+        const status = await response.json();
+
+        document.getElementById('dbExists').textContent = status.database.exists ? '✓ 存在' : '✗ 不存在';
+        document.getElementById('dbSize').textContent = status.database.sizeFormatted;
+        document.getElementById('fullBackupCount').textContent = status.backups.fullCount + ' 个';
+        document.getElementById('incrementalBackupCount').textContent = status.backups.incrementalCount + ' 个';
+      } catch (error) {
+        console.error('刷新状态失败:', error);
+      }
+    }
+
+    // 修复数据库
+    async function repairDatabase() {
+      const btn = document.getElementById('repairBtn');
+      const resultCard = document.getElementById('repairResult');
+      const stepsList = document.getElementById('repairSteps');
+      const errorsDiv = document.getElementById('repairErrors');
+      const summaryDiv = document.getElementById('repairSummary');
+      const badge = document.getElementById('repairBadge');
+
+      btn.disabled = true;
+      resultCard.classList.add('show');
+      stepsList.innerHTML = '<li class="step-item running"><span class="step-icon">⏳</span><div class="step-content"><div class="step-name">处理中...</div></div></li>';
+      errorsDiv.innerHTML = '';
+      summaryDiv.innerHTML = '';
+      badge.textContent = '处理中...';
+      badge.className = 'result-badge warning';
+
+      try {
+        const response = await fetch('/api/repair', { method: 'POST' });
+        const result = await response.json();
+
+        stepsList.innerHTML = '';
+        result.steps.forEach(step => {
+          const li = document.createElement('li');
+          li.className = `step-item ${step.status}`;
+          
+          let icon = '⏳';
+          if (step.status === 'success') icon = '✓';
+          else if (step.status === 'error') icon = '✗';
+          else if (step.status === 'warning') icon = '⚠';
+
+          li.innerHTML = `
+            <span class="step-icon">${icon}</span>
+            <div class="step-content">
+              <div class="step-name">[步骤 ${step.step}] ${step.name}</div>
+              <div class="step-message">${step.message}</div>
+            </div>
+          `;
+          stepsList.appendChild(li);
+        });
+
+        if (result.errors && result.errors.length > 0) {
+          errorsDiv.innerHTML = `
+            <div class="error-list">
+              <strong>错误:</strong>
+              ${result.errors.map(err => `<div class="error-item">• ${err}</div>`).join('')}
+            </div>
+          `;
+        }
+
+        summaryDiv.innerHTML = `
+          <div class="summary-item">
+            <span class="summary-label">状态:</span>
+            <span class="summary-value">${result.success ? '成功' : '失败'}</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">耗时:</span>
+            <span class="summary-value">${result.duration} 秒</span>
+          </div>
+        `;
+
+        badge.textContent = result.success ? '成功' : '失败';
+        badge.className = `result-badge ${result.success ? 'success' : 'error'}`;
+
+      } catch (error) {
+        stepsList.innerHTML = `<li class="step-item error"><span class="step-icon">✗</span><div class="step-content"><div class="step-name">错误</div><div class="step-message">${error.message}</div></div></li>`;
+        badge.textContent = '失败';
+        badge.className = 'result-badge error';
+      } finally {
+        btn.disabled = false;
+        refreshStatus();
+      }
+    }
+
+    // 同步备份
+    async function syncBackups() {
+      const btn = document.getElementById('syncBtn');
+      const resultCard = document.getElementById('syncResult');
+      const stepsList = document.getElementById('syncSteps');
+      const errorsDiv = document.getElementById('syncErrors');
+      const backupListDiv = document.getElementById('backupList');
+      const summaryDiv = document.getElementById('syncSummary');
+      const badge = document.getElementById('syncBadge');
+
+      btn.disabled = true;
+      resultCard.classList.add('show');
+      stepsList.innerHTML = '<li class="step-item running"><span class="step-icon">⏳</span><div class="step-content"><div class="step-name">处理中...</div></div></li>';
+      errorsDiv.innerHTML = '';
+      backupListDiv.innerHTML = '';
+      summaryDiv.innerHTML = '';
+      badge.textContent = '处理中...';
+      badge.className = 'result-badge warning';
+
+      try {
+        const response = await fetch('/api/sync', { method: 'POST' });
+        const result = await response.json();
+
+        stepsList.innerHTML = '';
+        result.steps.forEach(step => {
+          const li = document.createElement('li');
+          li.className = `step-item ${step.status}`;
+          
+          let icon = '⏳';
+          if (step.status === 'success') icon = '✓';
+          else if (step.status === 'error') icon = '✗';
+          else if (step.status === 'warning') icon = '⚠';
+
+          li.innerHTML = `
+            <span class="step-icon">${icon}</span>
+            <div class="step-content">
+              <div class="step-name">[步骤 ${step.step}] ${step.name}</div>
+              <div class="step-message">${step.message}</div>
+            </div>
+          `;
+          stepsList.appendChild(li);
+        });
+
+        if (result.backups) {
+          const allBackups = [
+            ...result.backups.full.map(b => ({ ...b, type: '全量' })),
+            ...result.backups.incremental.map(b => ({ ...b, type: '增量' })),
+          ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+          if (allBackups.length > 0) {
+            backupListDiv.innerHTML = '<h4 style="margin-bottom: 10px; color: #333;">备份列表:</h4>';
+            allBackups.forEach(backup => {
+              const div = document.createElement('div');
+              div.className = 'backup-item';
+              div.innerHTML = `
+                <div class="backup-info">
+                  <div class="backup-name">${backup.filename} <span style="color: #667eea;">[${backup.type}]</span></div>
+                  <div class="backup-meta">${backup.sizeFormatted} • ${backup.createdAtFormatted}</div>
+                </div>
+              `;
+              backupListDiv.appendChild(div);
+            });
+          }
+        }
+
+        if (result.errors && result.errors.length > 0) {
+          errorsDiv.innerHTML = `
+            <div class="error-list">
+              <strong>错误:</strong>
+              ${result.errors.map(err => `<div class="error-item">• ${err}</div>`).join('')}
+            </div>
+          `;
+        }
+
+        summaryDiv.innerHTML = `
+          <div class="summary-item">
+            <span class="summary-label">状态:</span>
+            <span class="summary-value">${result.success ? '成功' : '失败'}</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">全量备份:</span>
+            <span class="summary-value">${result.backups.full.length} 个</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">增量备份:</span>
+            <span class="summary-value">${result.backups.incremental.length} 个</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">耗时:</span>
+            <span class="summary-value">${result.duration} 秒</span>
+          </div>
+        `;
+
+        badge.textContent = result.success ? '成功' : '失败';
+        badge.className = `result-badge ${result.success ? 'success' : 'error'}`;
+
+      } catch (error) {
+        stepsList.innerHTML = `<li class="step-item error"><span class="step-icon">✗</span><div class="step-content"><div class="step-name">错误</div><div class="step-message">${error.message}</div></div></li>`;
+        badge.textContent = '失败';
+        badge.className = 'result-badge error';
+      } finally {
+        btn.disabled = false;
+        refreshStatus();
+      }
+    }
+
+    // 页面加载时刷新状态
+    window.addEventListener('load', () => {
+      refreshStatus();
+      // 每30秒自动刷新状态
+      setInterval(refreshStatus, 30000);
+    });
+  </script>
+</body>
+</html>
+

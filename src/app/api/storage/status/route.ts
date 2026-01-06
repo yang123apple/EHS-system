@@ -1,0 +1,68 @@
+/**
+ * MinIO 存储服务状态 API
+ * 检查 MinIO 连接状态和配置信息
+ */
+
+import { NextResponse } from 'next/server';
+import { isMinIOInitialized } from '@/lib/startup';
+import { minioService } from '@/lib/minio';
+
+export async function GET() {
+  try {
+    const initialized = isMinIOInitialized();
+    
+    if (!initialized) {
+      return NextResponse.json({
+        success: false,
+        initialized: false,
+        message: 'MinIO 未初始化',
+        error: 'MinIO 服务未启动或配置不正确',
+        suggestion: '请检查 MinIO 服务是否运行: docker-compose -f docker-compose.minio.yml up -d',
+      });
+    }
+
+    // 获取 MinIO 详细信息
+    try {
+      const client = minioService.getClient();
+      const buckets = await client.listBuckets();
+      
+      const config = {
+        endPoint: process.env.MINIO_ENDPOINT || 'localhost',
+        port: parseInt(process.env.MINIO_PORT || '9000', 10),
+        useSSL: process.env.MINIO_USE_SSL === 'true',
+      };
+
+      return NextResponse.json({
+        success: true,
+        initialized: true,
+        message: 'MinIO 服务运行正常',
+        config: {
+          ...config,
+          endpoint: `${config.useSSL ? 'https' : 'http'}://${config.endPoint}:${config.port}`,
+        },
+        buckets: buckets.map(b => ({
+          name: b.name,
+          creationDate: b.creationDate,
+        })),
+        bucketsCount: buckets.length,
+      });
+    } catch (error: any) {
+      return NextResponse.json({
+        success: false,
+        initialized: true,
+        message: 'MinIO 已初始化但连接失败',
+        error: error.message,
+      });
+    }
+  } catch (error: any) {
+    return NextResponse.json(
+      {
+        success: false,
+        initialized: false,
+        error: error.message || '检查 MinIO 状态失败',
+      },
+      { status: 500 }
+    );
+  }
+}
+

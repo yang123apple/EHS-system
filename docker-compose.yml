@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # MinIO Server - 对象存储服务
+  minio:
+    image: minio/minio:RELEASE.2024-11-20T22-40-07Z
+    container_name: ehs-minio
+    restart: unless-stopped
+    ports:
+      - "${MINIO_PORT:-9000}:9000"   # API 端口
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"   # Console 端口
+    environment:
+      # 从环境变量读取，支持 .env.local 配置
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-now}
+    volumes:
+      # 数据持久化到宿主机（生产环境建议使用命名卷）
+      - minio-data:/data
+      # 配置文件持久化
+      - minio-config:/root/.minio
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ehs-network
+    labels:
+      - "com.ehs.service=storage"
+      - "com.ehs.description=MinIO Object Storage Server"
+
+  # MinIO Client (mc) - 用于备份和同步操作
+  # 作为工具容器，不常驻运行，通过 docker exec 或脚本调用
+  minio-client:
+    image: minio/mc:RELEASE.2024-11-20T22-40-07Z
+    container_name: ehs-mc
+    restart: "no"  # 不自动重启，作为工具容器
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      # MinIO 服务器连接配置
+      MC_HOST_minio: http://${MINIO_ROOT_USER:-admin}:${MINIO_ROOT_PASSWORD:-change-me-now}@minio:9000
+      # 备份目标配置（可选，用于灾难恢复）
+      MC_HOST_backup: ${MC_BACKUP_HOST:-}
+    volumes:
+      # 挂载备份脚本
+      - ./scripts:/scripts:ro
+      # 挂载备份目标目录（本地备份）
+      - ./data/minio-backup:/backup
+      # 挂载 MinIO 数据目录（用于直接访问）
+      - minio-data:/data:ro
+    entrypoint: /bin/sh
+    command: -c "tail -f /dev/null"  # 保持容器运行，用于执行备份命令
+    networks:
+      - ehs-network
+    labels:
+      - "com.ehs.service=backup-tool"
+      - "com.ehs.description=MinIO Client for backup operations"
+
+volumes:
+  # MinIO 数据卷（生产环境建议使用命名卷而非 bind mount）
+  minio-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD:-./data/minio-data}
+  # MinIO 配置卷
+  minio-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD:-./data/minio-config}
+
+networks:
+  ehs-network:
+    driver: bridge
+    name: ehs-network
+
