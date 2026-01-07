@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withAuth, withPermission, logApiOperation } from '@/middleware/auth';
+import { mapJsonToColumns, inferWorkTypeFromTemplate } from '@/utils/dataMapper';
 export const dynamic = 'force-dynamic';
 
 // 🟢 生成作业单编号（格式：项目日期-项目序号-类型-作业日期-顺序号）
@@ -135,7 +136,63 @@ export const PATCH = withPermission('work_permit', 'edit', async (req: Request, 
     const updateData: any = {};
     if (approvalLogs !== undefined) updateData.approvalLogs = approvalLogs;
     if (attachments !== undefined) updateData.attachments = attachments;
-    if (dataJson !== undefined) updateData.dataJson = dataJson; // 以备不时之需
+    // 🟢 处理 timenow 字段：如果更新了 dataJson，自动填充 timenow 字段
+    if (dataJson !== undefined) {
+      let processedDataJson = typeof dataJson === 'string' ? JSON.parse(dataJson) : { ...dataJson };
+      
+      // 获取模板的 parsedFields
+      const record = await prisma.workPermitRecord.findUnique({
+        where: { id },
+        select: { templateId: true, template: { select: { type: true, parsedFields: true } } }
+      });
+      
+      if (record?.templateId) {
+        const template = record.template;
+        
+        if (template?.parsedFields) {
+          try {
+            const parsedFields = JSON.parse(template.parsedFields as string);
+            const now = new Date();
+            const timeString = now.toLocaleString('zh-CN', { 
+              year: 'numeric', 
+              month: '2-digit', 
+              day: '2-digit', 
+              hour: '2-digit', 
+              minute: '2-digit', 
+              second: '2-digit',
+              hour12: false
+            });
+            
+            parsedFields.forEach((field: any) => {
+              if (field.fieldType === 'timenow' && field.cellKey) {
+                // 如果该字段还没有值，则自动填充当前时间
+                if (!processedDataJson[field.cellKey] || processedDataJson[field.cellKey] === '') {
+                  processedDataJson[field.cellKey] = timeString;
+                }
+              }
+            });
+          } catch (e) {
+            console.warn('解析 parsedFields 失败，跳过 timenow 自动填充:', e);
+          }
+        }
+        
+        // 🟢 数据映射：更新关键字段
+        const finalDataJson = JSON.stringify(processedDataJson);
+        const parsedFields = template?.parsedFields ? JSON.parse(template.parsedFields as string) : [];
+        const mappedFields = mapJsonToColumns(finalDataJson, parsedFields);
+        
+        // 如果未从表单中提取到 workType，从模板类型推断
+        if (!mappedFields.workType && template?.type) {
+          mappedFields.workType = inferWorkTypeFromTemplate(template.type);
+        }
+        
+        updateData.dataJson = finalDataJson;
+        // 合并映射字段到更新数据
+        Object.assign(updateData, mappedFields);
+      } else {
+        updateData.dataJson = JSON.stringify(processedDataJson);
+      }
+    }
 
     const updatedRecord = await prisma.workPermitRecord.update({
       where: { id },
@@ -263,30 +320,72 @@ export const POST = withPermission('work_permit', 'create', async (req: Request,
       return NextResponse.json({ error: '缺少必填参数' }, { status: 400 });
     }
     
-    // 🟢 获取模板信息以生成编号
+    // 🟢 获取模板信息以生成编号和解析字段
     const template = await prisma.workPermitTemplate.findUnique({
       where: { id: templateId },
-      select: { type: true }
+      select: { type: true, parsedFields: true }
     });
     
     const templateType = template?.type || '其他';
+    
+    // 🟢 处理 timenow 字段：自动填充当前时间
+    let processedDataJson = typeof dataJson === 'string' ? JSON.parse(dataJson) : { ...dataJson };
+    if (template?.parsedFields) {
+      try {
+        const parsedFields = JSON.parse(template.parsedFields as string);
+        const now = new Date();
+        const timeString = now.toLocaleString('zh-CN', { 
+          year: 'numeric', 
+          month: '2-digit', 
+          day: '2-digit', 
+          hour: '2-digit', 
+          minute: '2-digit', 
+          second: '2-digit',
+          hour12: false
+        });
+        
+        parsedFields.forEach((field: any) => {
+          if (field.fieldType === 'timenow' && field.cellKey) {
+            // 如果该字段还没有值，则自动填充当前时间
+            if (!processedDataJson[field.cellKey] || processedDataJson[field.cellKey] === '') {
+              processedDataJson[field.cellKey] = timeString;
+            }
+          }
+        });
+      } catch (e) {
+        console.warn('解析 parsedFields 失败，跳过 timenow 自动填充:', e);
+      }
+    }
     
     // 🟢 生成作业单编号（如果有建议编号，会检查冲突并自动顺延）
     console.log('📝 [提交] 开始生成编号，建议编号:', proposedCode);
     const permitCode = await generatePermitCode(projectId, templateType, proposedCode);
     console.log('✅ [提交] 最终使用编号:', permitCode);
     
+    // 🟢 数据映射：从 JSON 中提取关键字段
+    const finalDataJson = JSON.stringify(processedDataJson);
+    const parsedFields = template?.parsedFields ? JSON.parse(template.parsedFields) : [];
+    const mappedFields = mapJsonToColumns(finalDataJson, parsedFields);
+    
+    // 如果未从表单中提取到 workType，从模板类型推断
+    if (!mappedFields.workType) {
+      mappedFields.workType = inferWorkTypeFromTemplate(templateType);
+    }
+    
+    console.log('📊 [数据映射] 提取的关键字段:', mappedFields);
+    
     const newRecord = await prisma.workPermitRecord.create({
       data: {
         code: permitCode, // 🟢 新增：保存生成的编号
         projectId,
         templateId,
-        dataJson: JSON.stringify(dataJson),
+        dataJson: finalDataJson,
         // 使用 draft 作为初始状态
         status: 'draft',
         // ✅ 新增：保存附件数据 (存为 JSON 字符串)
-        // 注意：如果你没有在 schema.prisma 里加这个字段，请先去添加：attachments String?
         attachments: attachments ? JSON.stringify(attachments) : null,
+        // 🟢 数据映射字段
+        ...mappedFields,
       }
     });
 

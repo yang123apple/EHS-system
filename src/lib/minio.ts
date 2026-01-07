@@ -246,9 +246,13 @@ class MinIOService {
     const method = options.method || 'PUT';
 
     try {
-      const url = await this.client.presignedPutObject(bucketName, objectName, expires, {
-        'Content-Type': options.contentType || 'application/octet-stream',
-      });
+      // MinIO SDK v8: presignedPutObject(bucket, object, expires) 不支持额外 headers 参数
+      // 若需要非 PUT 方法，使用通用 presignedUrl
+      const upperMethod = String(method).toUpperCase();
+      const url =
+        upperMethod === 'PUT'
+          ? await this.client.presignedPutObject(bucketName, objectName, expires)
+          : await this.client.presignedUrl(upperMethod, bucketName, objectName, expires);
 
       return url;
     } catch (error: any) {

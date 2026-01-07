@@ -11,6 +11,8 @@ export interface MobileFormField {
   label: string;
   fieldKey: string; // 对应parsedFields中的fieldName
   cellKey?: string; // 🟢 对应 Excel 单元格 Key (如 R1C1)
+  rowIndex?: number; // 🟢 原始 Excel 行号（用于保持同行字段相邻）
+  colIndex?: number; // 🟢 原始 Excel 列号
   fieldType: 'text' | 'select' | 'date' | 'number' | 'textarea' | 'signature' | 'handwritten' | 'department' | 'user' | 'option' | 'match';
   placeholder?: string;
   required: boolean;
@@ -84,6 +86,8 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
             label: f.fieldName || f.label,
             fieldKey: f.cellKey!, // 🟢 统一使用 cellKey
             cellKey: f.cellKey!, // 🟢 保存单元格 Key
+            rowIndex: f.rowIndex, // 🟢 保留原始行号（用于后续渲染排序）
+            colIndex: f.colIndex, // 🟢 保留原始列号
             fieldType: mapFieldType(f.fieldType),
             placeholder: `请输入${f.fieldName || f.label}`,
             required: f.required || false,
@@ -99,9 +103,12 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
   }, [isOpen, currentConfig, parsedFields]);
 
   const autoDetectGroup = (field: ParsedField): string => {
-    if (field.fieldType === 'signature' || field.fieldType === 'handwritten') return '审批意见';
+    // 🟢 电子签名（signature）用于审批流程，归为"审批意见"
+    if (field.fieldType === 'signature') return '审批意见';
+    // 🟢 手写签名（handwritten）不强制归为"审批意见"，优先使用字段的 group 属性
+    if (field.fieldType === 'handwritten') return field.group || '基础信息';
     if (field.isSafetyMeasure) return '安全措施';
-    return '基础信息';
+    return field.group || '基础信息';
   };
 
   const mapFieldType = (type: string): MobileFormField['fieldType'] => {
@@ -117,6 +124,8 @@ export default function MobileFormEditor({ isOpen, onClose, parsedFields, curren
       case 'handwritten': return 'handwritten';
       case 'department': return 'department';
       case 'personnel': return 'user';
+      case 'timenow': return 'text'; // timenow 在移动端显示为文本（只读）
+      case 'serial': return 'text'; // 序号在移动端显示为文本（只读）
       default: return 'text';
     }
   };

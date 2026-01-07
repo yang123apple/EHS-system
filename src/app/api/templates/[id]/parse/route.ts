@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { parseTemplateFields } from '@/utils/templateParser';
+import { foldStructureForDynamicAdd, parseTemplateFields } from '@/utils/templateParser';
 import { ParsedField } from '@/types/work-permit';
 
 /**
@@ -26,13 +26,18 @@ export async function POST(
       );
     }
 
-    // 解析字段
-    const parsedFields = parseTemplateFields(template.structureJson || '');
+    // 解析字段（动态记录二级模板：同时写入“可追加行”标记，方便旧模板一键修复）
+    const foldDuplicateRows = !!template.isDynamicLog && String(template.level || 'primary') === 'secondary';
+    const processedStructureJson = foldDuplicateRows
+      ? foldStructureForDynamicAdd(template.structureJson || '')
+      : (template.structureJson || '');
+    const parsedFields = parseTemplateFields(processedStructureJson, { foldDuplicateRows });
 
     // 保存解析结果
     await prisma.workPermitTemplate.update({
       where: { id },
       data: {
+        structureJson: processedStructureJson,
         parsedFields: JSON.stringify(parsedFields),
       },
     });
@@ -40,6 +45,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       fields: parsedFields,
+      structureJson: processedStructureJson,
     });
   } catch (error) {
     console.error('Template parsing error:', error);

@@ -59,5 +59,3 @@ export function sanitizeHighlightHtml(html: string): string {
   
   return cleaned;
 }
-
-

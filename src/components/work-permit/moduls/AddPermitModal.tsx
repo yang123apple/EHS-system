@@ -48,12 +48,17 @@ export default function AddPermitModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- 数据加载与初始化 ---
+  // 🟢 打开弹窗时重新拉取模板（确保新绑定的二级模板立即生效）
   useEffect(() => {
+    if (!isOpen) return;
     apiFetch('/api/templates')
       .then(res => res.json())
-      .then(data => setAllTemplates(data))
+      .then(data => {
+        console.log('🔄 [AddPermitModal] 重新加载模板列表:', data.length);
+        setAllTemplates(data);
+      })
       .catch(err => console.error('加载模板失败:', err));
-  }, []);
+  }, [isOpen]);
 
   // 状态清理：弹窗关闭时重置，使用稳定引用
   useEffect(() => {
@@ -121,7 +126,18 @@ export default function AddPermitModal({
       
       const autoGroups = new Map<string, any[]>();
       sorted.forEach(f => {
-        const g = (f.fieldType === 'signature' || f.fieldType === 'handwritten') ? '审批意见' : (f.isSafetyMeasure ? '安全措施' : (f.group || '基础信息'));
+        // 🟢 电子签名（signature）用于审批流程，归为"审批意见"
+        // 🟢 手写签名（handwritten）不强制归为"审批意见"，优先使用字段的 group 属性
+        let g: string;
+        if (f.fieldType === 'signature') {
+          g = '审批意见';
+        } else if (f.fieldType === 'handwritten') {
+          g = f.group || '基础信息';
+        } else if (f.isSafetyMeasure) {
+          g = '安全措施';
+        } else {
+          g = f.group || '基础信息';
+        }
         if (!autoGroups.has(g)) autoGroups.set(g, []);
         autoGroups.get(g)!.push(f);
       });
@@ -183,7 +199,17 @@ export default function AddPermitModal({
     if (!sectionModalOpen || !currentSectionCell || !selectedTemplate) return null;
     const bindings = selectedTemplate.sectionBindings ? JSON.parse(selectedTemplate.sectionBindings) : {};
     const templateId = bindings[currentSectionCell.cellKey];
+    console.log('🔍 [AddPermitModal] sectionInfo 计算:', {
+      cellKey: currentSectionCell.cellKey,
+      sectionBindings: bindings,
+      templateId,
+      allTemplatesCount: allTemplates.length,
+      allTemplatesIds: allTemplates.map(t => ({ id: t.id, name: t.name, level: (t as any).level })),
+    });
     const boundTemplate = allTemplates.find(t => t.id === templateId) || null;
+    if (!boundTemplate) {
+      console.warn('⚠️ [AddPermitModal] 未找到绑定的二级模板:', { cellKey: currentSectionCell.cellKey, expectedTemplateId: templateId });
+    }
     return { ...currentSectionCell, boundTemplate };
   }, [sectionModalOpen, currentSectionCell, selectedTemplate, allTemplates]);
 

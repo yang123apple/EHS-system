@@ -925,6 +925,7 @@ export default function RecordDetailModal({
                       code={record.code}
                       formData={recordData}
                       mode="readonly"
+                      onSectionClick={handleSectionClick}
                     />
                   </div>
                 );
@@ -1067,6 +1068,7 @@ export default function RecordDetailModal({
         
         // 从allTemplates中查找完整的template信息
         const boundTemplate = allTemplates.find(t => t.id === sectionData.templateId) || null;
+        const allowAppend = record.status === 'approved' && !!boundTemplate?.isDynamicLog;
         
         // 解析审批日志
         const approvalLogs = record.approvalLogs ? JSON.parse(record.approvalLogs) : [];
@@ -1081,6 +1083,7 @@ export default function RecordDetailModal({
             fieldName={currentSectionCell.fieldName}
             boundTemplate={boundTemplate}
             parentCode={record.status === 'rejected' ? '' : (record.code || '')} // 🟢 驳回时不传递编号
+            parentPermitId={record.id}
             parentFormData={recordData}
             parentParsedFields={parsedFields}
             parentApprovalLogs={approvalLogs}
@@ -1092,6 +1095,11 @@ export default function RecordDetailModal({
               setCurrentSectionCell(null);
             }}
             readOnly={true}
+            appendOnly={allowAppend}
+            onAfterAppend={() => {
+              // 追加成功后刷新父表单数据（保证列表/打印视图一致）
+              onRefresh();
+            }}
           />
         );
       })()}

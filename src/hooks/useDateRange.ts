@@ -162,5 +162,3 @@ export function useDateRange(options: UseDateRangeOptions = {}): UseDateRangeRet
     isValid,
   };
 }
-
-

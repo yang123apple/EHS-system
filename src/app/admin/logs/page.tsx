@@ -296,7 +296,6 @@ export default function LogsPage() {
       setImporting(false);
     }
   };
-
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString('zh-CN', {
@@ -935,7 +934,6 @@ export default function LogsPage() {
             </div>
           </div>
         )}
-
         {/* 详情查看弹窗 */}
         {selectedDetailsLog && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">

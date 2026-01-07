@@ -242,12 +242,15 @@ const FIELD_TYPE_KEYWORDS: Record<string, string[]> = {
 
 /** 检测字符串中是否包含选项标记符（£、□、☑等） */
 function hasOptionMarker(str: string): boolean {
+  // 排除单独的斜杠符号，斜杠仅作为分隔符，不应被识别为选项标记
+  const trimmed = str.trim();
+  if (trimmed === '/' || trimmed === '／') return false;
+  
   // Unicode选项标记符
   if (/[£□☑✓✔]/.test(str)) return true;
   
   // Wingdings/Wingdings2字体的选项标记字符
   // R = ☑ (Wingdings2), P = ☐ (Wingdings2), O = ☐ (Wingdings)
-  const trimmed = str.trim();
   if (trimmed === 'R' || trimmed === 'P' || trimmed === 'O') return true;
   
   // 检测是否为纯符号（单字符且为特殊符号）
@@ -287,19 +290,80 @@ function stripOptionMarkers(str: string): string {
  * @param structureJson - JSON字符串格式的模板结构数据
  * @returns 解析后的字段数组
  */
-export function parseTemplateFields(structureJson: string): ParsedField[] {
+export function parseTemplateFields(
+  structureJson: string,
+  options?: { foldDuplicateRows?: boolean }
+): ParsedField[] {
   if (!structureJson) return [];
 
   try {
     const structure = JSON.parse(structureJson) as ParsedStructure;
     const fields: ParsedField[] = [];
-    const data = extractGrid(structure);
+    let data = extractGrid(structure);
     if (!data || data.length === 0) return fields;
     
     const processedCells = new Set<string>();
     // 🟢 记录字段名出现次数，用于生成唯一字段名（避免“电话”“负责人”等被合并成一个）
     const fieldNameCounts = new Map<string, number>();
+    // 🟢 “序号”字段计数：按出现顺序生成 序号1/序号2...
+    let serialFieldCounter = 0;
     const merges = extractMerges(structure);
+
+    // 🟢 可选：折叠“动态记录”类模板中的相邻重复行（含是否/选项标记）
+    if (options?.foldDuplicateRows) {
+      try {
+        const maxColsForFold = Math.max(...data.map(r => (Array.isArray(r) ? r.length : 0)), 0);
+        const mergeRows = new Set<number>();
+        (merges || []).forEach((m: any) => {
+          const sr = m?.s?.r;
+          const er = m?.e?.r;
+          if (typeof sr === 'number' && typeof er === 'number') {
+            for (let rr = sr; rr <= er; rr++) mergeRows.add(rr);
+          }
+        });
+
+        const normCell = (v: any) => {
+          if (isEmptyCellValue(v)) return '';
+          const raw = String(v).trim();
+          if (hasOptionMarker(raw)) {
+            // 选项类：按“选项集合”标准化，避免符号/空格差异导致无法折叠
+            const opts = extractOptionsFromCell(raw).sort();
+            return `OPT:${opts.join('|')}`;
+          }
+          return raw;
+        };
+        const normRow = (row: any[]) => {
+          const parts: string[] = [];
+          for (let c = 0; c < maxColsForFold; c++) parts.push(normCell(row?.[c]));
+          return parts.join('\u001F');
+        };
+
+        const folded: any[][] = [];
+        let prevSig = '';
+        let prevRowIndex = -1;
+        for (let r = 0; r < data.length; r++) {
+          const row = Array.isArray(data[r]) ? data[r] : [];
+          const sig = normRow(row);
+          // 避免折叠涉及合并单元格的行（行号变化会破坏 merge 坐标）
+          if (
+            r > 0 &&
+            sig === prevSig &&
+            !mergeRows.has(r) &&
+            !mergeRows.has(prevRowIndex)
+          ) {
+            continue;
+          }
+          folded.push(row);
+          prevSig = sig;
+          prevRowIndex = r;
+        }
+
+        data = folded;
+      } catch (e) {
+        // 折叠失败不影响解析
+        console.warn('[parseTemplateFields] foldDuplicateRows failed:', e);
+      }
+    }
 
     // 🟢 生成唯一字段名（第一次保留原名，重复时加行号后缀）
     const getUniqueFieldName = (baseName: string, rowIndex: number) => {
@@ -307,6 +371,28 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
       fieldNameCounts.set(baseName, count + 1);
       return count === 0 ? baseName : `${baseName}_row${rowIndex + 1}`;
     };
+
+    // 🟢 行去重：识别“完全相同的空白行”，避免重复解析出一堆 _rowX 字段
+    const normalizeRowSignature = (row: any[], maxCols: number) => {
+      const normalized: string[] = [];
+      for (let c = 0; c < maxCols; c++) {
+        const v = row?.[c];
+        normalized.push(isEmptyCellValue(v) ? '' : String(v).trim());
+      }
+      return normalized.join('\u001F');
+    };
+    const maxCols = Math.max(...data.map(r => (r ? r.length : 0)), 0);
+    const rowSig = new Map<number, string>();
+    const rowNonEmpty = new Map<number, number>();
+    for (let r = 0; r < data.length; r++) {
+      const row = data[r] || [];
+      rowSig.set(r, normalizeRowSignature(row, maxCols));
+      let cnt = 0;
+      for (let c = 0; c < maxCols; c++) {
+        if (!isEmptyCellValue(row[c])) cnt++;
+      }
+      rowNonEmpty.set(r, cnt);
+    }
 
     // 🟢 统一创建字段的辅助函数
     const createField = (
@@ -469,6 +555,29 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
       let group: string | undefined;
       let isSafetyMeasure: boolean | undefined;
 
+      // 🟢 规则0：序号字段
+      // 当空白单元格的上方单元格值为“序号”时，将该空白单元格解析为 serial 类型
+      // 字段名按出现顺序命名为：序号1、序号2...
+      if (r > 0) {
+        const upCell = data[r - 1]?.[c];
+        const upVal = isEmptyCellValue(upCell) ? '' : String(upCell).trim();
+        if (upVal === '序号') {
+          serialFieldCounter += 1;
+          const field: ParsedField = {
+            cellKey,
+            label: '序号',
+            fieldName: `序号${serialFieldCounter}`,
+            fieldType: 'serial',
+            hint: '请输入序号',
+            rowIndex: r,
+            colIndex: c,
+          };
+          fields.push(field);
+          processedCells.add(cellKey);
+          return;
+        }
+      }
+
       // 🟢 规则2：检查上方是否有"安全措施"文本（识别到"安全措施"时，下方的类型默认为"安全措施"）
       // 向上查找最多15行，检查同一列是否有"安全措施"文本
       for (let upOffset = 1; upOffset <= 15 && r - upOffset >= 0; upOffset++) {
@@ -544,6 +653,19 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
       const row = data[r];
       if (!row) continue;
 
+      // 🟢 规则：完全相同的空白行去重（仅对“整行为空”且与上一行完全一致的情况生效）
+      // 典型场景：动态记录类模板为列表预留多行空白记录行，上传解析时应只识别第一行作为“记录行模板”
+      const nonEmptyCnt = rowNonEmpty.get(r) || 0;
+      if (r > 0 && nonEmptyCnt === 0) {
+        const curSig = rowSig.get(r);
+        const prevSig = rowSig.get(r - 1);
+        const prevNonEmpty = rowNonEmpty.get(r - 1) || 0;
+        if (curSig && prevSig && curSig === prevSig && prevNonEmpty === 0) {
+          // 跳过该行所有空白格解析
+          continue;
+        }
+      }
+
       for (let c = 0; c < row.length; c++) {
         const cellKey = `R${r + 1}C${c + 1}`;
         // 跳过已处理 或 在合并区域内的
@@ -561,6 +683,140 @@ export function parseTemplateFields(structureJson: string): ParsedField[] {
   } catch (error) {
     console.error('Failed to parse template fields:', error);
     return [];
+  }
+}
+
+// =========================
+// DynamicLog: 折叠重复行并生成“可追加行”标记
+// =========================
+export type DynamicAddRowMarker = {
+  /** 1-based 行号，例如 5 表示 R5 */
+  baseRow1: number;
+  /** 被折叠的重复行数量（不含 baseRow 自己） */
+  collapsedCount: number;
+};
+
+/**
+ * 动态记录二级模板：将相邻完全相同的行折叠为一行，并在结构中写入可追加标记。
+ *
+ * 设计目标（对应用户需求）：
+ * - 导入时若检测到 R5~R7 完全相同：保存时仅保留 R5，并写入标记 {ADD=R5}
+ * - 填写时根据该标记渲染“增加一行”，点击后复制 R5 模板样式生成新行（R6、R7...）
+ *
+ * 注意：为了避免破坏合并单元格坐标，涉及 merge 的行不会被折叠。
+ */
+export function foldStructureForDynamicAdd(structureJson: string): string {
+  if (!structureJson) return structureJson;
+  try {
+    const structure: any = JSON.parse(structureJson);
+    // 已处理过则不重复处理
+    if (Array.isArray(structure?.dynamicAddRowMarkers) && structure.dynamicAddRowMarkers.length > 0) {
+      return structureJson;
+    }
+
+    const grid: any[][] = extractGrid(structure);
+    if (!grid || !Array.isArray(grid) || grid.length === 0) return structureJson;
+    const merges = extractMerges(structure) || [];
+
+    const maxColsForFold = Math.max(...grid.map(r => (Array.isArray(r) ? r.length : 0)), 0);
+    const mergeRows = new Set<number>();
+    (merges || []).forEach((m: any) => {
+      const sr = m?.s?.r ?? m?.r;
+      const er = m?.e?.r ?? (typeof m?.rs === 'number' ? sr + m.rs - 1 : (typeof m?.rowspan === 'number' ? sr + m.rowspan - 1 : sr));
+      if (typeof sr === 'number' && typeof er === 'number') {
+        for (let rr = sr; rr <= er; rr++) mergeRows.add(rr);
+      }
+    });
+
+    const normCell = (v: any) => {
+      if (isEmptyCellValue(v)) return '';
+      const raw = String(v).trim();
+      if (hasOptionMarker(raw)) {
+        const opts = extractOptionsFromCell(raw).sort();
+        return `OPT:${opts.join('|')}`;
+      }
+      return raw;
+    };
+    const normRow = (row: any[]) => {
+      const parts: string[] = [];
+      for (let c = 0; c < maxColsForFold; c++) parts.push(normCell(row?.[c]));
+      return parts.join('\u001F');
+    };
+
+    const folded: any[][] = [];
+    const markers: DynamicAddRowMarker[] = [];
+    let prevSig = '';
+    let prevOriginalRowIndex = -1;
+    let prevKeptRowIndex = -1;
+    let collapsedCount = 0;
+
+    const flushMarker = () => {
+      if (prevKeptRowIndex >= 0 && collapsedCount > 0) {
+        markers.push({ baseRow1: prevKeptRowIndex + 1, collapsedCount });
+      }
+    };
+
+    for (let r = 0; r < grid.length; r++) {
+      const row = Array.isArray(grid[r]) ? grid[r] : [];
+      const sig = normRow(row);
+      if (
+        r > 0 &&
+        sig === prevSig &&
+        !mergeRows.has(r) &&
+        !mergeRows.has(prevOriginalRowIndex)
+      ) {
+        collapsedCount += 1;
+        continue;
+      }
+      // 遇到新段落：先把上一段的折叠结果写成 marker
+      flushMarker();
+      collapsedCount = 0;
+
+      folded.push(row);
+      prevSig = sig;
+      prevOriginalRowIndex = r;
+      prevKeptRowIndex = folded.length - 1;
+    }
+    flushMarker();
+
+    // 写回结构（保持结构字段兼容：grid / data / rows / sheets[0].rows）
+    if (Array.isArray(structure.grid)) structure.grid = folded;
+    if (Array.isArray(structure.data)) structure.data = folded;
+    if (structure?.sheets?.[0]) {
+      if (Array.isArray(structure.sheets[0].data)) structure.sheets[0].data = folded;
+    }
+
+    // 同步 rows 元信息长度（高度等），按“折叠后行序列”抽取
+    const rowsArr: any[] | null = Array.isArray(structure.rows)
+      ? structure.rows
+      : (structure?.sheets?.[0] && Array.isArray(structure.sheets[0].rows) ? structure.sheets[0].rows : null);
+    if (rowsArr && rowsArr.length > 0) {
+      // 由于是“相邻折叠”，我们可以用一次扫描重建映射：原行 -> 是否保留
+      const keepFlags: boolean[] = [];
+      let ps = '';
+      let prevOri = -1;
+      for (let r = 0; r < grid.length; r++) {
+        const row = Array.isArray(grid[r]) ? grid[r] : [];
+        const sig = normRow(row);
+        const canFold = r > 0 && sig === ps && !mergeRows.has(r) && !mergeRows.has(prevOri);
+        keepFlags.push(!canFold);
+        if (!canFold) {
+          ps = sig;
+          prevOri = r;
+        }
+      }
+      const foldedRows = rowsArr.filter((_, idx) => keepFlags[idx] !== false);
+      if (Array.isArray(structure.rows)) structure.rows = foldedRows;
+      if (structure?.sheets?.[0] && Array.isArray(structure.sheets[0].rows)) structure.sheets[0].rows = foldedRows;
+    }
+
+    // 写入标记（用于填写时渲染“增加一行”按钮）
+    structure.dynamicAddRowMarkers = markers;
+
+    return JSON.stringify(structure);
+  } catch (e) {
+    console.warn('[foldStructureForDynamicAdd] failed:', e);
+    return structureJson;
   }
 }
 
@@ -654,10 +910,12 @@ function generateHint(label: string, fieldType: ParsedField['fieldType']): strin
     signature: `请在此签名`,          // 签名：固定提示
     handwritten: `请手写签名`,        // 手写签名：固定提示
     option: `请选择${label}`,         // 选项：选择
-    // ✅ number 类型统一为“请输入{label}”，兼容电话号码/身份证号
+    // ✅ number 类型统一为"请输入{label}"，兼容电话号码/身份证号
     number: `请输入${label}`,        // 数值：输入
     match: `请输入${label}编码`,     // 匹配：输入编码
     section: `点击填写${label}`,     // 🟣 V3.4 Section：点击填写
+    timenow: `时间自动生成，无需填写`, // 🟢 timenow：自动生成时间
+    serial: `请输入序号`,
     other: `请填写${label}`          // 其他：填写
   };
 

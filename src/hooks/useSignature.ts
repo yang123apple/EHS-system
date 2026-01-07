@@ -73,9 +73,3 @@ export function useSignature(allowMultiple: boolean = true) {
     hasSignatures: normalizeToArray(signatures).length > 0
   };
 }
-
-
-
-
-
-

@@ -671,6 +671,66 @@ export default function ExcelRenderer({
       w.outputCell.c === cIndex
     );
 
+    // timenow 字段：显示占位符，自动生成时间，无需填写
+    if (parsedField?.fieldType === 'timenow') {
+      const display = filledValue || valStr;
+      if (mode === 'edit') {
+        return (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-500 text-xs italic select-none" style={styleObj}>
+            {display ? (
+              <span className="whitespace-pre-line text-slate-800 not-italic">{display}</span>
+            ) : (
+              <span>时间自动生成，无需填写</span>
+            )}
+          </div>
+        );
+      }
+      // 查看模式：显示已填充的时间或占位符
+      if (mode === 'view') {
+        return (
+          <div className="w-full h-full flex items-center justify-center text-sm text-slate-800" style={styleObj}>
+            {display || <span className="text-slate-300">/</span>}
+          </div>
+        );
+      }
+      // 设计模式：显示字段提示
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-600 text-xs font-bold" style={styleObj}>
+          时间自动生成
+        </div>
+      );
+    }
+
+    // serial 字段：改为手动填写（与 number 类似）
+    if (parsedField?.fieldType === 'serial') {
+      const display = filledValue || valStr;
+      if (mode === 'view') {
+        return (
+          <div className="w-full h-full flex items-center justify-center text-sm text-slate-800" style={styleObj}>
+            {display || <span className="text-slate-300">/</span>}
+          </div>
+        );
+      }
+      if (mode === 'design') {
+        return (
+          <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-600 text-xs font-bold" style={styleObj}>
+            序号（手填）
+          </div>
+        );
+      }
+      // edit
+      return (
+        <input
+          className="w-full h-full text-sm bg-white outline-none px-1"
+          style={styleObj}
+          type="number"
+          value={filledValue ?? ''}
+          placeholder={parsedField.hint || '请输入序号'}
+          onChange={(e) => handleInputChange(rIndex, cIndex, e.target.value)}
+        />
+      );
+    }
+
     // 签字类字段在编辑态不可直接编辑，只显示占位提示
     if (mode === 'edit' && parsedField?.fieldType === 'signature') {
       const approverHint = boundStep?.approvers?.[0]?.userName || boundStep?.userName || parsedField.label || '签核人';
@@ -1138,6 +1198,7 @@ export default function ExcelRenderer({
                 <option value="handwritten">手写签名</option>
                 <option value="option">选项</option>
                 <option value="section">🟣 Section(嵌套表单)</option>
+                <option value="timenow">时间自动生成</option>
                 <option value="other">其他</option>
               </select>
               <input
@@ -1243,10 +1304,23 @@ export default function ExcelRenderer({
           <tbody>
             {gridData.map((row: any[], rIndex: number) => {
               const h = getRowHeight(rIndex);
+              // 🔴 检查该行是否为"动态可追加行"（只在设计模式显示红点）
+              const isDynamicAddRow = mode === 'design' && (() => {
+                const markers = (templateData as any)?.dynamicAddRowMarkers;
+                if (!Array.isArray(markers)) return false;
+                return markers.some((m: any) => typeof m?.baseRow1 === 'number' && m.baseRow1 === rIndex + 1);
+              })();
               return (
                 <tr key={rIndex} style={{ height: `${h}px` }}>
                   {mode === 'design' && (
-                    <td className="border-r border-b border-slate-300 bg-slate-50 p-0 align-middle text-center">
+                    <td className="border-r border-b border-slate-300 bg-slate-50 p-0 align-middle text-center relative">
+                      {/* 🔴 红色小圆点：标记动态可追加行（仅设计模式） */}
+                      {isDynamicAddRow && (
+                        <div 
+                          className="absolute left-0.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-red-500 animate-pulse"
+                          title="动态可追加行（ADD 标记）"
+                        />
+                      )}
                       <input
                         type="number"
                         className="w-full h-full text-[10px] bg-transparent text-center focus:bg-white outline-none font-mono text-slate-600"

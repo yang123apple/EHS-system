@@ -3,9 +3,3 @@
  */
 
 export { useSignature } from './useSignature';
-
-
-
-
-
-

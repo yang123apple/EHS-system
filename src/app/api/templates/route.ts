@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createLog } from '@/lib/logger';
-import { parseTemplateFields, autoCalculateColumnWidths, checkCellLineBreaks } from '@/utils/templateParser';
+import { parseTemplateFields, autoCalculateColumnWidths, checkCellLineBreaks, foldStructureForDynamicAdd } from '@/utils/templateParser';
 export const dynamic = 'force-dynamic';
 // GET: 获取所有作业票模板
 export async function GET(req: Request) {
@@ -48,7 +48,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, type, structureJson, isLocked, workflowConfig, userId, userName, parsedFields: clientParsedFields, orientation } = body;
+    const { name, type, structureJson, isLocked, isDynamicLog, workflowConfig, userId, userName, parsedFields: clientParsedFields, orientation, level, sectionBindings, mobileFormConfig } = body;
     if (!name || !type || !structureJson) {
       return NextResponse.json({ error: '缺少必填字段' }, { status: 400 });
     }
@@ -79,10 +79,15 @@ export async function POST(req: Request) {
       console.error('Failed to process structure JSON:', e);
     }
 
+    // 🟢 动态记录二级模板：折叠重复行并写入“可追加行”标记（用于填写时显示“增加一行”）
+    const foldDuplicateRows = !!isDynamicLog && String(level || 'primary') === 'secondary';
+    if (foldDuplicateRows) {
+      processedStructureJson = foldStructureForDynamicAdd(processedStructureJson);
+    }
     // 🟢 自动解析模板字段（如客户端已传自定义解析则优先）
     const parsedFields = clientParsedFields
       ? (typeof clientParsedFields === 'string' ? JSON.parse(clientParsedFields) : clientParsedFields)
-      : parseTemplateFields(processedStructureJson);
+      : parseTemplateFields(processedStructureJson, { foldDuplicateRows });
 
     const newTemplate = await prisma.workPermitTemplate.create({
       data: {
@@ -90,9 +95,15 @@ export async function POST(req: Request) {
         type,
         structureJson: processedStructureJson, // 保存处理后的JSON
         isLocked: isLocked || false,
+        isDynamicLog: !!isDynamicLog,
         workflowConfig: workflowConfig || null, // ✅ 支持创建时带流程
         parsedFields: JSON.stringify(parsedFields), // 🟢 保存解析结果
         orientation: orientation || 'portrait', // 🟢 V3.4 保存纸张方向
+        // 🟢 V3.4 模板级别与 Section 绑定（允许创建时携带）
+        level: level || 'primary',
+        sectionBindings: sectionBindings || null,
+        // 🟢 移动端表单配置（允许创建时携带）
+        mobileFormConfig: mobileFormConfig || null,
       },
     });
 
@@ -161,7 +172,7 @@ export async function DELETE(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-    const { id, isLocked, structureJson, name, type, workflowConfig, userId, userName, parsedFields: clientParsedFields, level, sectionBindings, watermarkSettings, orientation, mobileFormConfig } = body; 
+    const { id, isLocked, isDynamicLog, structureJson, name, type, workflowConfig, userId, userName, parsedFields: clientParsedFields, level, sectionBindings, watermarkSettings, orientation, mobileFormConfig } = body; 
 
     if (!id) return NextResponse.json({ error: '缺少参数' }, { status: 400 });
 
@@ -169,6 +180,7 @@ export async function PATCH(req: Request) {
     const dataToUpdate: any = {};
     if (isLocked !== undefined) dataToUpdate.isLocked = isLocked;
     if (isLocked !== undefined) dataToUpdate.isLocked = isLocked;
+    if (isDynamicLog !== undefined) dataToUpdate.isDynamicLog = !!isDynamicLog;
     if (structureJson !== undefined) {
       // 🟢 处理 structureJson 中的列宽和字段解析
       let processedStructureJson = structureJson;
@@ -196,11 +208,16 @@ export async function PATCH(req: Request) {
         console.error('Failed to process structure JSON:', e);
       }
 
+      // 🟢 动态记录二级模板：折叠重复行并写入“可追加行”标记
+      const foldDuplicateRows = !!(isDynamicLog ?? false) && String(level || 'primary') === 'secondary';
+      if (foldDuplicateRows) {
+        processedStructureJson = foldStructureForDynamicAdd(processedStructureJson);
+      }
       dataToUpdate.structureJson = processedStructureJson;
       // 🟢 当修改结构时，重新解析字段，除非客户端显式提供解析结果
       const parsedFields = clientParsedFields
         ? (typeof clientParsedFields === 'string' ? JSON.parse(clientParsedFields) : clientParsedFields)
-        : parseTemplateFields(processedStructureJson);
+        : parseTemplateFields(processedStructureJson, { foldDuplicateRows });
       dataToUpdate.parsedFields = JSON.stringify(parsedFields);
     }
     // 🟢 允许在不改结构时直接更新解析结果
@@ -222,6 +239,29 @@ export async function PATCH(req: Request) {
     if (orientation !== undefined) dataToUpdate.orientation = orientation;
     // 🟢 更新移动端表单配置
     if (mobileFormConfig !== undefined) dataToUpdate.mobileFormConfig = mobileFormConfig;
+
+    // 🟢 若只切换了“二级模板/动态记录”，但未提交 structureJson/parsedFields，则后端主动重算 parsedFields（用于折叠重复行）
+    const shouldReparseForFold =
+      structureJson === undefined &&
+      !clientParsedFields &&
+      (isDynamicLog !== undefined || level !== undefined);
+    if (shouldReparseForFold) {
+      const existing = await prisma.workPermitTemplate.findUnique({
+        where: { id },
+        select: { structureJson: true, isDynamicLog: true, level: true },
+      });
+      if (existing?.structureJson) {
+        const nextIsDynamicLog = isDynamicLog !== undefined ? !!isDynamicLog : !!existing.isDynamicLog;
+        const nextLevel = level !== undefined ? String(level) : String(existing.level || 'primary');
+        const foldDuplicateRows = nextIsDynamicLog && nextLevel === 'secondary';
+        try {
+          const reparsed = parseTemplateFields(existing.structureJson, { foldDuplicateRows });
+          dataToUpdate.parsedFields = JSON.stringify(reparsed);
+        } catch (e) {
+          console.warn('Re-parse parsedFields failed:', e);
+        }
+      }
+    }
     
     const updatedTemplate = await prisma.workPermitTemplate.update({
       where: { id },

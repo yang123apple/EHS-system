@@ -58,6 +58,10 @@ const defaultGetFieldIcon = (fieldType: string) => {
       return <AlignLeft size={14} className={`${iconClass} text-purple-500`} />;
     case 'date':
       return <Calendar size={14} className={`${iconClass} text-green-500`} />;
+    case 'timenow':
+      return <Calendar size={14} className={`${iconClass} text-slate-500`} />;
+    case 'serial':
+      return <Hash size={14} className={`${iconClass} text-slate-500`} />;
     case 'select':
     case 'option':
       return <List size={14} className={`${iconClass} text-orange-500`} />;
@@ -211,6 +215,8 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
             const normalizedField = {
               ...foundField,
               fieldType: finalFieldType, // 使用最新的字段类型
+              rowIndex: parsedField?.rowIndex ?? foundField.rowIndex, // 🟢 保留原始行号
+              colIndex: parsedField?.colIndex ?? foundField.colIndex, // 🟢 保留原始列号
             };
             
             // 调试信息：检查 handwritten 字段
@@ -228,6 +234,25 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
           
           return null;
         }).filter(Boolean);
+        
+        // 🟢 关键优化：同组内字段按原始 Excel 行列顺序排序（从左到右、从上到下）
+        groupFields.sort((a: any, b: any) => {
+          // 优先使用 rowIndex/colIndex
+          if (a.rowIndex !== undefined && b.rowIndex !== undefined) {
+            if (a.rowIndex !== b.rowIndex) return a.rowIndex - b.rowIndex;
+            return (a.colIndex || 0) - (b.colIndex || 0);
+          }
+          // 兜底：从 cellKey 解析
+          const matchA = a.cellKey?.match(/R(\d+)C(\d+)/);
+          const matchB = b.cellKey?.match(/R(\d+)C(\d+)/);
+          if (matchA && matchB) {
+            const rowA = parseInt(matchA[1]);
+            const rowB = parseInt(matchB[1]);
+            if (rowA !== rowB) return rowA - rowB;
+            return parseInt(matchA[2]) - parseInt(matchB[2]);
+          }
+          return 0;
+        });
       }
       
       if (groupFields.length === 0) {
@@ -393,6 +418,111 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
         props.onFieldClick(field);
       }
     };
+
+    // section 字段：点击进入子表单
+    if (fieldType === 'section') {
+      const clickSection = () => {
+        if (onSectionClick && field?.cellKey) {
+          onSectionClick(field.cellKey, field.fieldName || field.label || '子表单');
+        }
+      };
+      return (
+        <div onClick={handleClick} className={`border-b border-slate-50 py-3.5 last:border-0 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}>
+          <div className="flex items-start gap-3">
+            <label className="text-[13px] font-medium text-slate-500 flex items-center gap-2 shrink-0 pt-0.5 min-w-[90px] max-w-[120px]">
+              {getFieldIcon(fieldType)}
+              <span className="whitespace-normal break-words leading-tight">{label}</span>
+              {isRequired && <span className="text-red-500 -ml-1">*</span>}
+            </label>
+            <div className="flex-1 min-w-0 text-right">
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); clickSection(); }}
+                className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded border border-slate-300 hover:border-blue-500 hover:text-blue-600 transition-colors"
+              >
+                填写子表单
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // timenow 字段：显示占位符，自动生成时间，无需填写
+    if (fieldType === 'timenow') {
+      const display = currentValue;
+      if (isReadonly) {
+        return (
+          <div onClick={handleClick} className={`border-b border-slate-50 py-3.5 last:border-0 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}>
+            <div className="flex items-start gap-3">
+              <label className="text-[13px] font-medium text-slate-500 flex items-center gap-2 shrink-0 pt-0.5 min-w-[90px] max-w-[120px]">
+                {getFieldIcon(fieldType)}
+                <span className="whitespace-normal break-words leading-tight">{label}</span>
+                {isRequired && <span className="text-red-500 -ml-1">*</span>}
+              </label>
+              <div className="flex-1 min-w-0 text-right">
+                <div className="text-[14px] text-slate-800 break-words overflow-wrap-anywhere whitespace-normal font-medium">{display || <span className="text-slate-300 italic">未填写</span>}</div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      // 编辑模式：显示占位符，禁用输入
+      return (
+        <div onClick={handleClick} className={`flex items-start justify-between border-b border-slate-50 py-4 last:border-0 gap-4 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}>
+          <label className="flex items-center gap-2 text-[13px] font-medium text-slate-500 min-w-[90px] max-w-[140px] shrink-0 pt-1">
+            {getFieldIcon(fieldType)}
+            <span className="whitespace-normal break-words leading-tight">{label}</span>
+            {isRequired && <span className="text-red-500 -ml-1">*</span>}
+          </label>
+          <div className="flex-1 flex justify-end min-w-0">
+            <div className="w-full text-right bg-slate-50 border-b border-dashed border-slate-300 text-sm text-slate-500 italic px-2 py-1 select-none">
+              {display || '时间自动生成，无需填写'}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // serial 字段：改为手动填写
+    if (fieldType === 'serial') {
+      const display = currentValue;
+      if (isReadonly) {
+        return (
+          <div onClick={handleClick} className={`border-b border-slate-50 py-3.5 last:border-0 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}>
+            <div className="flex items-start gap-3">
+              <label className="text-[13px] font-medium text-slate-500 flex items-center gap-2 shrink-0 pt-0.5 min-w-[90px] max-w-[120px]">
+                {getFieldIcon(fieldType)}
+                <span className="whitespace-normal break-words leading-tight">{label}</span>
+                {isRequired && <span className="text-red-500 -ml-1">*</span>}
+              </label>
+              <div className="flex-1 min-w-0 text-right">
+                <div className="text-[14px] text-slate-800 break-words overflow-wrap-anywhere whitespace-normal font-medium">{display || <span className="text-slate-300 italic">未生成</span>}</div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      // 编辑模式：允许输入
+      return (
+        <div onClick={handleClick} className={`flex items-start justify-between border-b border-slate-50 py-4 last:border-0 gap-4 ${isPreview ? 'cursor-pointer hover:bg-blue-50/50 transition-colors rounded-lg px-2 -mx-2' : ''}`}>
+          <label className="flex items-center gap-2 text-[13px] font-medium text-slate-500 min-w-[90px] max-w-[140px] shrink-0 pt-1">
+            {getFieldIcon(fieldType)}
+            <span className="whitespace-normal break-words leading-tight">{label}</span>
+            {isRequired && <span className="text-red-500 -ml-1">*</span>}
+          </label>
+          <div className="flex-1 flex justify-end min-w-0">
+            <input
+              value={display ?? ''}
+              onChange={(e) => handleFieldChange(field, e.target.value)}
+              inputMode="numeric"
+              className="w-full text-right bg-white border border-slate-200 rounded px-2 py-1 text-sm text-slate-800 outline-none focus:border-blue-400"
+              placeholder={field.hint || '请输入序号'}
+            />
+          </div>
+        </div>
+      );
+    }
 
     // 1. 只读模式渲染
     if (isReadonly) {
@@ -736,7 +866,7 @@ const MobileFormRenderer = React.memo((props: MobileFormRendererProps) => {
   }, [getFieldValue, getFieldIcon, handleFieldChange, handleInputFocus, handleInputBlur, mode, onDepartmentClick, onSectionClick, props.onFieldClick, renderFieldValue, getFieldKey]);
 
   return (
-    <div ref={containerRef} className="bg-slate-100/50 p-4 space-y-4 min-h-full pb-[50vh]">
+    <div ref={containerRef} className="bg-slate-100/50 p-4 space-y-4 min-h-full pb-4">
       {(title || code) && (
         <div className="bg-white rounded-lg p-4 shadow-sm">
           {title && <h3 className="text-lg font-bold text-slate-800 text-center">{title}</h3>}

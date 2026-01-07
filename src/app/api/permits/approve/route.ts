@@ -5,6 +5,7 @@ import { resolveApprovers } from '@/lib/workflowUtils';
 import { db } from '@/lib/mockDb';
 import { withPermission, logApiOperation } from '@/middleware/auth';
 import { createPermitNotification } from '@/lib/notificationService';
+import { createSignature, extractClientInfo } from '@/services/signatureService';
 export const dynamic = 'force-dynamic';
 
 export const POST = withPermission('work_permit', 'approve', async (req: Request, context, user) => {
@@ -196,6 +197,29 @@ export const POST = withPermission('work_permit', 'approve', async (req: Request
       data: updateData,
       include: { project: true, template: true } // 包含项目和模板信息，用于通知
     });
+    
+    // 🟢 创建电子签名记录（防篡改机制）
+    try {
+      const clientInfo = extractClientInfo(req);
+      await createSignature(
+        {
+          permitId: recordId,
+          signerId: userId || '',
+          signerName: userName,
+          action: action === 'pass' ? 'pass' : 'reject',
+          comment: opinion,
+          stepIndex: currentStepIndex,
+          stepName: currentStepConfig?.name,
+          clientInfo,
+        },
+        updatedDataJson, // 签字时刻的数据快照
+        false // 不保存完整快照，仅保存 Hash（节省存储空间）
+      );
+      console.log('✅ [电子签名] 已创建签名记录');
+    } catch (signatureError) {
+      console.error('❌ [电子签名] 创建签名记录失败:', signatureError);
+      // 签名记录失败不影响审批流程，但需要记录错误
+    }
 
     // 🟢 插入日志
     const actionType = action === 'pass' ? 'APPROVE' : 'REJECT';

@@ -26,7 +26,7 @@ export interface ParsedField {
   cellKey: string;        // 单元格坐标 "R1C1"
   label: string;          // 标签内容 (左侧单元格)
   fieldName: string;      // 规范化字段名 "department", "location", "date"
-  fieldType: 'text' | 'department' | 'date' | 'number' | 'personnel' | 'signature' | 'option' | 'match' | 'section' | 'handwritten' | 'other'; // 🟢 新增 section 类型，新增 handwritten 类型
+  fieldType: 'text' | 'department' | 'date' | 'number' | 'personnel' | 'signature' | 'option' | 'match' | 'section' | 'handwritten' | 'timenow' | 'serial' | 'other'; // 🟢 新增 section/handwritten/timenow/serial 类型
   hint: string;           // 提示文本
   editableHint?: string;  // 编辑后的提示（在编辑器中修改）
   options?: string[];     // 🟢 互斥选项列表（如 ["是", "否"]）
@@ -47,6 +47,8 @@ export type Template = {
   type: string; // e.g., "动火作业", "高处作业"
   structureJson: string; // Excel 渲染所需的 JSON 字符串
   isLocked: boolean;
+  // 🟢 动态记录型二级模板：允许在父表单审批通过后“追加记录”
+  isDynamicLog?: boolean;
   workflowConfig?: string; // 存储 WorkflowStep[] 的 JSON 字符串
   // 🟢 解析的模板字段（JSON 字符串，解析后为 ParsedField[]）
   parsedFields?: string;
