@@ -69,6 +69,8 @@ export default function SectionFormModal({
   const paperRef = useRef<HTMLDivElement | null>(null);
   const modalScrollRef = useRef<HTMLDivElement | null>(null);
   const [trashButtons, setTrashButtons] = useState<Array<{ rowOffset: number; top: number; left: number }>>([]);
+  // 🟢 动态扩展的 parsedFields（新增行时会复制模板行的字段类型）
+  const [extendedParsedFields, setExtendedParsedFields] = useState<ParsedField[]>([]);
 
   const formatZh = (iso: string) => {
     const d = new Date(iso);
@@ -229,7 +231,7 @@ export default function SectionFormModal({
   }, [templateData, isDynamicSecondary, showDynamicRowsDesktop, desktopRowCount, repeatBaseRow0]);
 
   // 解析字段配置
-  const parsedFields = useMemo(() => {
+  const baseParsedFields = useMemo(() => {
     if (!boundTemplate?.parsedFields) return [];
     try {
       const fields = JSON.parse(boundTemplate.parsedFields);
@@ -238,6 +240,11 @@ export default function SectionFormModal({
       return [];
     }
   }, [boundTemplate?.parsedFields]);
+
+  // 🟢 实际使用的 parsedFields：优先用扩展后的，没有则用基础的
+  const parsedFields = useMemo(() => {
+    return extendedParsedFields.length > 0 ? extendedParsedFields : baseParsedFields;
+  }, [extendedParsedFields, baseParsedFields]);
 
   // 🟢 追加模式：选出“可追加行字段”（优先使用 {ADD=R?} 指定的 baseRow）
   const appendFields = useMemo(() => {
@@ -347,10 +354,60 @@ export default function SectionFormModal({
   };
 
   const addDesktopBlankRow = () => {
+    if (recordBaseRow0 === null || baseParsedFields.length === 0) {
+      setDesktopRowCount(prev => prev + 1);
+      return;
+    }
+
+    const templateRowFields = baseParsedFields.filter(
+      (f: any) => typeof f.rowIndex === 'number' && f.rowIndex === recordBaseRow0
+    );
+    
+    if (templateRowFields.length === 0) {
+      setDesktopRowCount(prev => prev + 1);
+      return;
+    }
+
+    // 🟢 同步更新：先计算好所有更新，再一起 setState，避免时序问题
     setDesktopRowCount(prev => {
       const nextCount = prev + 1;
-      // 草稿：仅增加行 & 确保序号可见，不覆盖用户已填内容
-      ensureSerialVisibleForDraft(nextCount);
+      const newRowIndex = recordBaseRow0 + (nextCount - 1);
+      
+      // 1️⃣ 生成新行的字段定义
+      const newRowFields = templateRowFields.map((f: any) => ({
+        ...f,
+        cellKey: `R${newRowIndex + 1}C${f.colIndex + 1}`,
+        rowIndex: newRowIndex,
+        _pos: { r1: newRowIndex + 1, c1: f.colIndex + 1 }
+      }));
+      
+      // 2️⃣ 更新扩展字段（同步执行）
+      setExtendedParsedFields(prevFields => {
+        const filtered = prevFields.filter((pf: any) => 
+          !(typeof pf.rowIndex === 'number' && pf.rowIndex === newRowIndex)
+        );
+        return [...filtered, ...newRowFields];
+      });
+
+      // 3️⃣ 为新行的特殊字段类型自动填充值（同步执行）
+      setFormData(prevData => {
+        const next: Record<string, any> = { ...prevData };
+        const now = new Date().toISOString();
+        
+        templateRowFields.forEach((f: any) => {
+          if (typeof f.colIndex !== 'number') return;
+          const key = `${newRowIndex}-${f.colIndex}`;
+          
+          // timenow 字段：自动填充当前时间
+          if (f.fieldType === 'timenow') {
+            next[key] = formatZh(now);
+          }
+          // 其他字段类型保持为空，由用户填写
+        });
+        
+        return next;
+      });
+      
       return nextCount;
     });
   };
@@ -394,6 +451,28 @@ export default function SectionFormModal({
 
       // serial 改为手动填写：不再重排/重写序号
       return next;
+    });
+
+    // 🟢 同步更新 extendedParsedFields：删除目标行，后续行上移
+    setExtendedParsedFields(prev => {
+      const deletedRowIndex = baseRow0 + rowOffset;
+      const lastRowIndex = baseRow0 + (desktopRowCount - 1);
+      
+      return prev
+        .filter((f: any) => f.rowIndex !== deletedRowIndex) // 移除被删除行的字段
+        .map((f: any) => {
+          // 后续行上移
+          if (typeof f.rowIndex === 'number' && f.rowIndex > deletedRowIndex && f.rowIndex <= lastRowIndex) {
+            const newRowIndex = f.rowIndex - 1;
+            return {
+              ...f,
+              rowIndex: newRowIndex,
+              cellKey: `R${newRowIndex + 1}C${f.colIndex + 1}`,
+              _pos: { r1: newRowIndex + 1, c1: f.colIndex + 1 }
+            };
+          }
+          return f;
+        });
     });
 
     setDesktopRowCount(prev => Math.max(1, prev - 1));
@@ -732,6 +811,30 @@ export default function SectionFormModal({
           ? Math.max(1, persistedRowCount)
           : Math.max(1, initLogs.length || 1);
       setDesktopRowCount(initRowCount);
+      
+      // 🟢 初始化 extendedParsedFields：根据恢复的行数，复制模板行的字段类型到新行
+      if (showDynamicRowsDesktop && recordBaseRow0 !== null && baseParsedFields.length > 0 && initRowCount > 1) {
+        const templateRowFields = baseParsedFields.filter(
+          (f: any) => typeof f.rowIndex === 'number' && f.rowIndex === recordBaseRow0
+        );
+        
+        if (templateRowFields.length > 0) {
+          const newFields: ParsedField[] = [];
+          for (let i = 1; i < initRowCount; i++) {
+            const newRowIndex = recordBaseRow0 + i;
+            templateRowFields.forEach((f: any) => {
+              newFields.push({
+                ...f,
+                cellKey: `R${newRowIndex + 1}C${f.colIndex + 1}`,
+                rowIndex: newRowIndex,
+                _pos: { r1: newRowIndex + 1, c1: f.colIndex + 1 }
+              });
+            });
+          }
+          setExtendedParsedFields(newFields);
+        }
+      }
+      
       // 草稿阶段：首个序号也应可见（1..n）
       if (showDynamicRowsDesktop) {
         if (appendOnly) {
@@ -755,6 +858,7 @@ export default function SectionFormModal({
       setShowAppendCard(false);
       setAppendDraft({});
       setDesktopRowCount(1);
+      setExtendedParsedFields([]);
     }
   }, [isOpen, existingData?.code, JSON.stringify(existingData?.data || {}), JSON.stringify(inheritedData), boundTemplate?.orientation, showDynamicRowsDesktop]);
 
@@ -1150,9 +1254,9 @@ export default function SectionFormModal({
             <div ref={excelHostRef} className="relative">
               {templateData && (
                 <ExcelRenderer
-                // 🟢 ExcelRenderer 内部对 templateData 采用惰性初始化，为了让“+增加一行”立刻生效，
-                // 在桌面动态记录模式下把 key 绑定到 desktopRowCount，强制重新挂载刷新网格行数。
-                key={`${boundTemplate?.id}-${isOpen ? 'open' : 'closed'}-${existingData?.code || 'new'}-${showDynamicRowsDesktop ? desktopRowCount : 'static'}`}
+                // 🟢 ExcelRenderer 内部对 templateData 采用惰性初始化，为了让"+增加一行"立刻生效，
+                // 在桌面动态记录模式下把 key 绑定到 desktopRowCount 和 extendedParsedFields，确保字段定义同步更新。
+                key={`${boundTemplate?.id}-${isOpen ? 'open' : 'closed'}-${existingData?.code || 'new'}-${showDynamicRowsDesktop ? `${desktopRowCount}-${extendedParsedFields.length}` : 'static'}`}
                 templateData={displayTemplateData || templateData}
                 initialData={formData}
                 parsedFields={parsedFields}
@@ -1160,6 +1264,14 @@ export default function SectionFormModal({
                 orientation={orientation}
                 mode={readOnly ? "view" : "edit"}
                 onDataChange={readOnly ? undefined : setFormData}
+                onParsedFieldsChange={(fields) => {
+                  // 🟢 允许 ExcelRenderer 在设计模式下更新字段定义
+                  // 在动态记录模式下，我们主要通过 extendedParsedFields 管理新增行的字段
+                  if (extendedParsedFields.length === 0) {
+                    // 仅在未手动扩展时，接受来自 ExcelRenderer 的更新
+                    setExtendedParsedFields(fields);
+                  }
+                }}
                 />
               )}
             </div>
