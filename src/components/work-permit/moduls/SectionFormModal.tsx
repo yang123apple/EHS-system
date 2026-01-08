@@ -241,9 +241,22 @@ export default function SectionFormModal({
     }
   }, [boundTemplate?.parsedFields]);
 
-  // 🟢 实际使用的 parsedFields：优先用扩展后的，没有则用基础的
+  // 🟢 实际使用的 parsedFields：合并基础字段和扩展字段（新增行的字段定义）
+  // 关键：R5行的字段定义在 baseParsedFields 中，新增的R6行字段定义在 extendedParsedFields 中
   const parsedFields = useMemo(() => {
-    return extendedParsedFields.length > 0 ? extendedParsedFields : baseParsedFields;
+    if (extendedParsedFields.length === 0) {
+      return baseParsedFields; // 没有新增行，只返回基础字段（包含R5行）
+    }
+    // 合并：基础字段 + 扩展字段（避免重复，以扩展字段为准）
+    const baseMap = new Map<string, ParsedField>();
+    baseParsedFields.forEach(f => {
+      if (f.cellKey) baseMap.set(f.cellKey, f);
+    });
+    // 扩展字段覆盖基础字段（新增行的字段定义）
+    extendedParsedFields.forEach(f => {
+      if (f.cellKey) baseMap.set(f.cellKey, f);
+    });
+    return Array.from(baseMap.values());
   }, [extendedParsedFields, baseParsedFields]);
 
   // 🟢 追加模式：选出“可追加行字段”（优先使用 {ADD=R?} 指定的 baseRow）
@@ -354,16 +367,43 @@ export default function SectionFormModal({
   };
 
   const addDesktopBlankRow = () => {
+    // 🟢 从数据库读取：获取 {ADD} 标记行的所有字段定义（从 baseParsedFields 中读取）
     if (recordBaseRow0 === null || baseParsedFields.length === 0) {
       setDesktopRowCount(prev => prev + 1);
       return;
     }
 
-    const templateRowFields = baseParsedFields.filter(
-      (f: any) => typeof f.rowIndex === 'number' && f.rowIndex === recordBaseRow0
-    );
+    // 🟢 关键：从 baseParsedFields 中读取 {ADD} 标记行（recordBaseRow0）的所有字段定义
+    // 这些字段定义已经包含了完整的解析类型（fieldType、options、hint 等）
+    const templateRowFields = baseParsedFields.filter((f: any) => {
+      // 方式1：通过 rowIndex 匹配（推荐，最准确）
+      if (typeof f.rowIndex === 'number' && f.rowIndex === recordBaseRow0) {
+        return true;
+      }
+      // 方式2：通过 cellKey 匹配（兼容旧数据，cellKey 格式为 R{row1}C{col1}）
+      if (f.cellKey) {
+        const m = String(f.cellKey).match(/^R(\d+)C(\d+)$/i);
+        if (m) {
+          const row1 = parseInt(m[1], 10);
+          const row0 = row1 - 1; // 转换为 0-based
+          if (row0 === recordBaseRow0) {
+            return true;
+          }
+        }
+      }
+      return false;
+    });
     
     if (templateRowFields.length === 0) {
+      console.warn('[addDesktopBlankRow] 未找到 {ADD} 标记行的字段定义', {
+        recordBaseRow0,
+        baseParsedFieldsCount: baseParsedFields.length,
+        sampleFields: baseParsedFields.slice(0, 3).map((f: any) => ({
+          cellKey: f.cellKey,
+          rowIndex: f.rowIndex,
+          fieldType: f.fieldType
+        }))
+      });
       setDesktopRowCount(prev => prev + 1);
       return;
     }
@@ -373,16 +413,32 @@ export default function SectionFormModal({
       const nextCount = prev + 1;
       const newRowIndex = recordBaseRow0 + (nextCount - 1);
       
-      // 1️⃣ 生成新行的字段定义
-      const newRowFields = templateRowFields.map((f: any) => ({
-        ...f,
-        cellKey: `R${newRowIndex + 1}C${f.colIndex + 1}`,
-        rowIndex: newRowIndex,
-        _pos: { r1: newRowIndex + 1, c1: f.colIndex + 1 }
-      }));
+      // 1️⃣ 生成新行的字段定义（完整复制模板行的所有属性）
+      const newRowFields = templateRowFields.map((f: any) => {
+        const newColIndex = typeof f.colIndex === 'number' ? f.colIndex : 
+          (f.cellKey ? (() => {
+            const m = String(f.cellKey).match(/^R\d+C(\d+)$/i);
+            return m ? parseInt(m[1], 10) - 1 : null;
+          })() : null);
+        
+        if (newColIndex === null) {
+          console.warn('[addDesktopBlankRow] 无法确定列索引', f);
+          return null;
+        }
+        
+        // 🟢 完整复制字段定义，包括所有特殊属性（fieldType、options、hint、required 等）
+        return {
+          ...f, // 复制所有原有属性
+          cellKey: `R${newRowIndex + 1}C${newColIndex + 1}`, // 更新 cellKey
+          rowIndex: newRowIndex, // 更新 rowIndex
+          colIndex: newColIndex, // 确保 colIndex 存在
+          _pos: { r1: newRowIndex + 1, c1: newColIndex + 1 } // 更新 _pos（如果存在）
+        };
+      }).filter((f: any) => f !== null) as ParsedField[];
       
       // 2️⃣ 更新扩展字段（同步执行）
       setExtendedParsedFields(prevFields => {
+        // 移除新行位置的旧字段定义，避免重复
         const filtered = prevFields.filter((pf: any) => 
           !(typeof pf.rowIndex === 'number' && pf.rowIndex === newRowIndex)
         );
@@ -390,21 +446,14 @@ export default function SectionFormModal({
       });
 
       // 3️⃣ 为新行的特殊字段类型自动填充值（同步执行）
+      // 🟢 注意：timenow 字段应该保持为空（显示占位符），只有在保存时才填充时间戳
       setFormData(prevData => {
         const next: Record<string, any> = { ...prevData };
-        const now = new Date().toISOString();
         
-        templateRowFields.forEach((f: any) => {
-          if (typeof f.colIndex !== 'number') return;
-          const key = `${newRowIndex}-${f.colIndex}`;
-          
-          // timenow 字段：自动填充当前时间
-          if (f.fieldType === 'timenow') {
-            next[key] = formatZh(now);
-          }
-          // 其他字段类型保持为空，由用户填写
-        });
+        // timenow 字段不在这里填充，让它保持为空，ExcelRenderer 会显示占位符
+        // 时间戳应该在保存时由后端或保存逻辑填充
         
+        // 其他字段类型保持为空，由用户填写
         return next;
       });
       
