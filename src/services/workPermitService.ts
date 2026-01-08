@@ -8,11 +8,61 @@ const API_BASE = '/api';
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const response = await apiFetch(`${API_BASE}${url}`, options);
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`API Error ${response.status}: ${errorText || response.statusText}`);
+    // 读取响应体（只能读取一次）
+    let errorData: any;
+    const contentType = response.headers.get('content-type');
+    try {
+      if (contentType && contentType.includes('application/json')) {
+        errorData = await response.json();
+      } else {
+        const text = await response.text();
+        errorData = { error: text || response.statusText };
+      }
+    } catch (e) {
+      errorData = { error: response.statusText || '请求失败' };
+    }
+    
+    // 对于 401 错误，提供更友好的错误信息
+    if (response.status === 401) {
+      const errorMessage = errorData?.error || '未授权访问，请先登录';
+      console.warn(`[WorkPermitService] 401 未授权: ${errorMessage}`);
+      // 创建一个自定义错误，包含状态码信息
+      const error = new Error(`API Error ${response.status}: ${errorMessage}`) as any;
+      error.status = 401;
+      error.isAuthError = true;
+      error.data = errorData;
+      throw error;
+    }
+    
+    // 对于 403 错误，提供详细的权限错误信息
+    if (response.status === 403) {
+      const errorMessage = errorData?.error || errorData?.details || '权限不足';
+      console.error(`[WorkPermitService] 403 权限不足: ${errorMessage}`, errorData);
+      const error = new Error(`API Error ${response.status}: ${errorMessage}`) as any;
+      error.status = 403;
+      error.isPermissionError = true;
+      error.data = errorData;
+      throw error;
+    }
+    
+    // 对于其他错误，正常抛出
+    const errorMessage = errorData?.error || errorData?.details || response.statusText || '请求失败';
+    const error = new Error(`API Error ${response.status}: ${errorMessage}`) as any;
+    error.status = response.status;
+    error.data = errorData;
+    throw error;
   }
   // 对于 DELETE 等可能没有返回内容的请求，做特殊处理
-  if (response.status === 204) {
+  if (response.status === 204 || response.status === 201) {
+    // 尝试读取响应体，如果没有内容则返回空对象
+    try {
+      const text = await response.text();
+      if (text) {
+        return JSON.parse(text) as T;
+      }
+    } catch (e) {
+      // 忽略解析错误
+    }
     return {} as T;
   }
   return response.json();

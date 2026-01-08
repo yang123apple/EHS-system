@@ -26,10 +26,40 @@ export default function MultiSignatureDisplay({
   readonly = false,
   className = ''
 }: MultiSignatureDisplayProps) {
+  // 🟢 规范化手写签名数据格式
+  const normalizeSignature = (sig: any): string => {
+    if (!sig) return '';
+    
+    // 如果是字符串
+    if (typeof sig === 'string') {
+      // 检查是否是JSON字符串化的字符串
+      if (sig.startsWith('"') && sig.endsWith('"')) {
+        try {
+          const parsed = JSON.parse(sig);
+          return normalizeSignature(parsed);
+        } catch (e) {
+          // 解析失败，继续处理
+        }
+      }
+      // 检查是否是完整的data URL，如果是则提取base64部分
+      if (sig.startsWith('data:image')) {
+        return sig.split(',')[1] || sig;
+      }
+      // 如果是纯base64字符串，直接返回
+      return sig;
+    }
+    
+    // 如果是其他类型，转换为字符串
+    return String(sig);
+  };
+  
   // 兼容旧数据：如果是字符串，转换为数组
-  const signatureArray = Array.isArray(signatures) 
+  let rawArray = Array.isArray(signatures) 
     ? signatures 
     : (signatures && typeof signatures === 'string' && signatures.length > 0 ? [signatures] : []);
+  
+  // 🟢 规范化数组中的每个签名
+  const signatureArray = rawArray.map(normalizeSignature).filter(sig => sig && sig.length > 0);
 
   // 如果没有签名且是只读模式，显示提示
   if (readonly && signatureArray.length === 0) {

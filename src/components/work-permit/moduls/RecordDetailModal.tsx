@@ -306,13 +306,23 @@ export default function RecordDetailModal({
         // 🟢 统一使用 cellKey 读取数据
         const key = field.cellKey;
         const fieldValue = String(recordData[key] ?? recordData[`${Number(key.match(/R(\d+)/)?.[1] || 1) - 1}-${Number(key.match(/C(\d+)/)?.[1] || 1) - 1}`] ?? '').trim();
-        const hit = fieldValue && fieldValue.includes(match.containsText);
+        
+        // 🟢 支持逗号分隔多个匹配值
+        const matchValues = (match.containsText || '')
+          .split(',')
+          .map(v => v.trim())
+          .filter(v => v.length > 0);
+        
+        const hit = fieldValue && (matchValues.length === 0 || matchValues.some(matchText => 
+          fieldValue.includes(matchText)
+        ));
 
         console.log('🔍 [调试-文本匹配]', {
           field: field.fieldName,
           cellKey: field.cellKey,
           value: fieldValue,
           rule: match.containsText,
+          matchValues,
           hit,
         });
 
@@ -340,31 +350,106 @@ export default function RecordDetailModal({
         targetDeptId?: string;
       }>;
 
+      console.log('🔍 [选项匹配] 开始匹配，配置:', {
+        matchesCount: matches.length,
+        matches: matches,
+        parsedFieldsCount: parsedFields.length,
+        optionFields: parsedFields.filter(f => f.fieldType === 'option').map(f => ({
+          fieldName: f.fieldName,
+          label: f.label,
+          cellKey: f.cellKey
+        })),
+        recordDataKeys: Object.keys(recordData).slice(0, 10)
+      });
+
       const picked: { userId: string; userName: string }[] = [];
 
       for (const match of matches) {
+        console.log('🔍 [选项匹配] 处理匹配规则:', {
+          matchFieldName: match.fieldName,
+          matchCheckedValue: match.checkedValue,
+          approverType: match.approverType
+        });
+
+        // 🟢 更宽松的字段匹配：支持 fieldName、label、cellKey 匹配
         const field = parsedFields.find(
-          (f) =>
-            f.fieldType === 'option' &&
-            (f.fieldName === match.fieldName || f.label?.includes(match.fieldName))
+          (f) => {
+            if (f.fieldType !== 'option') return false;
+            // 精确匹配 fieldName
+            if (f.fieldName === match.fieldName) return true;
+            // label 包含 fieldName
+            if (f.label?.includes(match.fieldName)) return true;
+            // fieldName 包含 label（反向匹配）
+            if (match.fieldName && f.label && match.fieldName.includes(f.label)) return true;
+            return false;
+          }
         );
 
-        if (!field?.cellKey) continue;
+        if (!field) {
+          console.warn('⚠️ [选项匹配] 未找到匹配的选项字段:', {
+            matchFieldName: match.fieldName,
+            availableOptionFields: parsedFields
+              .filter(f => f.fieldType === 'option')
+              .map(f => ({ fieldName: f.fieldName, label: f.label, cellKey: f.cellKey }))
+          });
+          continue;
+        }
+
+        if (!field.cellKey) {
+          console.warn('⚠️ [选项匹配] 字段没有 cellKey:', field);
+          continue;
+        }
         // 🟢 统一使用 cellKey 读取数据
         const key = field.cellKey;
-        const rawCell = recordData[key] ?? recordData[`${Number(key.match(/R(\d+)/)?.[1] || 1) - 1}-${Number(key.match(/C(\d+)/)?.[1] || 1) - 1}`];
+        // 尝试多种格式读取数据
+        const rawCell = recordData[key] 
+          ?? recordData[`${Number(key.match(/R(\d+)/)?.[1] || 1) - 1}-${Number(key.match(/C(\d+)/)?.[1] || 1) - 1}`]
+          ?? recordData[field.cellKey.toLowerCase()]
+          ?? recordData[field.cellKey.toUpperCase()];
+        
         const rawValue = String(rawCell ?? '');
         const fieldValue = rawValue.trim();
         const normalized = fieldValue.replace(/\s+/g, '');
 
+        console.log('🔍 [选项匹配] 读取字段值:', {
+          cellKey: key,
+          rawCell,
+          rawValue,
+          fieldValue,
+          normalized,
+          recordDataHasKey: key in recordData,
+          recordDataSample: Object.keys(recordData).slice(0, 5)
+        });
+
         // 自动识别勾选：含 √/☑/✔/✅ 即视为勾选；如果未配置 checkedValue，则任意非空也视为勾选
         const hasCheckMark = /[√☑✔✅]/.test(normalized);
-        const matchValue = match.checkedValue?.trim();
-        const valueHit = matchValue
-          ? fieldValue.includes(matchValue) || normalized.includes(matchValue.replace(/\s+/g, ''))
+        
+        // 🟢 支持逗号分隔多个匹配值
+        const matchValues = (match.checkedValue || '')
+          .split(',')
+          .map(v => v.trim())
+          .filter(v => v.length > 0);
+        
+        const valueHit = matchValues.length > 0
+          ? matchValues.some(matchValue => {
+              const normalizedMatch = matchValue.replace(/\s+/g, '');
+              // 更宽松的匹配：支持包含、相等、忽略大小写
+              const matchLower = matchValue.toLowerCase();
+              const fieldLower = fieldValue.toLowerCase();
+              return fieldValue.includes(matchValue) 
+                || normalized.includes(normalizedMatch)
+                || fieldLower.includes(matchLower)
+                || fieldValue === matchValue;
+            })
           : normalized.length > 0; // 没配置值时，任意非空视为选中
 
-        const booleanHit = rawCell === true || normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === '是';
+        const booleanHit = rawCell === true 
+          || normalized === 'true' 
+          || normalized === '1' 
+          || normalized === 'yes' 
+          || normalized === '是'
+          || normalized === 'y'
+          || normalized === 'Y';
 
         const isChecked = hasCheckMark || valueHit || booleanHit;
 
@@ -374,7 +459,7 @@ export default function RecordDetailModal({
           rawCell,
           rawValue,
           normalized,
-          matchValue,
+          matchValues,
           hasCheckMark,
           valueHit,
           booleanHit,
@@ -383,24 +468,52 @@ export default function RecordDetailModal({
         });
 
         if (isChecked) {
+          console.log('✅ [选项匹配] 匹配成功，查找审批人:', {
+            approverType: match.approverType,
+            approverUserId: match.approverUserId,
+            targetDeptId: match.targetDeptId
+          });
+
           if (match.approverType === 'person' && match.approverUserId) {
             const person = allUsers.find((u) => String(u.id) === String(match.approverUserId));
-            if (person) picked.push({ userId: person.id, userName: person.name });
+            if (person) {
+              console.log('✅ [选项匹配] 找到指定人员:', person.name);
+              picked.push({ userId: person.id, userName: person.name });
+            } else {
+              console.warn('⚠️ [选项匹配] 未找到指定人员:', match.approverUserId);
+            }
           }
           if (match.approverType === 'dept_manager' && match.targetDeptId) {
             const dept = findDeptRecursive(departments, match.targetDeptId);
             if (dept?.managerId) {
               const manager = allUsers.find((u) => String(u.id) === String(dept.managerId));
-              if (manager) picked.push({ userId: manager.id, userName: manager.name });
+              if (manager) {
+                console.log('✅ [选项匹配] 找到部门负责人:', manager.name);
+                picked.push({ userId: manager.id, userName: manager.name });
+              } else {
+                console.warn('⚠️ [选项匹配] 未找到部门负责人:', dept.managerId);
+              }
+            } else {
+              console.warn('⚠️ [选项匹配] 部门没有负责人:', match.targetDeptId);
             }
           }
+        } else {
+          console.log('❌ [选项匹配] 匹配失败，字段未选中');
         }
       }
+
+      console.log('🔍 [选项匹配] 最终结果:', {
+        pickedCount: picked.length,
+        picked: picked
+      });
 
       // 去重
       if (picked.length) {
         const dedup = Array.from(new Map(picked.map((p) => [p.userId, p])).values());
+        console.log('✅ [选项匹配] 返回去重后的审批人:', dedup);
         return dedup;
+      } else {
+        console.warn('⚠️ [选项匹配] 未找到任何审批人，返回空数组');
       }
     }
 
@@ -418,9 +531,37 @@ export default function RecordDetailModal({
     if (!currentStepConfig) return false;
 
     // 获取审批模式（默认OR）
-    const approvalMode = currentStepConfig.approvalMode || 'OR';
+    const approvalMode = currentStepConfig.approvalMode || (record as any).approvalMode || 'OR';
     
-    // 检查当前步骤的审批情况
+    // 🟢 使用 candidateHandlers 检查（如果存在）
+    const candidateHandlers = (record as any).candidateHandlers 
+      ? (typeof (record as any).candidateHandlers === 'string' 
+          ? JSON.parse((record as any).candidateHandlers) 
+          : (record as any).candidateHandlers)
+      : [];
+    
+    if (candidateHandlers.length > 0 && approvalMode) {
+      // 多人模式：检查是否在候选审批人列表中
+      if (approvalMode === 'OR') {
+        // OR模式（或签）：任何一人操作后，其他人不能再操作
+        const someoneOperated = candidateHandlers.some((h: any) => h.hasOperated);
+        if (someoneOperated) {
+          return false;
+        }
+      } else if (approvalMode === 'AND') {
+        // AND模式（会签）：每个人都可以操作，但只能操作一次
+        const currentUserHandler = candidateHandlers.find((h: any) => String(h.userId) === String(user?.id));
+        if (currentUserHandler && currentUserHandler.hasOperated) {
+          return false; // 当前用户已操作过
+        }
+      }
+      
+      // 检查当前用户是否在候选人列表中
+      const isCandidate = candidateHandlers.some((h: any) => String(h.userId) === String(user?.id));
+      if (isCandidate) return true;
+    }
+    
+    // 单人模式或没有 candidateHandlers：使用旧逻辑检查日志
     const logs: any[] = record.approvalLogs ? JSON.parse(record.approvalLogs) : [];
     
     if (approvalMode === 'OR') {
@@ -834,14 +975,22 @@ export default function RecordDetailModal({
                 )}
               </button>
             )}
-            {canApprove && (
-              <button
-                onClick={onOpenApproval}
-                className={`bg-blue-600 text-white px-4 py-1.5 rounded font-bold shadow hover:bg-blue-700 flex items-center gap-1 ${isMobile ? 'flex-1 justify-center' : ''}`}
-              >
-                <CheckCircle size={16} /> 审批
-              </button>
-            )}
+            {canApprove && (() => {
+              // 双重检查：业务逻辑（canApprove）+ 系统权限（approve_permit）
+              const hasApprovePermission = user?.role === 'admin' || 
+                user?.permissions?.['work_permit']?.includes('approve_permit');
+              
+              if (!hasApprovePermission) return null;
+              
+              return (
+                <button
+                  onClick={onOpenApproval}
+                  className={`bg-blue-600 text-white px-4 py-1.5 rounded font-bold shadow hover:bg-blue-700 flex items-center gap-1 ${isMobile ? 'flex-1 justify-center' : ''}`}
+                >
+                  <CheckCircle size={16} /> 审批
+                </button>
+              );
+            })()}
             {attachments.length > 0 && (
               <button
                 onClick={() => onViewAttachments(attachments)}

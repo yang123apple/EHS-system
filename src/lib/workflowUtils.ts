@@ -80,16 +80,32 @@ export async function resolveApprovers(
       return typeOk && nameOk;
     });
 
-    if (candidate) {
-      // 将 cellKey "R7C3" 映射到 formData 的键 "6-2" (0-based)
+    if (candidate && candidate.cellKey) {
+      // 🟢 修复：同时尝试 cellKey 格式和 "r-c" 格式
       const m = candidate.cellKey.match(/^R(\d+)C(\d+)$/);
       if (m) {
         const r0 = Number(m[1]) - 1;
         const c0 = Number(m[2]) - 1;
-        const key = `${r0}-${c0}`;
-        const deptName = String(formData[key] || '').trim();
+        const keyRC = `${r0}-${c0}`;
+        
+        // 尝试两种键格式
+        const deptName = String(
+          formData[candidate.cellKey] ||  // 优先使用 cellKey 格式 (R7C3)
+          formData[keyRC] ||              // 备用：r-c 格式 (6-2)
+          ''
+        ).trim();
+        
+        console.log('🔍 [字段匹配] 查找部门:', {
+          fieldName: targetFieldName,
+          cellKey: candidate.cellKey,
+          keyRC,
+          deptName,
+          formDataKeys: Object.keys(formData).slice(0, 10)
+        });
+        
         if (deptName) {
           const managerList = await PeopleFinder.findDeptManagerByName(deptName);
+          console.log('🔍 [字段匹配] 找到的负责人:', managerList.map(m => m.name));
           if (managerList.length) return managerList;
         }
       }
@@ -110,19 +126,35 @@ export async function resolveApprovers(
     for (const match of textMatches) {
       // 找到对应的文本字段
       const field = parsedFields.find(
-        f => f.fieldType === 'text' && (f.fieldName === match.fieldName || f.label.includes(match.fieldName))
+        f => (f.fieldType === 'text' || f.fieldType === 'match') && (f.fieldName === match.fieldName || f.label.includes(match.fieldName))
       );
 
-      if (field) {
+      if (field && field.cellKey) {
         const m = field.cellKey.match(/^R(\d+)C(\d+)$/);
         if (m) {
           const r0 = Number(m[1]) - 1;
           const c0 = Number(m[2]) - 1;
-          const key = `${r0}-${c0}`;
-          const fieldValue = String(formData[key] || '').trim();
+          const keyRC = `${r0}-${c0}`;
           
-          // 如果字段值包含指定的文本，则返回对应部门的负责人
-          if (fieldValue.includes(match.containsText)) {
+          // 🟢 修复：同时尝试 cellKey 格式和 "r-c" 格式
+          const fieldValue = String(
+            formData[field.cellKey] ||  // 优先使用 cellKey 格式 (R7C3)
+            formData[keyRC] ||          // 备用：r-c 格式 (6-2)
+            ''
+          ).trim();
+          
+          // 🟢 支持逗号分隔多个匹配值
+          const matchValues = match.containsText
+            .split(',')
+            .map(v => v.trim())
+            .filter(v => v.length > 0);
+          
+          // 检查字段值是否包含任一匹配文本
+          const matchesAny = matchValues.length === 0 || matchValues.some(matchText => 
+            fieldValue.includes(matchText)
+          );
+          
+          if (matchesAny) {
             const manager = await PeopleFinder.findDeptManager(match.targetDeptId);
             if (manager) {
               return [manager];
@@ -155,22 +187,34 @@ export async function resolveApprovers(
         f => f.fieldType === 'option' && (f.fieldName === match.fieldName || f.label.includes(match.fieldName))
       );
 
-      if (field) {
+      if (field && field.cellKey) {
         const m = field.cellKey.match(/^R(\d+)C(\d+)$/);
         if (m) {
           const r0 = Number(m[1]) - 1;
           const c0 = Number(m[2]) - 1;
-          const key = `${r0}-${c0}`;
-          const rawCell = formData[key];
+          const keyRC = `${r0}-${c0}`;
+          
+          // 🟢 修复：同时尝试 cellKey 格式和 "r-c" 格式
+          const rawCell = formData[field.cellKey] || formData[keyRC];
           const rawValue = String(rawCell || '');
           const fieldValue = rawValue.trim();
           const normalized = fieldValue.replace(/\s+/g, '');
 
           const hasCheckMark = /[√☑✔✅]/.test(normalized);
-          const matchValue = (match.checkedValue || '').trim();
-          const valueHit = matchValue
-            ? fieldValue.includes(matchValue) || normalized.includes(matchValue.replace(/\s+/g, ''))
+          
+          // 🟢 支持逗号分隔多个匹配值
+          const matchValues = (match.checkedValue || '')
+            .split(',')
+            .map(v => v.trim())
+            .filter(v => v.length > 0);
+          
+          const valueHit = matchValues.length > 0
+            ? matchValues.some(matchValue => {
+                const normalizedMatch = matchValue.replace(/\s+/g, '');
+                return fieldValue.includes(matchValue) || normalized.includes(normalizedMatch);
+              })
             : normalized.length > 0; // 未配置值时，任意非空视为勾选
+          
           const booleanHit = rawCell === true || normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === '是';
           const isChecked = hasCheckMark || valueHit || booleanHit;
 

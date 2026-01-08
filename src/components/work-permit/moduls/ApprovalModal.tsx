@@ -57,6 +57,7 @@ export default function ApprovalModal({ isOpen, onClose, record, user, onSuccess
           action: 'reject',
           opinion: finalOpinion,
           userName: user?.name || 'Unknown',
+          userId: user?.id,
         });
       } 
       // === 通过 / 现场确认逻辑 ===
@@ -78,13 +79,16 @@ export default function ApprovalModal({ isOpen, onClose, record, user, onSuccess
           action: 'pass',
           opinion: finalOpinion,
           userName: user?.name || 'Unknown',
+          userId: user?.id,
         });
       }
       
       onSuccess();
-    } catch (e) {
-      console.error(e);
-      alert('操作失败，请重试');
+    } catch (e: any) {
+      console.error('审批操作失败:', e);
+      // 显示更详细的错误信息
+      const errorMessage = e?.message || e?.data?.details || e?.data?.error || '操作失败，请重试';
+      alert(`审批操作失败: ${errorMessage}`);
     } finally {
       setLoading(false);
     }

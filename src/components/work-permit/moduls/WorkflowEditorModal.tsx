@@ -50,6 +50,13 @@ export default function WorkflowEditorModal({
     strategyId: string;
   } | null>(null);
 
+  // 🟢 新增：选项匹配规则的人员选择器状态
+  const [personSelectorOpen, setPersonSelectorOpen] = useState(false);
+  const [personSelectorTarget, setPersonSelectorTarget] = useState<{
+    stepIdx: number;
+    optionMatchIdx: number;
+  } | null>(null);
+
   // 🔵 判断是否为二级模板
   const isSecondaryTemplate = template?.level === 'secondary';
 
@@ -185,6 +192,26 @@ export default function WorkflowEditorModal({
 
     setWorkflowSteps(newSteps);
     setSelectorTarget(null);
+  };
+
+  // 🟢 处理选项匹配规则的人员选择
+  const handlePersonSelect = (users: any[]) => {
+    if (!personSelectorTarget || users.length === 0) {
+      setPersonSelectorTarget(null);
+      setPersonSelectorOpen(false);
+      return;
+    }
+    const { stepIdx, optionMatchIdx } = personSelectorTarget;
+    const newSteps = [...workflowSteps];
+    // 单选模式，取第一个用户
+    const selectedUser = users[0];
+    if (newSteps[stepIdx].strategyConfig?.optionMatches) {
+      newSteps[stepIdx].strategyConfig!.optionMatches![optionMatchIdx].approverUserId = selectedUser.id;
+      newSteps[stepIdx].strategyConfig!.optionMatches![optionMatchIdx].approverUserName = selectedUser.name || '';
+    }
+    setWorkflowSteps(newSteps);
+    setPersonSelectorTarget(null);
+    setPersonSelectorOpen(false);
   };
 
   const handleSave = async () => {
@@ -805,11 +832,11 @@ export default function WorkflowEditorModal({
                         </div>
 
                         <div>
-                          <label className="text-[10px] text-slate-500 block mb-1">包含文本</label>
+                          <label className="text-[10px] text-slate-500 block mb-1">包含文本（支持逗号分隔多个值）</label>
                           <input
                             type="text"
                             className="w-full border rounded text-xs py-1 px-2"
-                            placeholder="如: 危险作业"
+                            placeholder="如: 危险作业 或 危险作业,高风险,特殊作业"
                             value={match.containsText || ''}
                             onChange={e => {
                               const newSteps = [...workflowSteps];
@@ -817,6 +844,7 @@ export default function WorkflowEditorModal({
                               setWorkflowSteps(newSteps);
                             }}
                           />
+                          <div className="text-[9px] text-slate-400 mt-0.5">多个值用逗号分隔，匹配任一值即可</div>
                         </div>
 
                         <div>
@@ -911,11 +939,11 @@ export default function WorkflowEditorModal({
                         </div>
 
                         <div>
-                          <label className="text-[10px] text-slate-500 block mb-1">勾选值 (如: √ 或 ☑)</label>
+                          <label className="text-[10px] text-slate-500 block mb-1">勾选值（支持逗号分隔多个值，如: √ 或 √,☑,✔）</label>
                           <input
                             type="text"
                             className="w-full border rounded text-xs py-1 px-2"
-                            placeholder="如: √"
+                            placeholder="如: √ 或 √,☑,✔"
                             value={match.checkedValue || ''}
                             onChange={e => {
                               const newSteps = [...workflowSteps];
@@ -923,6 +951,7 @@ export default function WorkflowEditorModal({
                               setWorkflowSteps(newSteps);
                             }}
                           />
+                          <div className="text-[9px] text-slate-400 mt-0.5">多个值用逗号分隔，匹配任一值即可</div>
                         </div>
 
                         <div>
@@ -963,24 +992,17 @@ export default function WorkflowEditorModal({
                         {match.approverType === 'person' && (
                           <div>
                             <label className="text-[10px] text-slate-500 block mb-1">选择人员</label>
-                            <select
-                              className="w-full border rounded text-xs py-1 px-2 bg-white"
-                              value={match.approverUserId || ''}
-                              onChange={e => {
-                                const newSteps = [...workflowSteps];
-                                const user = allUsers.find((u: any) => u.id === e.target.value);
-                                newSteps[idx].strategyConfig!.optionMatches![matchIdx].approverUserId = e.target.value;
-                                newSteps[idx].strategyConfig!.optionMatches![matchIdx].approverUserName = user?.name || '';
-                                setWorkflowSteps(newSteps);
+                            <div
+                              onClick={() => {
+                                setPersonSelectorTarget({ stepIdx: idx, optionMatchIdx: matchIdx });
+                                setPersonSelectorOpen(true);
                               }}
+                              className="border border-slate-300 rounded text-xs py-1.5 px-2 bg-white cursor-pointer hover:border-blue-500"
                             >
-                              <option value="">请选择人员</option>
-                              {allUsers.map((u: any) => (
-                                <option key={u.id} value={u.id}>
-                                  {u.name} {u.jobTitle ? `(${u.jobTitle})` : ''}
-                                </option>
-                              ))}
-                            </select>
+                              <span className={match.approverUserId ? 'text-slate-700' : 'text-slate-400'}>
+                                {match.approverUserName || '点击选择人员'}
+                              </span>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1229,6 +1251,19 @@ export default function WorkflowEditorModal({
              }
         }}
         title="选择部门"
+      />
+
+      {/* 🟢 选项匹配规则的人员选择弹窗 */}
+      <PeopleSelector
+        isOpen={personSelectorOpen}
+        onClose={() => {
+          setPersonSelectorOpen(false);
+          setPersonSelectorTarget(null);
+        }}
+        mode="dept_then_user"
+        multiSelect={false}
+        onConfirm={handlePersonSelect}
+        title="选择人员"
       />
     </div>
   );

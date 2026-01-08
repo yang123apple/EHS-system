@@ -37,11 +37,31 @@ export async function apiFetch(
   // 这样可以避免在退出登录后发起无意义的请求
   if (!url.includes('/api/auth/login') && !user) {
     // 创建一个模拟的 401 响应，但不会导致真正的网络请求
-    return new Response(JSON.stringify({ error: '未授权访问，请先登录' }), {
+    // 注意：这个响应会被调用方处理，不应该直接抛出错误
+    const errorResponse = new Response(JSON.stringify({ error: '未授权访问，请先登录' }), {
       status: 401,
       statusText: 'Unauthorized',
       headers: { 'Content-Type': 'application/json' }
     });
+    
+    // 在客户端环境下，如果是 401 错误，可以选择静默处理或跳转到登录页
+    if (typeof window !== 'undefined') {
+      // 检查是否在登录页面，避免循环跳转
+      const isLoginPage = window.location.pathname === '/login' || window.location.pathname.startsWith('/login');
+      if (!isLoginPage) {
+        // 延迟跳转，让调用方有机会处理错误
+        setTimeout(() => {
+          // 只有在确实没有用户信息时才跳转
+          const currentUser = getCurrentUser();
+          if (!currentUser) {
+            console.warn('[API Client] 未授权访问，跳转到登录页');
+            window.location.href = '/login';
+          }
+        }, 100);
+      }
+    }
+    
+    return errorResponse;
   }
   
   // 合并headers
@@ -69,8 +89,40 @@ export async function apiFetch(
     cache: options.cache ?? 'no-store',
   };
   
-  // 发送请求
-  const response = await fetch(url, fetchOptions);
+  // 发送请求，捕获网络错误
+  let response: Response;
+  try {
+    response = await fetch(url, fetchOptions);
+  } catch (error: any) {
+    // 捕获网络错误（Failed to fetch, CORS错误, 连接超时等）
+    console.error('[API Client] 网络请求失败:', error);
+    
+    // 创建一个模拟的错误响应，包含网络错误信息
+    const errorMessage = error?.message || '网络连接失败';
+    const isNetworkError = 
+      errorMessage.includes('Failed to fetch') ||
+      errorMessage.includes('NetworkError') ||
+      errorMessage.includes('Network request failed') ||
+      errorMessage.includes('ERR_INTERNET_DISCONNECTED') ||
+      errorMessage.includes('ERR_CONNECTION_REFUSED') ||
+      errorMessage.includes('ERR_CONNECTION_TIMED_OUT') ||
+      errorMessage.includes('ERR_NAME_NOT_RESOLVED');
+    
+    // 返回一个模拟的 500 错误响应，包含网络错误信息
+    return new Response(
+      JSON.stringify({ 
+        error: isNetworkError ? '网络连接失败' : '请求失败',
+        details: errorMessage,
+        isNetworkError: true,
+        originalError: errorMessage
+      }),
+      {
+        status: 0, // 使用 0 表示网络错误（fetch 无法完成）
+        statusText: 'Network Error',
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  }
   
   // 处理认证失败
   if (response.status === 401) {
@@ -83,10 +135,10 @@ export async function apiFetch(
     }
   }
   
-  // 处理权限不足
+  // 处理权限不足 - 只记录日志，不读取响应体（让调用方处理）
   if (response.status === 403) {
-    const error = await response.json().catch(() => ({ error: '权限不足' }));
-    console.error('[API Client] 权限不足:', error);
+    console.error('[API Client] 权限不足 (403)');
+    // 不读取响应体，让调用方来处理
   }
   
   return response;
@@ -101,6 +153,20 @@ export class ApiClient {
    * 处理响应错误的统一方法
    */
   private static async handleResponseError(response: Response): Promise<void> {
+    // 处理网络错误（状态码为 0 表示 fetch 无法完成）
+    if (response.status === 0) {
+      let error: any;
+      try {
+        const text = await response.text();
+        error = text ? JSON.parse(text) : { error: '网络连接失败' };
+      } catch (e) {
+        error = { error: '网络连接失败', details: '无法连接到服务器，请检查网络连接或服务器是否运行' };
+      }
+      
+      const errorMessage = error.error || error.details || '网络连接失败';
+      throw new ApiError(errorMessage, 0, { ...error, isNetworkError: true });
+    }
+    
     // 对于 401 错误，检查是否是退出登录导致的，如果是则静默处理
     if (response.status === 401) {
       const currentUser = getCurrentUser();

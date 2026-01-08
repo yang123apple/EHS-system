@@ -106,7 +106,7 @@ export default function NotificationPanel() {
 
     // 跳转到相关页面，并带上记录ID参数（会自动打开详情弹窗）
     if (notification.relatedType === 'permit' && notification.relatedId) {
-      window.location.href = `/work-permit?permitId=${notification.relatedId}`;
+      window.location.href = `/work-permit?recordId=${notification.relatedId}`;
     } else if (notification.relatedType === 'hazard' && notification.relatedId) {
       window.location.href = `/hidden-danger?hazardId=${notification.relatedId}`;
     } else if ((notification.relatedType === 'training' || notification.relatedType === 'training_task') && notification.relatedId) {

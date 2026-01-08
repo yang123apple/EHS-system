@@ -216,8 +216,16 @@ export default function WorkPermitPage() {
       const data = await StructureService.getDepartments();
       setDepartments(data);
       return data;
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      // 对于 401 错误，静默处理（用户可能未登录，apiClient 会处理跳转）
+      if (e?.status === 401 || e?.isAuthError || e?.message?.includes('401')) {
+        console.warn('[WorkPermitPage] 获取部门列表失败：未授权访问');
+        setDepartments([]);
+        return [];
+      }
+      // 对于其他错误，记录并返回空数组
+      console.error('[WorkPermitPage] 获取部门列表失败:', e);
+      setDepartments([]);
       return [];
     }
   };
@@ -262,17 +270,47 @@ export default function WorkPermitPage() {
     const params = new URLSearchParams(window.location.search);
     const recordId = params.get('recordId');
     
-    if (recordId && allRecords.length > 0) {
-      const record = allRecords.find(r => r.id === recordId);
-      if (record) {
-        console.log('📧 从通知跳转，自动打开记录:', record.code);
-        setSelectedRecord(record);
-        toggleModal('viewRecord', true);
-        // 清除 URL 参数，避免刷新时重复打开
-        window.history.replaceState({}, '', '/work-permit');
+    if (recordId) {
+      // 切换到记录视图，确保能看到记录列表
+      if (viewMode !== 'records') {
+        setViewMode('records');
       }
+      
+      // 如果记录列表中已经有这个记录，直接打开
+      if (allRecords.length > 0) {
+        const record = allRecords.find(r => r.id === recordId);
+        if (record) {
+          console.log('📧 从通知跳转，自动打开记录:', record.code);
+          setSelectedRecord(record);
+          toggleModal('viewRecord', true);
+          // 清除 URL 参数，避免刷新时重复打开
+          window.history.replaceState({}, '', '/work-permit');
+          return;
+        }
+      }
+      
+      // 如果记录不在当前列表中（可能因为分页），单独获取该记录
+      const fetchSingleRecord = async () => {
+        try {
+          const res = await apiFetch(`/api/permits?id=${recordId}`, { cache: 'no-store' });
+          if (res.ok) {
+            const record = await res.json();
+            if (record) {
+              console.log('📧 从通知跳转，单独获取记录:', record.code || record.id);
+              setSelectedRecord(record);
+              toggleModal('viewRecord', true);
+              // 清除 URL 参数，避免刷新时重复打开
+              window.history.replaceState({}, '', '/work-permit');
+            }
+          }
+        } catch (e) {
+          console.error('获取记录失败:', e);
+        }
+      };
+      
+      fetchSingleRecord();
     }
-  }, [allRecords]);
+  }, [allRecords, viewMode]);
 
   // 防御性代码：检测外部脚本注入
   useEffect(() => {

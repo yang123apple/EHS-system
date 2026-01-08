@@ -123,7 +123,7 @@ async function generatePermitCode(projectId: string, templateType: string, propo
 }
 
 // ✅ 新增：PATCH 方法，用于更新部分字段（如追加评论回复、更新附件等）
-export const PATCH = withPermission('work_permit', 'edit', async (req: Request, context, user) => {
+export const PATCH = withPermission('work_permit', 'create_permit', async (req: Request, context, user) => {
   try {
     const body = await req.json();
     const { id, approvalLogs, attachments, dataJson, userId, userName } = body;
@@ -219,6 +219,7 @@ export const PATCH = withPermission('work_permit', 'edit', async (req: Request, 
 // GET: 获取作业票记录 或 预生成编号
 export const GET = withAuth(async (req: Request, context, user) => {
   const { searchParams } = new URL(req.url);
+  const id = searchParams.get('id');
   const projectId = searchParams.get('projectId');
   const action = searchParams.get('action');
   const templateType = searchParams.get('templateType');
@@ -232,6 +233,21 @@ export const GET = withAuth(async (req: Request, context, user) => {
   const isPaginated = searchParams.has('page');
 
   try {
+    // 🟢 新增：通过 id 获取单个记录
+    if (id) {
+      const record = await prisma.workPermitRecord.findUnique({
+        where: { id },
+        include: {
+          template: true,
+          project: true
+        }
+      });
+      if (!record) {
+        return NextResponse.json({ error: '记录不存在' }, { status: 404 });
+      }
+      return NextResponse.json(record);
+    }
+
     // 🟢 新增：预生成编号功能
     if (action === 'generate-code' && projectId && templateType) {
       const code = await generatePermitCode(projectId, templateType);
@@ -311,7 +327,7 @@ export const GET = withAuth(async (req: Request, context, user) => {
 });
 
 // POST: 提交作业票
-export const POST = withPermission('work_permit', 'create', async (req: Request, context, user) => {
+export const POST = withPermission('work_permit', 'create_permit', async (req: Request, context, user) => {
   try {
     const body = await req.json();
     // ✅ 新增：解构 attachments 和 proposedCode
@@ -411,7 +427,7 @@ export const POST = withPermission('work_permit', 'create', async (req: Request,
 });
 
 // ✅ DELETE: 删除作业票记录 (新增)
-export const DELETE = withPermission('work_permit', 'delete', async (req: Request, context, user) => {
+export const DELETE = withPermission('work_permit', 'delete_permit', async (req: Request, context, user) => {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');

@@ -85,6 +85,7 @@ export default function SignatureImage({
         maxWidth: `${maxWidth}px`,
         maxHeight: `${maxHeight}px`,
         objectFit: 'contain',
+        display: 'block', // 确保图片作为块级元素，避免底部空白
         ...style
       }}
     />

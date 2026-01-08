@@ -63,6 +63,8 @@ model WorkPermitRecord {
   approvalLogs      String?
   attachments       String?
   parsedFieldValues String?
+  candidateHandlers String? // 🟢 或签/会签模式：候选审批人列表（JSON格式）
+  approvalMode      String? // 🟢 当前步骤的审批模式（OR=或签，AND=会签）
   createdAt         DateTime @default(now())
   
   // 🟢 数据映射层：关键业务字段（从 dataJson 中提取，用于 SQL 统计查询）

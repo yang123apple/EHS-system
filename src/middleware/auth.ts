@@ -37,9 +37,26 @@ export async function getUserFromRequest(req: NextRequest): Promise<User | null>
       });
       
       if (user) {
+        // 解析权限数据，确保格式正确
+        let permissions: Record<string, string[]> = {};
+        if (user.permissions) {
+          try {
+            const parsed = typeof user.permissions === 'string' 
+              ? JSON.parse(user.permissions as string)
+              : user.permissions;
+            // 确保解析后的数据是对象格式
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              permissions = parsed;
+            }
+          } catch (error) {
+            console.error('[Auth Middleware] 解析权限数据失败:', error, '原始数据:', user.permissions);
+            permissions = {};
+          }
+        }
+        
         return {
           ...user,
-          permissions: user.permissions ? JSON.parse(user.permissions as string) : {},
+          permissions,
         } as User;
       }
     }

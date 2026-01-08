@@ -30,5 +30,17 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "history/**/*"]
+  "exclude": [
+    "node_modules",
+    "history/**/*",
+    "**/*.db",
+    "**/*.db-journal",
+    "**/*.db-shm",
+    "**/*.db-wal",
+    "**/*.log",
+    "**/*.tsbuildinfo",
+    "data/**",
+    "build.log",
+    "build_output.txt"
+  ]
 }

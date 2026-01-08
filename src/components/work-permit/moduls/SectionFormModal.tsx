@@ -302,13 +302,65 @@ export default function SectionFormModal({
     setRecordRowIndexForPlus(typeof repeatBaseRow0 === 'number' ? repeatBaseRow0 : recordBaseRow0);
   }, [showDynamicRowsDesktop, repeatBaseRow0, recordBaseRow0]);
 
+  // 🟢 辅助函数：规范化手写签名数据格式
+  const normalizeHandwrittenSignature = (value: any): any => {
+    if (!value) return value;
+    
+    // 如果是字符串
+    if (typeof value === 'string') {
+      // 检查是否是JSON字符串化的数组或字符串
+      if (value.startsWith('[') || value.startsWith('"')) {
+        try {
+          const parsed = JSON.parse(value);
+          return normalizeHandwrittenSignature(parsed);
+        } catch (e) {
+          // 解析失败，继续处理
+        }
+      }
+      // 检查是否是完整的data URL，如果是则提取base64部分
+      if (value.startsWith('data:image')) {
+        return value.split(',')[1] || value;
+      }
+      // 如果是纯base64字符串，直接返回
+      return value;
+    }
+    
+    // 如果是数组
+    if (Array.isArray(value)) {
+      return value.map((v: any) => {
+        if (typeof v === 'string') {
+          // 如果是完整的data URL，提取base64部分
+          if (v.startsWith('data:image')) {
+            return v.split(',')[1] || v;
+          }
+          // 如果看起来像是JSON字符串，尝试解析
+          if (v.startsWith('"') && v.endsWith('"')) {
+            try {
+              const parsed = JSON.parse(v);
+              return normalizeHandwrittenSignature(parsed);
+            } catch (e) {
+              return v;
+            }
+          }
+        }
+        return normalizeHandwrittenSignature(v);
+      });
+    }
+    
+    return value;
+  };
+
   const buildDraftPayload = () => {
     const data: Record<string, any> = {};
     appendFields.forEach((f: any) => {
       if (!f?.cellKey) return;
       // timenow 由系统写入；serial 改为手动填写，不再跳过
       if (f.fieldType === 'timenow') return;
-      const v = appendDraft[f.cellKey];
+      let v = appendDraft[f.cellKey];
+      // 🟢 规范化手写签名数据格式
+      if (f.fieldType === 'handwritten') {
+        v = normalizeHandwrittenSignature(v);
+      }
       data[f.cellKey] = v;
     });
     return data;
@@ -316,15 +368,50 @@ export default function SectionFormModal({
 
   const updateSnapshotRowFromEntry = (idx: number, entry: any) => {
     if (!entry) return;
-    // 🟢 只填充“模板记录行”的那一行（保持 Excel 表格中只看到一行）
+    // 🟢 只填充"模板记录行"的那一行（保持 Excel 表格中只看到一行）
     const next: Record<string, any> = { ...(formData || {}) };
+    
+    // 🟢 创建字段映射：用于查找数据
+    const fieldMapByCellKey = new Map<string, any>();
+    const fieldMapByColIndex = new Map<number, any>();
+    appendFields.forEach((f: any) => {
+      if (f.cellKey) fieldMapByCellKey.set(f.cellKey, f);
+      if (typeof f.colIndex === 'number') fieldMapByColIndex.set(f.colIndex, f);
+    });
+    
     appendFields.forEach((f: any) => {
       const r0 = typeof f.rowIndex === 'number' ? f.rowIndex : undefined;
       const c0 = typeof f.colIndex === 'number' ? f.colIndex : undefined;
       if (r0 === undefined || c0 === undefined) return;
       const key = `${r0}-${c0}`;
-      if (f.fieldType === 'timenow') next[key] = entry.timestamp ? formatZh(entry.timestamp) : '';
-      else next[key] = entry?.data?.[f.cellKey] ?? '';
+      
+      if (f.fieldType === 'timenow') {
+        next[key] = entry.timestamp ? formatZh(entry.timestamp) : '';
+      } else {
+        // 🟢 修复：优先通过cellKey查找，如果找不到则通过列索引查找
+        let value = entry?.data?.[f.cellKey];
+        
+        // 如果通过cellKey找不到，尝试通过列索引查找（兼容旧数据）
+        if (value === undefined || value === null || value === '') {
+          const sameColFields = Array.from(fieldMapByColIndex.values()).filter(
+            (field: any) => field.colIndex === f.colIndex
+          );
+          for (const sameColField of sameColFields) {
+            const candidateValue = entry?.data?.[sameColField.cellKey];
+            if (candidateValue !== undefined && candidateValue !== null && candidateValue !== '') {
+              value = candidateValue;
+              break;
+            }
+          }
+        }
+        
+        // 🟢 修复：规范化手写签名数据格式
+        if (f.fieldType === 'handwritten') {
+          value = normalizeHandwrittenSignature(value);
+        }
+        
+        next[key] = value ?? '';
+      }
     });
     setFormData(next);
   };
@@ -346,14 +433,54 @@ export default function SectionFormModal({
       if (r0 >= baseRow0 && r0 < baseRow0 + clearRows && cols.has(c0)) delete next[k];
     });
 
+    // 🟢 创建字段映射：cellKey -> colIndex（用于从logs中查找数据）
+    const fieldMapByCellKey = new Map<string, any>();
+    const fieldMapByColIndex = new Map<number, any>();
+    appendFields.forEach((f: any) => {
+      if (f.cellKey) fieldMapByCellKey.set(f.cellKey, f);
+      if (typeof f.colIndex === 'number') fieldMapByColIndex.set(f.colIndex, f);
+    });
+
     const rowCount = Math.max(1, logs.length);
     for (let i = 0; i < rowCount; i++) {
       const entry = logs[i];
+      if (!entry?.data) continue;
+      
       appendFields.forEach((f: any) => {
         if (typeof f.rowIndex !== 'number' || typeof f.colIndex !== 'number') return;
         const key = `${baseRow0 + i}-${f.colIndex}`;
-        if (f.fieldType === 'timenow') next[key] = entry?.timestamp ? formatZh(entry.timestamp) : '';
-        else next[key] = entry?.data?.[f.cellKey] ?? '';
+        
+        if (f.fieldType === 'timenow') {
+          next[key] = entry?.timestamp ? formatZh(entry.timestamp) : '';
+        } else {
+          // 🟢 修复：优先通过cellKey查找，如果找不到则通过列索引查找
+          // 因为新增行的cellKey可能不同，但列索引是相同的
+          let value = entry?.data?.[f.cellKey];
+          
+          // 如果通过cellKey找不到，尝试通过列索引查找（兼容旧数据）
+          if (value === undefined || value === null || value === '') {
+            // 查找同一列索引的所有字段，尝试匹配数据
+            const sameColFields = Array.from(fieldMapByColIndex.values()).filter(
+              (field: any) => field.colIndex === f.colIndex
+            );
+            
+            // 尝试从entry.data中查找匹配的数据（可能是旧行的cellKey）
+            for (const sameColField of sameColFields) {
+              const candidateValue = entry?.data?.[sameColField.cellKey];
+              if (candidateValue !== undefined && candidateValue !== null && candidateValue !== '') {
+                value = candidateValue;
+                break;
+              }
+            }
+          }
+          
+        // 🟢 修复：规范化手写签名数据格式
+        if (f.fieldType === 'handwritten') {
+          value = normalizeHandwrittenSignature(value);
+        }
+          
+          next[key] = value ?? '';
+        }
       });
     }
     setFormData(next);
@@ -828,18 +955,40 @@ export default function SectionFormModal({
         // 编辑模式：合并已有数据和继承数据（继承数据优先级更低）
         // 注意：已有数据的优先级更高，覆盖继承数据
         const mergedData = { ...inheritedData, ...existingData.data };
+        
+        // 🟢 规范化手写签名数据格式
+        const normalizedData: Record<string, any> = {};
+        Object.keys(mergedData).forEach(key => {
+          // 查找对应的字段定义
+          const field = [...baseParsedFields, ...extendedParsedFields].find(
+            (f: any) => {
+              if (typeof f.rowIndex === 'number' && typeof f.colIndex === 'number') {
+                return `${f.rowIndex}-${f.colIndex}` === key;
+              }
+              return false;
+            }
+          );
+          
+          let value = mergedData[key];
+          // 如果是手写签名字段，规范化数据格式
+          if (field?.fieldType === 'handwritten') {
+            value = normalizeHandwrittenSignature(value);
+          }
+          normalizedData[key] = value;
+        });
+        
         console.log('🔵 子单合并数据:', { 
           inheritedData, 
           existingData: existingData.data, 
-          mergedData,
-          mergedDataKeys: Object.keys(mergedData),
-          mergedDataSample: Object.keys(mergedData).slice(0, 5).reduce((acc, key) => {
-            acc[key] = mergedData[key];
+          mergedData: normalizedData,
+          mergedDataKeys: Object.keys(normalizedData),
+          mergedDataSample: Object.keys(normalizedData).slice(0, 5).reduce((acc, key) => {
+            acc[key] = normalizedData[key];
             return acc;
           }, {} as Record<string, any>)
         });
         // 强制更新，确保数据正确加载
-        setFormData(mergedData);
+        setFormData(normalizedData);
         initializedRef.current = currentKey;
       } else {
         // 新建时使用继承的数据

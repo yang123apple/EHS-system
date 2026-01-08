@@ -58,7 +58,7 @@ export const GET = withAuth(async (req: Request, context, user) => {
 });
 
 // POST: 创建子表单
-export const POST = withPermission('work_permit', 'create', async (req: Request, context, user) => {
+export const POST = withPermission('work_permit', 'create_permit', async (req: Request, context, user) => {
   try {
     const body = await req.json();
     const {
@@ -110,7 +110,7 @@ export const POST = withPermission('work_permit', 'create', async (req: Request,
 });
 
 // PATCH: 更新子表单
-export const PATCH = withPermission('work_permit', 'edit', async (req: Request, context, user) => {
+export const PATCH = withPermission('work_permit', 'create_permit', async (req: Request, context, user) => {
   try {
     const body = await req.json();
     const { id, dataJson, status, currentStep, approvalLogs } = body;
@@ -145,7 +145,7 @@ export const PATCH = withPermission('work_permit', 'edit', async (req: Request, 
 });
 
 // DELETE: 删除子表单
-export const DELETE = withPermission('work_permit', 'delete', async (req: Request, context, user) => {
+export const DELETE = withPermission('work_permit', 'delete_permit', async (req: Request, context, user) => {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
@@ -175,7 +175,7 @@ export const DELETE = withPermission('work_permit', 'delete', async (req: Reques
 });
 
 // PUT: 从父表单提取子表单（迁移工具）
-export const PUT = withPermission('work_permit', 'edit', async (req: Request, context, user) => {
+export const PUT = withPermission('work_permit', 'create_permit', async (req: Request, context, user) => {
   try {
     const body = await req.json();
     const { parentPermitId } = body;

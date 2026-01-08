@@ -13,6 +13,20 @@ export function useApiError() {
   const handleError = useCallback((error: any, context?: string) => {
     console.error('API Error:', error);
 
+    // 网络错误（优先检查）
+    if (
+      error?.isNetworkError ||
+      error?.status === 0 ||
+      error?.message?.includes('网络') ||
+      error?.message?.includes('Network') ||
+      error?.message?.includes('Failed to fetch') ||
+      error?.message?.includes('网络连接失败')
+    ) {
+      const details = error?.details || error?.originalError || '请检查您的网络连接或服务器是否运行';
+      toast.error('网络连接失败', details);
+      return;
+    }
+
     // 权限错误
     if (error?.code === 'PERMISSION_DENIED' || error?.message?.includes('权限')) {
       toast.permissionDenied(context);
@@ -22,12 +36,6 @@ export function useApiError() {
     // 认证错误
     if (error?.code === 'UNAUTHORIZED' || error?.message?.includes('未登录')) {
       toast.error('请先登录', '您的登录可能已过期，请重新登录');
-      return;
-    }
-
-    // 网络错误
-    if (error?.message?.includes('网络') || error?.message?.includes('Network')) {
-      toast.error('网络连接失败', '请检查您的网络连接后重试');
       return;
     }
 
@@ -50,14 +58,36 @@ export function useApiError() {
     try {
       const response = await promise;
       
+      // 处理网络错误（状态码为 0）
+      if (response.status === 0) {
+        let error: any;
+        try {
+          const text = await response.text();
+          error = text ? JSON.parse(text) : { message: '网络连接失败', isNetworkError: true };
+        } catch (e) {
+          error = { message: '网络连接失败', isNetworkError: true, details: '无法连接到服务器' };
+        }
+        handleError(error, context);
+        throw error;
+      }
+      
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: '请求失败' }));
+        let error: any;
+        try {
+          error = await response.json();
+        } catch (e) {
+          error = { message: `HTTP ${response.status} 错误` };
+        }
+        handleError(error, context);
         throw error;
       }
 
       return await response.json();
     } catch (error) {
-      handleError(error, context);
+      // 如果错误还没有被处理，则处理它
+      if (error && typeof error === 'object' && !error.isNetworkError) {
+        handleError(error, context);
+      }
       throw error;
     }
   }, [handleError]);

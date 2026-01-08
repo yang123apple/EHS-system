@@ -390,21 +390,90 @@ export default function ExcelRenderer({
         });
     }
 
+    // 🟢 辅助函数：规范化手写签名数据格式
+    const normalizeHandwrittenSignature = (value: any, parsedFields: ParsedField[], key: string): any => {
+      if (!value) return value;
+      
+      // 查找对应的字段定义
+      const field = parsedFields?.find((f: any) => {
+        if (typeof f.rowIndex === 'number' && typeof f.colIndex === 'number') {
+          return `${f.rowIndex}-${f.colIndex}` === key || f.cellKey === key;
+        }
+        return f.cellKey === key;
+      });
+      
+      // 如果不是手写签名字段，直接返回
+      if (field?.fieldType !== 'handwritten') return value;
+      
+      // 如果是字符串，尝试解析JSON
+      if (typeof value === 'string') {
+        // 检查是否是JSON字符串化的数组或字符串
+        if (value.startsWith('[') || value.startsWith('"')) {
+          try {
+            const parsed = JSON.parse(value);
+            return normalizeHandwrittenSignature(parsed, parsedFields, key);
+          } catch (e) {
+            // 解析失败，继续处理
+          }
+        }
+        // 检查是否是完整的data URL，如果是则提取base64部分
+        if (value.startsWith('data:image')) {
+          return value.split(',')[1] || value;
+        }
+        // 如果是纯base64字符串，直接返回
+        return value;
+      }
+      
+      // 如果是数组，处理数组中的每个元素
+      if (Array.isArray(value)) {
+        return value.map((v: any) => {
+          if (typeof v === 'string') {
+            // 如果是完整的data URL，提取base64部分
+            if (v.startsWith('data:image')) {
+              return v.split(',')[1] || v;
+            }
+            // 如果看起来像是JSON字符串，尝试解析
+            if (v.startsWith('"') && v.endsWith('"')) {
+              try {
+                const parsed = JSON.parse(v);
+                // 如果解析后仍然是字符串且是data URL，再次提取
+                if (typeof parsed === 'string' && parsed.startsWith('data:image')) {
+                  return parsed.split(',')[1] || parsed;
+                }
+                return parsed;
+              } catch (e) {
+                return v;
+              }
+            }
+          }
+          return v;
+        });
+      }
+      
+      return value;
+    };
+
     // 3. 更新状态：智能合并策略，保护用户输入
     // - 优先使用 mergedData（来自 initialData）的值
     // - 但如果 currentData 中有值而 mergedData 中对应字段为空/未定义，保留 currentData 的值（用户输入）
     const currentData = formDataRef.current || {};
-    const finalData = { ...mergedData };
+    const finalData: Record<string, any> = {};
+    
+    // 🟢 规范化mergedData中的手写签名数据
+    Object.keys(mergedData).forEach(key => {
+      finalData[key] = normalizeHandwrittenSignature(mergedData[key], parsedFields || [], key);
+    });
     
     // 保留用户在当前 formData 中输入的数据（这些数据可能还没有同步到 initialData）
     // 只有当 mergedData 中对应字段为空/未定义时，才保留 currentData 的值
     Object.keys(currentData).forEach(key => {
-      const mergedValue = mergedData[key];
+      const mergedValue = finalData[key];
       const currentValue = currentData[key];
       // 如果 mergedData 中没有该字段，或者值为空/未定义，但 currentData 中有有效值，保留 currentData 的值
       if ((mergedValue === undefined || mergedValue === null || mergedValue === '') && 
           currentValue !== undefined && currentValue !== null && currentValue !== '') {
-        finalData[key] = currentValue;
+        // 🟢 规范化currentData中的手写签名数据
+        finalData[key] = normalizeHandwrittenSignature(currentValue, parsedFields || [], key);
       }
     });
     
@@ -414,7 +483,7 @@ export default function ExcelRenderer({
     if (finalJson !== currentJson) {
         setFormData(finalData);
     }
-  }, [JSON.stringify(initialData), JSON.stringify(approvalLogs), JSON.stringify(workflowConfig)]);
+  }, [JSON.stringify(initialData), JSON.stringify(approvalLogs), JSON.stringify(workflowConfig), JSON.stringify(parsedFields)]);
 
   // NOTE: Removed syncing effect for templateData -> gridData/cols/rows/styles to avoid repeated
   // setState loops when parent regenerates structurally-equal objects. Parent should pass a stable
@@ -521,6 +590,34 @@ export default function ExcelRenderer({
     return {
       fontWeight: s.bold ? 'bold' : 'normal',
       fontSize: s.fontSize ? `${s.fontSize}px` : '14px'
+    };
+  };
+
+  // 计算单元格的实际尺寸（考虑合并单元格）
+  const getCellSize = (r: number, c: number) => {
+    const { rowSpan, colSpan } = getCellSpan(r, c);
+    
+    // 计算宽度：累加所有跨越的列的宽度
+    let totalWidth = 0;
+    for (let i = 0; i < colSpan; i++) {
+      const colIndex = c + i;
+      const colWidth = colWidths[colIndex]?.wpx || 100;
+      totalWidth += colWidth;
+    }
+    
+    // 计算高度：累加所有跨越的行的高度
+    let totalHeight = 0;
+    for (let i = 0; i < rowSpan; i++) {
+      const rowIndex = r + i;
+      const rowHeight = getRowHeight(rowIndex);
+      totalHeight += rowHeight;
+    }
+    
+    // 减去边框和内边距（每个边框约1px，内边距约4px）
+    const borderPadding = 2 + 4; // 边框 + 内边距
+    return {
+      width: Math.max(50, totalWidth - borderPadding), // 最小宽度50px
+      height: Math.max(30, totalHeight - borderPadding) // 最小高度30px
     };
   };
 
@@ -751,11 +848,106 @@ export default function ExcelRenderer({
 
     // 手写签名字段处理（支持多人签名）
     if (parsedField?.fieldType === 'handwritten') {
+      // 🟢 规范化手写签名数据格式
+      let normalizedValue = filledValue;
+      
+      // 调试日志
+      if (process.env.NODE_ENV === 'development' && filledValue) {
+        console.log('🔍 [ExcelRenderer] 手写签名原始数据:', {
+          cellKey,
+          inputKey,
+          filledValue,
+          filledValueType: typeof filledValue,
+          isArray: Array.isArray(filledValue),
+          isString: typeof filledValue === 'string',
+          stringLength: typeof filledValue === 'string' ? filledValue.length : 0,
+          startsWithBracket: typeof filledValue === 'string' ? filledValue.startsWith('[') : false,
+          startsWithQuote: typeof filledValue === 'string' ? filledValue.startsWith('"') : false,
+          startsWithDataImage: typeof filledValue === 'string' ? filledValue.startsWith('data:image') : false
+        });
+      }
+      
+      // 如果是字符串，尝试解析JSON
+      if (normalizedValue && typeof normalizedValue === 'string') {
+        // 检查是否是JSON字符串化的数组或字符串
+        if (normalizedValue.startsWith('[') || (normalizedValue.startsWith('"') && normalizedValue.length > 100)) {
+          try {
+            const parsed = JSON.parse(normalizedValue);
+            normalizedValue = parsed;
+            if (process.env.NODE_ENV === 'development') {
+              console.log('✅ [ExcelRenderer] JSON解析成功:', { original: normalizedValue.substring(0, 50), parsed });
+            }
+          } catch (e) {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn('⚠️ [ExcelRenderer] JSON解析失败:', e);
+            }
+          }
+        }
+        // 检查是否是完整的data URL，如果是则提取base64部分
+        if (typeof normalizedValue === 'string' && normalizedValue.startsWith('data:image')) {
+          normalizedValue = normalizedValue.split(',')[1] || normalizedValue;
+          if (process.env.NODE_ENV === 'development') {
+            console.log('✅ [ExcelRenderer] 提取data URL的base64部分');
+          }
+        }
+      }
+      
+      // 如果是数组，处理数组中的每个元素
+      if (Array.isArray(normalizedValue)) {
+        normalizedValue = normalizedValue.map((v: any, idx: number) => {
+          if (typeof v === 'string') {
+            // 如果是完整的data URL，提取base64部分
+            if (v.startsWith('data:image')) {
+              const extracted = v.split(',')[1] || v;
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`✅ [ExcelRenderer] 数组元素[${idx}] 提取data URL的base64部分`);
+              }
+              return extracted;
+            }
+            // 如果看起来像是JSON字符串，尝试解析
+            if (v.startsWith('"') && v.endsWith('"') && v.length > 100) {
+              try {
+                const parsed = JSON.parse(v);
+                // 如果解析后仍然是字符串且是data URL，再次提取
+                if (typeof parsed === 'string' && parsed.startsWith('data:image')) {
+                  const extracted = parsed.split(',')[1] || parsed;
+                  if (process.env.NODE_ENV === 'development') {
+                    console.log(`✅ [ExcelRenderer] 数组元素[${idx}] JSON解析后再次提取data URL`);
+                  }
+                  return extracted;
+                }
+                return parsed;
+              } catch (e) {
+                return v;
+              }
+            }
+          }
+          return v;
+        });
+      }
+      
       // 兼容旧数据：如果是字符串，转换为数组；如果是数组，直接使用
-      const signatureArray = Array.isArray(filledValue) 
-        ? filledValue 
-        : (filledValue && typeof filledValue === 'string' && filledValue.length > 0 ? [filledValue] : []);
+      const signatureArray = Array.isArray(normalizedValue) 
+        ? normalizedValue 
+        : (normalizedValue && typeof normalizedValue === 'string' && normalizedValue.length > 0 ? [normalizedValue] : []);
       const hasSignature = signatureArray.length > 0;
+      
+      // 调试日志
+      if (process.env.NODE_ENV === 'development' && hasSignature) {
+        console.log('✅ [ExcelRenderer] 规范化后的签名数组:', {
+          cellKey,
+          arrayLength: signatureArray.length,
+          firstItemType: typeof signatureArray[0],
+          firstItemLength: typeof signatureArray[0] === 'string' ? signatureArray[0].length : 0,
+          firstItemPreview: typeof signatureArray[0] === 'string' ? signatureArray[0].substring(0, 50) : signatureArray[0]
+        });
+      }
+      
+      // 计算单元格实际尺寸（响应式）
+      const cellSize = getCellSize(rIndex, cIndex);
+      // 留出一些内边距空间（约8px），确保签名不会紧贴边缘
+      const signatureMaxWidth = Math.max(50, cellSize.width - 8);
+      const signatureMaxHeight = Math.max(30, cellSize.height - 8);
       
       if (mode === 'view') {
         // 查看模式：显示多个签名
@@ -766,8 +958,8 @@ export default function ExcelRenderer({
                 signatures={signatureArray}
                 onAddSignature={() => {}}
                 readonly={true}
-                maxWidth={Math.min((styleObj as any).width as number || 200, 100)}
-                maxHeight={Math.min((styleObj as any).height as number || 100, 50)}
+                maxWidth={signatureMaxWidth}
+                maxHeight={signatureMaxHeight}
               />
             ) : (
               <span className="text-slate-300 text-xs">/</span>
@@ -794,8 +986,8 @@ export default function ExcelRenderer({
                 newArray.splice(index, 1);
                 handleInputChange(rIndex, cIndex, newArray.length > 0 ? newArray : '');
               }}
-              maxWidth={Math.min((styleObj as any).width as number || 200, 100)}
-              maxHeight={Math.min((styleObj as any).height as number || 100, 50)}
+              maxWidth={signatureMaxWidth}
+              maxHeight={signatureMaxHeight}
               readonly={false}
             />
           </div>

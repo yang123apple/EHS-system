@@ -113,7 +113,7 @@ function applyLogsToSectionData(params: {
   return base;
 }
 
-export const POST = withPermission('work_permit', 'edit', async (req: Request, context, user) => {
+export const POST = withPermission('work_permit', 'create_permit', async (req: Request, context, user) => {
   try {
     const body = (await req.json()) as Partial<AppendPayload>;
     const recordId = body.recordId;
