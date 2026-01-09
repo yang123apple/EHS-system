@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckSquare, Square, Bold, Type, MousePointerClick, Clock, Check, AlertCircle, X } from 'lucide-react';
 import PeopleSelector from '@/components/common/PeopleSelector';
@@ -317,8 +317,63 @@ export default function ExcelRenderer({
     return n;
   });
 
+  // 🟢 使用 useMemo 缓存 stringify 结果，避免每次渲染都执行（性能优化）
+  const initialDataStr = useMemo(() => JSON.stringify(initialData), [initialData]);
+  const approvalLogsStr = useMemo(() => JSON.stringify(approvalLogs), [approvalLogs]);
+  const workflowConfigStr = useMemo(() => JSON.stringify(workflowConfig), [workflowConfig]);
+  const parsedFieldsStr = useMemo(() => JSON.stringify(parsedFields), [parsedFields]);
+  
+  // 🟢 使用 ref 跟踪 previous values，避免不必要的更新
+  const prevPropsRef = useRef({
+    initialDataStr: '',
+    approvalLogsStr: '',
+    workflowConfigStr: '',
+    parsedFieldsStr: ''
+  });
+  
   // ✅ 核心逻辑：合并初始数据 + 审批日志 + 签字数据
+  // 🟢 优化：只在 props 真正变化时才处理（通过缓存的 stringify 结果比较）
   useEffect(() => {
+    const currentInitialDataStr = initialDataStr;
+    const currentApprovalLogsStr = approvalLogsStr;
+    const currentWorkflowConfigStr = workflowConfigStr;
+    const currentParsedFieldsStr = parsedFieldsStr;
+    
+    // 🟢 优化：如果 props 没有变化，完全跳过处理（避免不必要的计算）
+    const prevInitialDataStr = prevPropsRef.current.initialDataStr;
+    const prevApprovalLogsStr = prevPropsRef.current.approvalLogsStr;
+    const prevWorkflowConfigStr = prevPropsRef.current.workflowConfigStr;
+    const prevParsedFieldsStr = prevPropsRef.current.parsedFieldsStr;
+    
+    if (prevInitialDataStr === currentInitialDataStr && 
+        prevApprovalLogsStr === currentApprovalLogsStr &&
+        prevWorkflowConfigStr === currentWorkflowConfigStr &&
+        prevParsedFieldsStr === currentParsedFieldsStr) {
+      // 数据没有变化，跳过处理（完全不执行后续逻辑）
+      return;
+    }
+    
+    // 🟢 只在 props 真正变化时输出日志（减少日志输出）
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔄 [ExcelRenderer] Props变化，开始数据合并:', {
+        initialDataChanged: prevInitialDataStr !== currentInitialDataStr,
+        approvalLogsChanged: prevApprovalLogsStr !== currentApprovalLogsStr,
+        workflowConfigChanged: prevWorkflowConfigStr !== currentWorkflowConfigStr,
+        parsedFieldsChanged: prevParsedFieldsStr !== currentParsedFieldsStr
+      });
+    }
+    
+    // 更新 ref（在开始处理前更新，避免重复处理）
+    prevPropsRef.current = {
+      initialDataStr: currentInitialDataStr,
+      approvalLogsStr: currentApprovalLogsStr,
+      workflowConfigStr: currentWorkflowConfigStr,
+      parsedFieldsStr: currentParsedFieldsStr
+    };
+    
+    // 🟢 减少调试日志输出，避免无限循环
+    // 调试日志已移除，如有需要可以通过其他方式调试
+    
     // 1. 深拷贝初始数据（兼容 JSON 字符串或对象）
     let mergedData: Record<string, any> = {};
     if (initialData) {
@@ -454,36 +509,70 @@ export default function ExcelRenderer({
     };
 
     // 3. 更新状态：智能合并策略，保护用户输入
-    // - 优先使用 mergedData（来自 initialData）的值
-    // - 但如果 currentData 中有值而 mergedData 中对应字段为空/未定义，保留 currentData 的值（用户输入）
-    const currentData = formDataRef.current || {};
-    const finalData: Record<string, any> = {};
-    
-    // 🟢 规范化mergedData中的手写签名数据
-    Object.keys(mergedData).forEach(key => {
-      finalData[key] = normalizeHandwrittenSignature(mergedData[key], parsedFields || [], key);
-    });
-    
-    // 保留用户在当前 formData 中输入的数据（这些数据可能还没有同步到 initialData）
-    // 只有当 mergedData 中对应字段为空/未定义时，才保留 currentData 的值
-    Object.keys(currentData).forEach(key => {
-      const mergedValue = finalData[key];
-      const currentValue = currentData[key];
-      // 如果 mergedData 中没有该字段，或者值为空/未定义，但 currentData 中有有效值，保留 currentData 的值
-      if ((mergedValue === undefined || mergedValue === null || mergedValue === '') && 
-          currentValue !== undefined && currentValue !== null && currentValue !== '') {
-        // 🟢 规范化currentData中的手写签名数据
-        finalData[key] = normalizeHandwrittenSignature(currentValue, parsedFields || [], key);
+    // 🟢 优化：只在 props 变化时才重新计算和合并数据，不依赖 formData 的内部变化
+    // 使用函数式更新来保留用户已输入的数据
+    setFormData(prevFormData => {
+      const currentData = prevFormData || {};
+      const finalData: Record<string, any> = {};
+      
+      // 🟢 规范化mergedData中的手写签名数据
+      // 同时支持R7C10格式和6-9格式的数据键
+      Object.keys(mergedData).forEach(key => {
+        // 如果key是R7C10格式，也创建6-9格式的键（兼容SectionFormModal转换后的格式）
+        const r7c10Match = key.match(/^R(\d+)C(\d+)$/i);
+        if (r7c10Match) {
+          const r = parseInt(r7c10Match[1], 10) - 1; // R7 -> 6 (0-based)
+          const c = parseInt(r7c10Match[2], 10) - 1; // C10 -> 9 (0-based)
+          const convertedKey = `${r}-${c}`;
+          finalData[convertedKey] = normalizeHandwrittenSignature(mergedData[key], parsedFields || [], convertedKey);
+          // 同时保留原始R7C10格式（向后兼容）
+          finalData[key] = normalizeHandwrittenSignature(mergedData[key], parsedFields || [], key);
+        } else {
+          // 直接使用原始键（可能是6-9格式或其他格式）
+          finalData[key] = normalizeHandwrittenSignature(mergedData[key], parsedFields || [], key);
+        }
+      });
+      
+      // 🟢 优化：减少调试日志输出（只在开发环境且数据变化显著时输出一次）
+      // 注意：这里不需要再输出日志，因为已经在 useEffect 开始处输出了
+      
+      // 保留用户在当前 formData 中输入的数据（这些数据可能还没有同步到 initialData）
+      // 只有当 mergedData 中对应字段为空/未定义时，才保留 currentData 的值
+      Object.keys(currentData).forEach(key => {
+        const mergedValue = finalData[key];
+        const currentValue = currentData[key];
+        // 如果 mergedData 中没有该字段，或者值为空/未定义，但 currentData 中有有效值，保留 currentData 的值
+        if ((mergedValue === undefined || mergedValue === null || mergedValue === '') && 
+            currentValue !== undefined && currentValue !== null && currentValue !== '') {
+          // 🟢 规范化currentData中的手写签名数据
+          finalData[key] = normalizeHandwrittenSignature(currentValue, parsedFields || [], key);
+        }
+      });
+      
+      // 只有当合并后的数据与当前数据不同时才更新
+      const finalJson = JSON.stringify(finalData);
+      const currentJson = JSON.stringify(currentData);
+      
+      if (finalJson !== currentJson) {
+        // 🟢 只在开发环境且数据变化显著时输出日志
+        if (process.env.NODE_ENV === 'development' && 
+            (Object.keys(finalData).length !== Object.keys(currentData).length ||
+             Object.keys(finalData).slice(0, 10).some(k => finalData[k] !== currentData[k]))) {
+          console.log('✅ [ExcelRenderer] formData已更新 (props变化导致):', {
+            finalDataKeys: Object.keys(finalData).length,
+            prevDataKeys: Object.keys(currentData).length,
+            changed: true
+          });
+        }
+        return finalData;
       }
+      
+      // 数据没有变化，返回原数据（不触发重新渲染）
+      // 🟢 注意：即使返回原数据，如果 props 变化了，这个函数仍然会被调用一次
+      // 但返回相同的引用不会触发组件重新渲染
+      return prevFormData;
     });
-    
-    // 只有当合并后的数据与当前数据不同时才更新
-    const finalJson = JSON.stringify(finalData);
-    const currentJson = JSON.stringify(currentData);
-    if (finalJson !== currentJson) {
-        setFormData(finalData);
-    }
-  }, [JSON.stringify(initialData), JSON.stringify(approvalLogs), JSON.stringify(workflowConfig), JSON.stringify(parsedFields)]);
+  }, [initialDataStr, approvalLogsStr, workflowConfigStr, parsedFieldsStr, initialData, approvalLogs, workflowConfig, parsedFields]);
 
   // NOTE: Removed syncing effect for templateData -> gridData/cols/rows/styles to avoid repeated
   // setState loops when parent regenerates structurally-equal objects. Parent should pass a stable
@@ -493,9 +582,22 @@ export default function ExcelRenderer({
   // useEffect intentionally removed.
 
   const handleInputChange = (rowIndex: number, colIndex: number, value: any) => {
-    // 🟢 统一使用 R1C1 格式作为 Key
+    // 🟢 追加模式：检查当前行是否在已归档范围内，如果是则不允许修改
+    const archivedRowRange = (templateData as any)?._archivedRowRange;
+    if (archivedRowRange && 
+        typeof archivedRowRange.startRow === 'number' && 
+        typeof archivedRowRange.endRow === 'number' &&
+        rowIndex >= archivedRowRange.startRow && 
+        rowIndex <= archivedRowRange.endRow) {
+      // 已归档行不允许修改，直接返回
+      console.warn('⚠️ 尝试修改已归档行的数据，操作被阻止', { rowIndex, archivedRowRange });
+      return;
+    }
+    
+    // 🟢 统一使用 R1C1 格式作为 Key（同时支持6-9格式）
     const key = `R${rowIndex + 1}C${colIndex + 1}`;
-    const newData = { ...formData, [key]: value };
+    const key6_9 = `${rowIndex}-${colIndex}`;
+    const newData = { ...formData, [key]: value, [key6_9]: value };
     setFormData(newData);
     if (onDataChange) onDataChange(newData);
   };
@@ -661,13 +763,211 @@ export default function ExcelRenderer({
     // 🟢 统一使用 R1C1 格式
     const cellKey = `R${rIndex + 1}C${cIndex + 1}`;
     const inputKey = cellKey;
-    const filledValue = formData[inputKey] || formData[`${rIndex}-${cIndex}`]; // 兼容旧数据读取
+    // 🟢 修复：优先使用6-9格式（SectionFormModal转换后的格式），然后尝试R7C10格式
+    const filledValue = formData[`${rIndex}-${cIndex}`] ?? formData[inputKey] ?? formData[cellKey.toLowerCase()] ?? formData[cellKey.toUpperCase()];
     const styleObj = getCellStyleObj(rIndex, cIndex);
 
-    // 🟢 检查是否有对应的解析字段
-    const parsedField = parsedFields?.find(f => f.cellKey === cellKey);
+    // 🟢 优先检查：如果filledValue或valStr看起来像是base64图片数据，直接渲染为图片
+    // 这可以处理某些情况下parsedField没有正确匹配的情况
+    const valueToCheckFirst = filledValue || valStr;
+    if (valueToCheckFirst) {
+      let shouldRenderAsImage = false;
+      let normalizedBase64: any = null;
+      
+      // 检查是否是base64字符串
+      if (typeof valueToCheckFirst === 'string' && valueToCheckFirst.length > 100) {
+        // 更宽松的base64检测：检查是否以iVBORw0KGgo开头（PNG图片的base64开头）
+        // 或者包含data:image，或者长度足够且只包含base64字符
+        const trimmed = valueToCheckFirst.trim();
+        const isBase64Image = trimmed.startsWith('iVBORw0KGgo') || 
+                              trimmed.startsWith('data:image') ||
+                              (trimmed.length > 500 && /^[A-Za-z0-9+/=\s]+$/.test(trimmed));
+        if (isBase64Image) {
+          shouldRenderAsImage = true;
+          normalizedBase64 = trimmed;
+          if (normalizedBase64.startsWith('data:image')) {
+            normalizedBase64 = normalizedBase64.split(',')[1] || normalizedBase64;
+          }
+          // 移除可能的空白字符
+          normalizedBase64 = normalizedBase64.replace(/\s/g, '');
+        }
+      }
+      
+      // 检查是否是base64数组
+      if (Array.isArray(valueToCheckFirst) && valueToCheckFirst.length > 0) {
+        const firstItem = valueToCheckFirst[0];
+        if (typeof firstItem === 'string' && firstItem.length > 100) {
+          const trimmed = firstItem.trim();
+          const isBase64Image = trimmed.startsWith('iVBORw0KGgo') || 
+                                trimmed.startsWith('data:image') ||
+                                (trimmed.length > 500 && /^[A-Za-z0-9+/=\s]+$/.test(trimmed));
+          if (isBase64Image) {
+            shouldRenderAsImage = true;
+            normalizedBase64 = valueToCheckFirst.map((v: any) => {
+              if (typeof v === 'string') {
+                let normalized = v.trim();
+                if (normalized.startsWith('data:image')) {
+                  normalized = normalized.split(',')[1] || normalized;
+                }
+                return normalized.replace(/\s/g, '');
+              }
+              return v;
+            });
+          }
+        }
+      }
+      
+      // 如果检测到base64图片数据，直接渲染为图片（不等待parsedField匹配）
+      if (shouldRenderAsImage) {
+        // 调试日志
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 [ExcelRenderer] 优先检测到base64图片数据，直接渲染:', {
+            cellKey,
+            inputKey,
+            source: filledValue ? 'filledValue' : 'valStr',
+            isArray: Array.isArray(normalizedBase64),
+            dataLength: Array.isArray(normalizedBase64) ? normalizedBase64[0]?.length : normalizedBase64?.length,
+            preview: Array.isArray(normalizedBase64) ? normalizedBase64[0]?.substring(0, 50) : normalizedBase64?.substring(0, 50)
+          });
+        }
+        
+        const cellSize = getCellSize(rIndex, cIndex);
+        const signatureMaxWidth = Math.max(100, cellSize.width - 8);
+        const signatureMaxHeight = Math.max(60, cellSize.height - 8);
+        
+        return (
+          <div 
+            className="w-full h-full flex items-center justify-center p-1" 
+            style={{
+              ...styleObj,
+              minHeight: '30px',
+              minWidth: '50px',
+              overflow: 'visible',
+              position: 'relative',
+              zIndex: 1
+            }}
+          >
+            <MultiSignatureDisplay
+              signatures={Array.isArray(normalizedBase64) ? normalizedBase64 : [normalizedBase64]}
+              onAddSignature={() => {}}
+              readonly={mode === 'view'}
+              maxWidth={Math.max(signatureMaxWidth, 80)}
+              maxHeight={Math.max(signatureMaxHeight, 50)}
+            />
+          </div>
+        );
+      }
+    }
+
+    // 🟢 检查是否有对应的解析字段（支持多种匹配方式）
+    // 🟢 优化：优先通过 rowIndex 和 colIndex 匹配（更可靠，因为新行的 cellKey 可能不同）
+    let parsedField = parsedFields?.find(f => {
+      if (typeof f.rowIndex === 'number' && typeof f.colIndex === 'number') {
+        return f.rowIndex === rIndex && f.colIndex === cIndex;
+      }
+      return false;
+    });
+    
+    // 如果通过rowIndex和colIndex没找到，尝试通过cellKey匹配
+    if (!parsedField) {
+      parsedField = parsedFields?.find(f => f.cellKey === cellKey);
+    }
+    
+    // 如果还是没找到，尝试通过R7C10格式匹配
+    if (!parsedField && parsedFields) {
+      for (const f of parsedFields) {
+        if (f.cellKey) {
+          const match = f.cellKey.match(/^R(\d+)C(\d+)$/i);
+          if (match) {
+            const fRow = parseInt(match[1], 10) - 1; // R7 -> 6 (0-based)
+            const fCol = parseInt(match[2], 10) - 1; // C10 -> 9 (0-based)
+            if (fRow === rIndex && fCol === cIndex) {
+              parsedField = f;
+              break;
+            }
+          }
+        }
+      }
+    }
+    
+    // 🟢 调试：检查新行字段匹配情况（只在开发环境且是新行时输出）
+    if (process.env.NODE_ENV === 'development' && rIndex > 20) {
+      const archivedRowRange = (templateData as any)?._archivedRowRange;
+      if (archivedRowRange && rIndex > archivedRowRange.endRow) {
+        // 这是新追加的行
+        if (!parsedField) {
+          // 字段未匹配（只在首次遇到时输出一次警告）
+          const warningKey = `field-missing-${rIndex}-${cIndex}`;
+          if (!(window as any).__fieldMissingWarnings) {
+            (window as any).__fieldMissingWarnings = new Set();
+          }
+          if (!(window as any).__fieldMissingWarnings.has(warningKey)) {
+            (window as any).__fieldMissingWarnings.add(warningKey);
+            // 查找可能匹配的字段
+            const possibleFields = parsedFields?.filter(f => {
+              if (typeof f.rowIndex === 'number' && typeof f.colIndex === 'number') {
+                return f.rowIndex === rIndex;
+              }
+              return false;
+            }) || [];
+            console.warn('⚠️ [ExcelRenderer] 新行字段未匹配:', {
+              rIndex,
+              cIndex,
+              cellKey,
+              parsedFieldsCount: parsedFields?.length || 0,
+              possibleFieldsCount: possibleFields.length,
+              possibleFields: possibleFields.map(f => ({
+                cellKey: f.cellKey,
+                rowIndex: f.rowIndex,
+                colIndex: f.colIndex,
+                fieldType: f.fieldType
+              }))
+            });
+          }
+        } else {
+          // 字段匹配成功（只在首次匹配时输出一次，确认字段类型）
+          const matchKey = `field-matched-${rIndex}-${cIndex}`;
+          if (!(window as any).__fieldMatchedLogs) {
+            (window as any).__fieldMatchedLogs = new Set();
+          }
+          if (!(window as any).__fieldMatchedLogs.has(matchKey) && (
+            parsedField.fieldType === 'timenow' || 
+            parsedField.fieldType === 'handwritten' || 
+            parsedField.fieldType === 'option'
+          )) {
+            (window as any).__fieldMatchedLogs.add(matchKey);
+            console.log('✅ [ExcelRenderer] 新行字段匹配成功（特殊类型）:', {
+              rIndex,
+              cIndex,
+              cellKey,
+              matchedField: {
+                cellKey: parsedField.cellKey,
+                rowIndex: parsedField.rowIndex,
+                colIndex: parsedField.colIndex,
+                fieldType: parsedField.fieldType,
+                label: parsedField.label,
+                options: parsedField.options
+              }
+            });
+          }
+        }
+      }
+    }
     const isDesignMode = mode === 'design';
     const isRequired = parsedField?.required === true;
+    
+    // 🟢 追加模式：检查当前行是否在已归档范围内（只读）
+    const archivedRowRange = (templateData as any)?._archivedRowRange;
+    const isArchivedRow = archivedRowRange && 
+      typeof archivedRowRange.startRow === 'number' && 
+      typeof archivedRowRange.endRow === 'number' &&
+      rIndex >= archivedRowRange.startRow && 
+      rIndex <= archivedRowRange.endRow;
+    // 🟢 如果当前行是已归档行，则强制设置为只读模式
+    const effectiveMode = isArchivedRow ? 'view' : mode;
+    
+    // 🟢 优化：移除频繁的调试日志，避免刷屏
+    // 调试日志已移除，如有需要可以通过其他方式调试
 
     // 🟣 V3.4 Section类型单元格处理
     if (parsedField?.fieldType === 'section') {
@@ -769,9 +1069,10 @@ export default function ExcelRenderer({
     );
 
     // timenow 字段：显示占位符，自动生成时间，无需填写
+    // 🟢 修复：确保 timenow 字段即使在没有值的情况下也能正确显示
     if (parsedField?.fieldType === 'timenow') {
-      const display = filledValue || valStr;
-      if (mode === 'edit') {
+      const display = filledValue || valStr || '';
+      if (effectiveMode === 'edit') {
         return (
           <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-500 text-xs italic select-none" style={styleObj}>
             {display ? (
@@ -783,7 +1084,7 @@ export default function ExcelRenderer({
         );
       }
       // 查看模式：显示已填充的时间或占位符
-      if (mode === 'view') {
+      if (effectiveMode === 'view') {
         return (
           <div className="w-full h-full flex items-center justify-center text-sm text-slate-800" style={styleObj}>
             {display || <span className="text-slate-300">/</span>}
@@ -847,6 +1148,7 @@ export default function ExcelRenderer({
     }
 
     // 手写签名字段处理（支持多人签名）
+    // 🟢 修复：确保 handwritten 字段即使在没有值的情况下也能正确显示输入框
     if (parsedField?.fieldType === 'handwritten') {
       // 🟢 规范化手写签名数据格式
       let normalizedValue = filledValue;
@@ -945,21 +1247,43 @@ export default function ExcelRenderer({
       
       // 计算单元格实际尺寸（响应式）
       const cellSize = getCellSize(rIndex, cIndex);
+      // 🟢 修复：确保签名有足够的显示空间
       // 留出一些内边距空间（约8px），确保签名不会紧贴边缘
-      const signatureMaxWidth = Math.max(50, cellSize.width - 8);
-      const signatureMaxHeight = Math.max(30, cellSize.height - 8);
+      // 同时确保最小尺寸足够大，避免图片太小看不清
+      const signatureMaxWidth = Math.max(100, cellSize.width - 8); // 🟢 最小宽度100px
+      const signatureMaxHeight = Math.max(60, cellSize.height - 8); // 🟢 最小高度60px
+      
+      // 调试日志
+      if (process.env.NODE_ENV === 'development' && hasSignature) {
+        console.log('🔍 [ExcelRenderer] 单元格尺寸:', {
+          cellKey,
+          cellSize,
+          signatureMaxWidth,
+          signatureMaxHeight
+        });
+      }
       
       if (mode === 'view') {
         // 查看模式：显示多个签名
         return (
-          <div className="w-full h-full flex items-center justify-center p-1" style={styleObj}>
+          <div 
+            className="w-full h-full flex items-center justify-center p-1" 
+            style={{
+              ...styleObj,
+              minHeight: '30px', // 🟢 确保最小高度，避免容器太小
+              minWidth: '50px', // 🟢 确保最小宽度，避免容器太小
+              overflow: 'visible', // 🟢 确保图片不被裁剪
+              position: 'relative', // 🟢 确保定位正确
+              zIndex: 1 // 🟢 确保图片在上层
+            }}
+          >
             {hasSignature ? (
               <MultiSignatureDisplay
                 signatures={signatureArray}
                 onAddSignature={() => {}}
                 readonly={true}
-                maxWidth={signatureMaxWidth}
-                maxHeight={signatureMaxHeight}
+                maxWidth={Math.max(signatureMaxWidth, 80)} // 🟢 确保最小宽度80px
+                maxHeight={Math.max(signatureMaxHeight, 50)} // 🟢 确保最小高度50px
               />
             ) : (
               <span className="text-slate-300 text-xs">/</span>
@@ -973,7 +1297,14 @@ export default function ExcelRenderer({
         return (
           <div 
             className="w-full h-full flex items-center justify-center p-1" 
-            style={styleObj}
+            style={{
+              ...styleObj,
+              minHeight: '30px', // 🟢 确保最小高度，避免容器太小
+              minWidth: '50px', // 🟢 确保最小宽度，避免容器太小
+              overflow: 'visible', // 🟢 确保图片不被裁剪
+              position: 'relative', // 🟢 确保定位正确
+              zIndex: 1 // 🟢 确保图片在上层
+            }}
           >
             <MultiSignatureDisplay
               signatures={signatureArray}
@@ -986,8 +1317,8 @@ export default function ExcelRenderer({
                 newArray.splice(index, 1);
                 handleInputChange(rIndex, cIndex, newArray.length > 0 ? newArray : '');
               }}
-              maxWidth={signatureMaxWidth}
-              maxHeight={signatureMaxHeight}
+              maxWidth={Math.max(signatureMaxWidth, 80)} // 🟢 确保最小宽度80px
+              maxHeight={Math.max(signatureMaxHeight, 50)} // 🟢 确保最小高度50px
               readonly={false}
             />
           </div>
@@ -1199,7 +1530,7 @@ export default function ExcelRenderer({
       const key = inputKey;
       return (
         <div className="flex items-center justify-center h-full" style={styleObj}>
-          {mode === 'edit' ? (
+          {effectiveMode === 'edit' ? (
             <CustomDatePicker
               value={filledValue || ''}
               onChange={(v) => {
@@ -1216,8 +1547,76 @@ export default function ExcelRenderer({
     }
 
     if (!valStr || valStr === "点击填写") {
-      // 查看模式或非解析字段
-      if (mode === 'view') return filledValue ? <span className="text-blue-900 font-bold text-sm block text-center whitespace-nowrap" style={styleObj}>{filledValue}</span> : <span className="text-slate-200 block text-center select-none">/</span>;
+      // 🟢 检查filledValue是否是base64图片数据
+      if (filledValue) {
+        let shouldRenderAsImage = false;
+        let normalizedBase64: any = null;
+        
+        if (typeof filledValue === 'string' && filledValue.length > 100) {
+          const isBase64Image = filledValue.startsWith('iVBORw0KGgo') || 
+                                filledValue.startsWith('data:image') ||
+                                (filledValue.length > 500 && /^[A-Za-z0-9+/=]+$/.test(filledValue.replace(/\s/g, '')));
+          if (isBase64Image) {
+            shouldRenderAsImage = true;
+            normalizedBase64 = filledValue;
+            if (normalizedBase64.startsWith('data:image')) {
+              normalizedBase64 = normalizedBase64.split(',')[1] || normalizedBase64;
+            }
+          }
+        }
+        
+        if (Array.isArray(filledValue) && filledValue.length > 0) {
+          const firstItem = filledValue[0];
+          if (typeof firstItem === 'string' && firstItem.length > 100) {
+            const isBase64Image = firstItem.startsWith('iVBORw0KGgo') || 
+                                  firstItem.startsWith('data:image') ||
+                                  (firstItem.length > 500 && /^[A-Za-z0-9+/=]+$/.test(firstItem.replace(/\s/g, '')));
+            if (isBase64Image) {
+              shouldRenderAsImage = true;
+              normalizedBase64 = filledValue.map((v: any) => {
+                if (typeof v === 'string') {
+                  if (v.startsWith('data:image')) {
+                    return v.split(',')[1] || v;
+                  }
+                  return v;
+                }
+                return v;
+              });
+            }
+          }
+        }
+        
+        if (shouldRenderAsImage) {
+          const cellSize = getCellSize(rIndex, cIndex);
+          const signatureMaxWidth = Math.max(100, cellSize.width - 8);
+          const signatureMaxHeight = Math.max(60, cellSize.height - 8);
+          
+          return (
+            <div 
+              className="w-full h-full flex items-center justify-center p-1" 
+              style={{
+                ...styleObj,
+                minHeight: '30px',
+                minWidth: '50px',
+                overflow: 'visible',
+                position: 'relative',
+                zIndex: 1
+              }}
+            >
+              <MultiSignatureDisplay
+                signatures={Array.isArray(normalizedBase64) ? normalizedBase64 : [normalizedBase64]}
+                onAddSignature={() => {}}
+                readonly={effectiveMode === 'view'}
+                maxWidth={Math.max(signatureMaxWidth, 80)}
+                maxHeight={Math.max(signatureMaxHeight, 50)}
+              />
+            </div>
+          );
+        }
+      }
+      
+      // 查看模式或非解析字段（包括已归档行）
+      if (effectiveMode === 'view') return filledValue ? <span className="text-blue-900 font-bold text-sm block text-center whitespace-nowrap" style={styleObj}>{filledValue}</span> : <span className="text-slate-200 block text-center select-none">/</span>;
       
       // 编辑模式或普通输入 - 必填字段在无内容时显示红色星号
       return (
@@ -1230,6 +1629,7 @@ export default function ExcelRenderer({
             value={filledValue || ''}
             onChange={(e) => handleInputChange(rIndex, cIndex, e.target.value)}
             style={styleObj}
+            readOnly={effectiveMode === 'view'}
           />
         </div>
       );
@@ -1240,8 +1640,8 @@ export default function ExcelRenderer({
       const parts = valStr.split(/(____+)/);
       let inlineIndex = 0;
       
-      if (mode === 'view') {
-        // 查看模式：显示已填写的值或下划线
+      if (effectiveMode === 'view') {
+        // 查看模式：显示已填写的值或下划线（包括已归档行）
         return (
           <div className="flex items-center flex-wrap gap-0.5 text-sm px-1" style={styleObj}>
             {parts.map((part, idx) => {
@@ -1296,6 +1696,175 @@ export default function ExcelRenderer({
       );
     }
 
+    // 🟢 最后检查：如果filledValue看起来像是base64图片数据，尝试渲染为图片
+    // 这可以处理某些情况下parsedField没有正确匹配的情况
+    if (filledValue && typeof filledValue === 'string' && filledValue.length > 100) {
+      // 检查是否是base64字符串（通常以iVBORw0KGgo开头，或者包含data:image）
+      const isBase64Image = filledValue.startsWith('iVBORw0KGgo') || 
+                            filledValue.startsWith('data:image') ||
+                            (filledValue.length > 500 && /^[A-Za-z0-9+/=]+$/.test(filledValue.replace(/\s/g, '')));
+      
+      if (isBase64Image) {
+        // 尝试规范化base64数据
+        let normalizedBase64 = filledValue;
+        if (normalizedBase64.startsWith('data:image')) {
+          normalizedBase64 = normalizedBase64.split(',')[1] || normalizedBase64;
+        }
+        
+        // 调试日志
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 [ExcelRenderer] 检测到未匹配的base64图片数据，尝试渲染:', {
+            cellKey,
+            inputKey,
+            dataLength: normalizedBase64.length,
+            preview: normalizedBase64.substring(0, 50)
+          });
+        }
+        
+        // 渲染为图片
+        const cellSize = getCellSize(rIndex, cIndex);
+        const signatureMaxWidth = Math.max(100, cellSize.width - 8);
+        const signatureMaxHeight = Math.max(60, cellSize.height - 8);
+        
+        return (
+          <div 
+            className="w-full h-full flex items-center justify-center p-1" 
+            style={{
+              ...styleObj,
+              minHeight: '30px',
+              minWidth: '50px',
+              overflow: 'visible',
+              position: 'relative',
+              zIndex: 1
+            }}
+          >
+            <MultiSignatureDisplay
+              signatures={[normalizedBase64]}
+              onAddSignature={() => {}}
+              readonly={true}
+              maxWidth={Math.max(signatureMaxWidth, 80)}
+              maxHeight={Math.max(signatureMaxHeight, 50)}
+            />
+          </div>
+        );
+      }
+    }
+    
+    // 如果是数组且第一个元素看起来像是base64图片数据
+    if (Array.isArray(filledValue) && filledValue.length > 0) {
+      const firstItem = filledValue[0];
+      if (typeof firstItem === 'string' && firstItem.length > 100) {
+        const isBase64Image = firstItem.startsWith('iVBORw0KGgo') || 
+                              firstItem.startsWith('data:image') ||
+                              (firstItem.length > 500 && /^[A-Za-z0-9+/=]+$/.test(firstItem.replace(/\s/g, '')));
+        
+        if (isBase64Image) {
+          // 调试日志
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔍 [ExcelRenderer] 检测到未匹配的base64图片数组，尝试渲染:', {
+              cellKey,
+              inputKey,
+              arrayLength: filledValue.length,
+              firstItemLength: firstItem.length
+            });
+          }
+          
+          // 规范化数组中的每个元素
+          const normalizedArray = filledValue.map((v: any) => {
+            if (typeof v === 'string') {
+              if (v.startsWith('data:image')) {
+                return v.split(',')[1] || v;
+              }
+              return v;
+            }
+            return v;
+          });
+          
+          const cellSize = getCellSize(rIndex, cIndex);
+          const signatureMaxWidth = Math.max(100, cellSize.width - 8);
+          const signatureMaxHeight = Math.max(60, cellSize.height - 8);
+          
+          return (
+            <div 
+              className="w-full h-full flex items-center justify-center p-1" 
+              style={{
+                ...styleObj,
+                minHeight: '30px',
+                minWidth: '50px',
+                overflow: 'visible',
+                position: 'relative',
+                zIndex: 1
+              }}
+            >
+              <MultiSignatureDisplay
+                signatures={normalizedArray}
+                onAddSignature={() => {}}
+                readonly={true}
+                maxWidth={Math.max(signatureMaxWidth, 80)}
+                maxHeight={Math.max(signatureMaxHeight, 50)}
+              />
+            </div>
+          );
+        }
+      }
+    }
+    
+    // 🟢 最后检查：如果valStr或filledValue看起来像是base64图片数据，尝试渲染为图片
+    // 这可以处理某些情况下数据存储在cellValue而不是formData的情况
+    const valueToCheck = filledValue || valStr;
+    if (valueToCheck && typeof valueToCheck === 'string' && valueToCheck.length > 100) {
+      // 检查是否是base64字符串（通常以iVBORw0KGgo开头，或者包含data:image）
+      const isBase64Image = valueToCheck.startsWith('iVBORw0KGgo') || 
+                            valueToCheck.startsWith('data:image') ||
+                            (valueToCheck.length > 500 && /^[A-Za-z0-9+/=]+$/.test(valueToCheck.replace(/\s/g, '')));
+      
+      if (isBase64Image) {
+        // 尝试规范化base64数据
+        let normalizedBase64 = valueToCheck;
+        if (normalizedBase64.startsWith('data:image')) {
+          normalizedBase64 = normalizedBase64.split(',')[1] || normalizedBase64;
+        }
+        
+        // 调试日志
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 [ExcelRenderer] 在默认渲染前检测到base64图片数据（valStr或filledValue），尝试渲染:', {
+            cellKey,
+            inputKey,
+            source: filledValue ? 'filledValue' : 'valStr',
+            dataLength: normalizedBase64.length,
+            preview: normalizedBase64.substring(0, 50)
+          });
+        }
+        
+        // 渲染为图片
+        const cellSize = getCellSize(rIndex, cIndex);
+        const signatureMaxWidth = Math.max(100, cellSize.width - 8);
+        const signatureMaxHeight = Math.max(60, cellSize.height - 8);
+        
+        return (
+          <div 
+            className="w-full h-full flex items-center justify-center p-1" 
+            style={{
+              ...styleObj,
+              minHeight: '30px',
+              minWidth: '50px',
+              overflow: 'visible',
+              position: 'relative',
+              zIndex: 1
+            }}
+          >
+            <MultiSignatureDisplay
+              signatures={[normalizedBase64]}
+              onAddSignature={() => {}}
+              readonly={mode === 'view'}
+              maxWidth={Math.max(signatureMaxWidth, 80)}
+              maxHeight={Math.max(signatureMaxHeight, 50)}
+            />
+          </div>
+        );
+      }
+    }
+    
     return <span className="text-slate-700 whitespace-pre-wrap break-all inline-block w-full" style={styleObj}>{valStr}</span>;
   };
 

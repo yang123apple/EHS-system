@@ -26,12 +26,27 @@ export async function POST(
       );
     }
 
-    // 解析字段（动态记录二级模板：同时写入“可追加行”标记，方便旧模板一键修复）
+    // 解析字段（动态记录二级模板：同时写入"可追加行"标记，方便旧模板一键修复）
     const foldDuplicateRows = !!template.isDynamicLog && String(template.level || 'primary') === 'secondary';
-    const processedStructureJson = foldDuplicateRows
-      ? foldStructureForDynamicAdd(template.structureJson || '')
+    
+    // 🟢 第一步：先折叠重复行（如果没有marker的话）
+    let processedStructureJson = foldDuplicateRows
+      ? foldStructureForDynamicAdd(template.structureJson || '', { templateId: id })
       : (template.structureJson || '');
-    const parsedFields = parseTemplateFields(processedStructureJson, { foldDuplicateRows });
+    
+    // 🟢 第二步：解析字段
+    // 注意：如果已经折叠过，就不应该再次折叠，所以传入 foldDuplicateRows: false
+    // 但实际上，parseTemplateFields 中的 foldDuplicateRows 逻辑会检查是否已经折叠，所以传入 true 也没问题
+    // 但为了明确，我们传入 false（因为我们已经折叠过了）
+    const parsedFields = parseTemplateFields(processedStructureJson, { foldDuplicateRows: false });
+    
+    // 🟢 第三步：如果有折叠行，重新调用 foldStructureForDynamicAdd 以更新 marker 的字段类型信息
+    if (foldDuplicateRows) {
+      processedStructureJson = foldStructureForDynamicAdd(processedStructureJson, {
+        templateId: id,
+        parsedFields
+      });
+    }
 
     // 保存解析结果
     await prisma.workPermitTemplate.update({

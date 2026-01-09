@@ -690,10 +690,18 @@ export function parseTemplateFields(
 // DynamicLog: 折叠重复行并生成“可追加行”标记
 // =========================
 export type DynamicAddRowMarker = {
+  /** 模板ID */
+  templateId?: string;
   /** 1-based 行号，例如 5 表示 R5 */
   baseRow1: number;
   /** 被折叠的重复行数量（不含 baseRow 自己） */
   collapsedCount: number;
+  /** 该行的单元格数量 */
+  cellCount: number;
+  /** 每个单元格的解析类型数组，按列索引顺序排列 */
+  cellFieldTypes: (ParsedField['fieldType'] | null)[];
+  /** 每个单元格的完整字段定义数组，按列索引顺序排列（可选，用于保存更多信息） */
+  cellFields?: (ParsedField | null)[];
 };
 
 /**
@@ -701,18 +709,29 @@ export type DynamicAddRowMarker = {
  *
  * 设计目标（对应用户需求）：
  * - 导入时若检测到 R5~R7 完全相同：保存时仅保留 R5，并写入标记 {ADD=R5}
- * - 填写时根据该标记渲染“增加一行”，点击后复制 R5 模板样式生成新行（R6、R7...）
+ * - 标记包含：模板ID、行号、单元格数量、每个单元格的解析类型
+ * - 填写时根据该标记渲染"增加一行"，点击后复制 R5 模板样式生成新行（R6、R7...）
  *
  * 注意：为了避免破坏合并单元格坐标，涉及 merge 的行不会被折叠。
  */
-export function foldStructureForDynamicAdd(structureJson: string): string {
+export function foldStructureForDynamicAdd(
+  structureJson: string,
+  options?: { templateId?: string; parsedFields?: ParsedField[] }
+): string {
   if (!structureJson) return structureJson;
   try {
     const structure: any = JSON.parse(structureJson);
-    // 已处理过则不重复处理
-    if (Array.isArray(structure?.dynamicAddRowMarkers) && structure.dynamicAddRowMarkers.length > 0) {
+    // 已处理过则不重复处理（但如果提供了新的 parsedFields，则重新处理以更新字段类型）
+    const hasExistingMarkers = Array.isArray(structure?.dynamicAddRowMarkers) && structure.dynamicAddRowMarkers.length > 0;
+    const shouldUpdateFieldTypes = hasExistingMarkers && options?.parsedFields;
+    
+    // 如果已有marker但没有提供parsedFields，直接返回
+    if (hasExistingMarkers && !shouldUpdateFieldTypes) {
       return structureJson;
     }
+    
+    // 如果需要更新字段类型，保留现有的markers结构，只更新字段类型
+    const existingMarkers: DynamicAddRowMarker[] = shouldUpdateFieldTypes ? (structure.dynamicAddRowMarkers || []) : [];
 
     const grid: any[][] = extractGrid(structure);
     if (!grid || !Array.isArray(grid) || grid.length === 0) return structureJson;
@@ -743,41 +762,214 @@ export function foldStructureForDynamicAdd(structureJson: string): string {
       return parts.join('\u001F');
     };
 
-    const folded: any[][] = [];
+    // 如果只是更新字段类型，直接使用现有的folded grid
+    const folded: any[][] = shouldUpdateFieldTypes 
+      ? extractGrid(structure) 
+      : [];
     const markers: DynamicAddRowMarker[] = [];
-    let prevSig = '';
-    let prevOriginalRowIndex = -1;
-    let prevKeptRowIndex = -1;
-    let collapsedCount = 0;
+    
+    if (!shouldUpdateFieldTypes) {
+      // 正常折叠流程
+      let prevSig = '';
+      let prevOriginalRowIndex = -1;
+      let prevKeptRowIndex = -1;
+      let collapsedCount = 0;
+      let prevKeptOriginalRowIndex = -1; // 保存保留行的原始行索引
 
+    // 🟢 辅助函数：从parsedFields中获取指定行的所有字段定义
+    const getRowFields = (rowIndex0: number): ParsedField[] => {
+      if (!options?.parsedFields) return [];
+      // rowIndex0是0-based的原始行索引（折叠前的）
+      return options.parsedFields.filter((f: ParsedField) => {
+        if (typeof f.rowIndex === 'number') {
+          return f.rowIndex === rowIndex0;
+        }
+        // 如果没有rowIndex，尝试从cellKey解析
+        if (f.cellKey) {
+          const m = String(f.cellKey).match(/^R(\d+)C(\d+)$/i);
+          if (m) {
+            const row1 = parseInt(m[1], 10);
+            const row0 = row1 - 1; // 转换为0-based
+            return row0 === rowIndex0;
+          }
+        }
+        return false;
+      });
+    };
+
+    // 🟢 创建marker时，解析该行的每个单元格的字段类型
     const flushMarker = () => {
       if (prevKeptRowIndex >= 0 && collapsedCount > 0) {
-        markers.push({ baseRow1: prevKeptRowIndex + 1, collapsedCount });
+        // 获取该行的所有列
+        const row = folded[prevKeptRowIndex];
+        const maxCols = row ? row.length : 0;
+        
+        // 如果提供了parsedFields，解析字段类型；否则先创建空的字段类型数组
+        let cellFieldTypes: (ParsedField['fieldType'] | null)[] = [];
+        let cellFields: (ParsedField | null)[] = [];
+        
+        if (options?.parsedFields && prevKeptOriginalRowIndex >= 0) {
+          // 获取保留行的字段定义（使用原始行索引，因为parsedFields可能还基于原始grid）
+          // 但注意：如果parsedFields是基于折叠后的grid的，我们需要用折叠后的行索引
+          // 为了兼容两种情况，我们先用原始行索引查找，如果找不到，再用折叠后的行索引
+          let rowFields = getRowFields(prevKeptOriginalRowIndex);
+          
+          // 如果找不到，尝试用折叠后的行索引（prevKeptRowIndex）查找
+          if (rowFields.length === 0) {
+            rowFields = options.parsedFields.filter((f: ParsedField) => {
+              if (typeof f.rowIndex === 'number') {
+                return f.rowIndex === prevKeptRowIndex;
+              }
+              if (f.cellKey) {
+                const m = String(f.cellKey).match(/^R(\d+)C(\d+)$/i);
+                if (m) {
+                  const row1 = parseInt(m[1], 10);
+                  return row1 === prevKeptRowIndex + 1; // 转换为1-based
+                }
+              }
+              return false;
+            });
+          }
+          
+          // 创建列索引到字段类型的映射
+          const colIndexToFieldType = new Map<number, ParsedField['fieldType']>();
+          const colIndexToField = new Map<number, ParsedField>();
+          
+          rowFields.forEach((f: ParsedField) => {
+            if (typeof f.colIndex === 'number') {
+              colIndexToFieldType.set(f.colIndex, f.fieldType);
+              colIndexToField.set(f.colIndex, f);
+            } else if (f.cellKey) {
+              // 从cellKey解析列索引（注意：cellKey是1-based的，需要转换为0-based）
+              const m = String(f.cellKey).match(/^R\d+C(\d+)$/i);
+              if (m) {
+                const col1 = parseInt(m[1], 10);
+                const col0 = col1 - 1; // 转换为0-based
+                colIndexToFieldType.set(col0, f.fieldType);
+                colIndexToField.set(col0, f);
+              }
+            }
+          });
+          
+          // 创建每个单元格的字段类型数组
+          for (let c = 0; c < maxCols; c++) {
+            const fieldType = colIndexToFieldType.get(c) || null;
+            const field = colIndexToField.get(c) || null;
+            cellFieldTypes.push(fieldType);
+            cellFields.push(field);
+          }
+        } else {
+          // 如果没有parsedFields，先创建空的数组（后续会更新）
+          for (let c = 0; c < maxCols; c++) {
+            cellFieldTypes.push(null);
+            cellFields.push(null);
+          }
+        }
+        
+        // 创建新marker
+        markers.push({
+          templateId: options?.templateId,
+          baseRow1: prevKeptRowIndex + 1, // 1-based的行号（折叠后的）
+          collapsedCount,
+          cellCount: maxCols,
+          cellFieldTypes,
+          cellFields: cellFields.length > 0 ? cellFields : undefined
+        });
       }
     };
 
-    for (let r = 0; r < grid.length; r++) {
-      const row = Array.isArray(grid[r]) ? grid[r] : [];
-      const sig = normRow(row);
-      if (
-        r > 0 &&
-        sig === prevSig &&
-        !mergeRows.has(r) &&
-        !mergeRows.has(prevOriginalRowIndex)
-      ) {
-        collapsedCount += 1;
-        continue;
-      }
-      // 遇到新段落：先把上一段的折叠结果写成 marker
-      flushMarker();
-      collapsedCount = 0;
+      for (let r = 0; r < grid.length; r++) {
+        const row = Array.isArray(grid[r]) ? grid[r] : [];
+        const sig = normRow(row);
+        if (
+          r > 0 &&
+          sig === prevSig &&
+          !mergeRows.has(r) &&
+          !mergeRows.has(prevOriginalRowIndex)
+        ) {
+          collapsedCount += 1;
+          continue;
+        }
+        // 遇到新段落：先把上一段的折叠结果写成 marker
+        flushMarker();
+        collapsedCount = 0;
 
-      folded.push(row);
-      prevSig = sig;
-      prevOriginalRowIndex = r;
-      prevKeptRowIndex = folded.length - 1;
+        folded.push(row);
+        prevSig = sig;
+        prevOriginalRowIndex = r;
+        prevKeptRowIndex = folded.length - 1;
+        prevKeptOriginalRowIndex = r; // 保存保留行的原始行索引
+      }
+      flushMarker();
+    } else {
+      // 🟢 更新字段类型流程：遍历现有markers，更新它们的字段类型信息
+      // 注意：此时 parsedFields 是基于折叠后的 grid 解析的，所以可以直接用 baseRow1 匹配
+      existingMarkers.forEach((existingMarker) => {
+        const baseRow0 = existingMarker.baseRow1 - 1; // 转换为0-based
+        if (baseRow0 >= 0 && baseRow0 < folded.length && options?.parsedFields) {
+          // 🟢 直接使用baseRow1（1-based，折叠后的）来匹配parsedFields中的cellKey
+          const rowFields = options.parsedFields.filter((f: ParsedField) => {
+            if (f.cellKey) {
+              const m = String(f.cellKey).match(/^R(\d+)C(\d+)$/i);
+              if (m) {
+                const row1 = parseInt(m[1], 10);
+                return row1 === existingMarker.baseRow1;
+              }
+            }
+            // 也尝试用rowIndex匹配（如果parsedFields中的rowIndex是基于折叠后的grid的）
+            if (typeof f.rowIndex === 'number') {
+              return f.rowIndex === baseRow0;
+            }
+            return false;
+          });
+          
+          // 获取该行的所有列
+          const row = folded[baseRow0];
+          const maxCols = row ? row.length : 0;
+          
+          // 创建列索引到字段类型的映射
+          const colIndexToFieldType = new Map<number, ParsedField['fieldType']>();
+          const colIndexToField = new Map<number, ParsedField>();
+          
+          rowFields.forEach((f: ParsedField) => {
+            if (typeof f.colIndex === 'number') {
+              colIndexToFieldType.set(f.colIndex, f.fieldType);
+              colIndexToField.set(f.colIndex, f);
+            } else if (f.cellKey) {
+              // 从cellKey解析列索引
+              const m = String(f.cellKey).match(/^R\d+C(\d+)$/i);
+              if (m) {
+                const col1 = parseInt(m[1], 10);
+                const col0 = col1 - 1; // 转换为0-based
+                colIndexToFieldType.set(col0, f.fieldType);
+                colIndexToField.set(col0, f);
+              }
+            }
+          });
+          
+          // 创建每个单元格的字段类型数组
+          const cellFieldTypes: (ParsedField['fieldType'] | null)[] = [];
+          const cellFields: (ParsedField | null)[] = [];
+          
+          for (let c = 0; c < maxCols; c++) {
+            const fieldType = colIndexToFieldType.get(c) || null;
+            const field = colIndexToField.get(c) || null;
+            cellFieldTypes.push(fieldType);
+            cellFields.push(field);
+          }
+          
+          // 更新现有marker
+          existingMarker.cellCount = maxCols;
+          existingMarker.cellFieldTypes = cellFieldTypes;
+          existingMarker.cellFields = cellFields.length > 0 ? cellFields : undefined;
+          if (options?.templateId) existingMarker.templateId = options.templateId;
+          markers.push(existingMarker);
+        } else {
+          // 如果找不到对应的行，保留原有marker
+          markers.push(existingMarker);
+        }
+      });
     }
-    flushMarker();
 
     // 写回结构（保持结构字段兼容：grid / data / rows / sheets[0].rows）
     if (Array.isArray(structure.grid)) structure.grid = folded;

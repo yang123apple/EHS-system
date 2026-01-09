@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Save, FileText, Trash2 } from 'lucide-react';
+import { X, Save, FileText, Trash2, Plus } from 'lucide-react';
 import { Template, ParsedField } from '@/types/work-permit';
 import ExcelRenderer from '../ExcelRenderer';
 import { apiFetch } from '@/lib/apiClient';
@@ -54,6 +54,8 @@ export default function SectionFormModal({
 }: Props) {
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  // 🟢 修复：添加标志，确保formData初始化完成后再渲染ExcelRenderer
+  const [isFormDataReady, setIsFormDataReady] = useState(false);
   // 使用 ref 跟踪是否已经初始化过，避免无限循环
   const initializedRef = useRef<string | null>(null);
   const [appendDraft, setAppendDraft] = useState<Record<string, any>>({});
@@ -71,6 +73,9 @@ export default function SectionFormModal({
   const [trashButtons, setTrashButtons] = useState<Array<{ rowOffset: number; top: number; left: number }>>([]);
   // 🟢 动态扩展的 parsedFields（新增行时会复制模板行的字段类型）
   const [extendedParsedFields, setExtendedParsedFields] = useState<ParsedField[]>([]);
+  // 🟢 新增：跟踪已归档记录的行数（用于区分已归档和新追加的内容）
+  // 注意：必须在displayTemplateData之前声明，因为displayTemplateData的useMemo中会使用它
+  const [archivedRowCount, setArchivedRowCount] = useState(0);
 
   const formatZh = (iso: string) => {
     const d = new Date(iso);
@@ -152,6 +157,15 @@ export default function SectionFormModal({
     if (!isDynamicSecondary) return templateData;
     try {
       const src = JSON.parse(JSON.stringify(templateData));
+      // 🟢 追加模式：在templateData中标记已归档行范围，供ExcelRenderer使用
+      // 注意：这里的行索引是基于原始模板的索引（折叠后的）
+      // 🟢 在displayTemplateData内部计算recordBaseRow0，避免依赖声明顺序问题
+      const currentRecordBaseRow0 = typeof repeatBaseRow0 === 'number' 
+        ? repeatBaseRow0 
+        : null; // 如果没有repeatBaseRow0，稍后通过detectRecordRowFromGrid来查找
+      
+      // 🟢 注意：archivedRowRange将在expanded grid生成后更新为expanded grid中的实际索引
+      // 这里先不设置，等grid扩展后再设置
       const originalGrid: any[][] = Array.isArray(src?.grid) ? src.grid : (Array.isArray(src?.data) ? src.data : null);
       if (!originalGrid || !Array.isArray(originalGrid)) return templateData;
       const merges = src?.merges || src?.sheets?.[0]?.merges || [];
@@ -193,42 +207,82 @@ export default function SectionFormModal({
       }
       if (Array.isArray(src.grid)) src.grid = folded;
       if (Array.isArray(src.data)) src.data = folded;
-      // 🟢 桌面端：在折叠后的“记录行”基础上按行数扩展（用于 + 增加的行）
+      // 🟢 桌面端：在折叠后的"记录行"基础上按行数扩展（用于 + 增加的行）
       if (showDynamicRowsDesktop) {
         const workingGrid: any[][] = Array.isArray(src?.grid) ? src.grid : (Array.isArray(src?.data) ? src.data : null);
         if (!workingGrid || !Array.isArray(workingGrid)) return src;
-        // 🟢 动态记录：优先基于 {ADD=R?} 的 baseRow 做扩展；若没有标记则回退到“序号”下一行
-        const recordRowIndex = (typeof repeatBaseRow0 === 'number')
-          ? repeatBaseRow0
+        // 🟢 动态记录：优先基于 {ADD=R?} 的 baseRow 做扩展；若没有标记则回退到"序号"下一行
+        // 使用内部计算的currentRecordBaseRow0，如果不存在则使用detectRecordRowFromGrid
+        const recordRowIndex = currentRecordBaseRow0 !== null && typeof currentRecordBaseRow0 === 'number'
+          ? currentRecordBaseRow0
           : (detectRecordRowFromGrid(workingGrid) ?? null);
         if (typeof recordRowIndex === 'number' && workingGrid[recordRowIndex]) {
           const count = Math.max(1, desktopRowCount);
           const head = workingGrid.slice(0, recordRowIndex + 1);
           const tail = workingGrid.slice(recordRowIndex + 1);
           const recordRow = workingGrid[recordRowIndex];
+          
+          // 🟢 追加模式：在已归档记录之后的行添加间距样式
+          // 通过修改rowHeights在已归档记录的最后一行之后添加10px间距
           const copies = Array.from({ length: count - 1 }, () => JSON.parse(JSON.stringify(recordRow)));
           const expanded = [...head, ...copies, ...tail];
+          
+          // 🟢 修复：在expanded grid生成后，更新archivedRowRange为expanded grid中的实际索引
+          // 因为ExcelRenderer使用的rIndex是基于expanded grid的
+          if (appendOnly && typeof recordRowIndex === 'number') {
+            // 在expanded grid中，记录行在recordRowIndex位置，已归档行从recordRowIndex开始
+            src._archivedRowRange = {
+              startRow: recordRowIndex,
+              endRow: archivedRowCount > 0 ? recordRowIndex + archivedRowCount - 1 : recordRowIndex - 1
+            };
+            // 🟢 调试日志：确认archivedRowRange设置
+            if (process.env.NODE_ENV === 'development') {
+              console.log('🟢 [displayTemplateData] 设置archivedRowRange:', {
+                recordRowIndex,
+                archivedRowCount,
+                archivedRowRange: src._archivedRowRange,
+                desktopRowCount,
+                expandedLength: expanded.length,
+                newRowIndex: recordRowIndex + archivedRowCount
+              });
+            }
+          }
+          
           if (Array.isArray(src.grid)) src.grid = expanded;
           if (Array.isArray(src.data)) src.data = expanded;
 
-          // 🟢 同步 rowHeights（rows）长度，保证新增行的样式/高度一致
-          const rowsArr = src?.rows || src?.sheets?.[0]?.rows;
-          if (Array.isArray(rowsArr) && rowsArr[recordRowIndex]) {
-            const rowMeta = rowsArr[recordRowIndex];
-            const headRows = rowsArr.slice(0, recordRowIndex + 1);
-            const tailRows = rowsArr.slice(recordRowIndex + 1);
-            const rowCopies = Array.from({ length: count - 1 }, () => ({ ...rowMeta }));
-            const expandedRows = [...headRows, ...rowCopies, ...tailRows];
-            if (Array.isArray(src.rows)) src.rows = expandedRows;
-            if (src?.sheets?.[0] && Array.isArray(src.sheets[0].rows)) src.sheets[0].rows = expandedRows;
-          }
+            // 🟢 同步 rowHeights（rows）长度，保证新增行的样式/高度一致
+            const rowsArr = src?.rows || src?.sheets?.[0]?.rows;
+            if (Array.isArray(rowsArr) && rowsArr[recordRowIndex]) {
+              const rowMeta = rowsArr[recordRowIndex];
+              const headRows = rowsArr.slice(0, recordRowIndex + 1);
+              const tailRows = rowsArr.slice(recordRowIndex + 1);
+              const rowCopies = Array.from({ length: count - 1 }, () => ({ ...rowMeta }));
+              
+              // 🟢 追加模式：在已归档记录的最后一行之后添加10px间距
+              // 通过增加已归档记录最后一行的行高来实现视觉上的间距
+              if (appendOnly && archivedRowCount > 0 && archivedRowCount <= rowCopies.length) {
+                // 已归档记录的最后一行（索引为 archivedRowCount - 1）
+                const lastArchivedRowCopy = rowCopies[archivedRowCount - 1];
+                if (lastArchivedRowCopy) {
+                  rowCopies[archivedRowCount - 1] = { 
+                    ...lastArchivedRowCopy, 
+                    hpx: (lastArchivedRowCopy.hpx || rowMeta.hpx || 30) + 10 
+                  };
+                }
+              }
+              
+              const expandedRows = [...headRows, ...rowCopies, ...tailRows];
+              if (Array.isArray(src.rows)) src.rows = expandedRows;
+              if (src?.sheets?.[0] && Array.isArray(src.sheets[0].rows)) src.sheets[0].rows = expandedRows;
+            }
         }
       }
       return src;
     } catch {
       return templateData;
     }
-  }, [templateData, isDynamicSecondary, showDynamicRowsDesktop, desktopRowCount, repeatBaseRow0]);
+  }, [templateData, isDynamicSecondary, showDynamicRowsDesktop, desktopRowCount, repeatBaseRow0, archivedRowCount, appendOnly]);
 
   // 解析字段配置
   const baseParsedFields = useMemo(() => {
@@ -254,9 +308,16 @@ export default function SectionFormModal({
     });
     // 扩展字段覆盖基础字段（新增行的字段定义）
     extendedParsedFields.forEach(f => {
-      if (f.cellKey) baseMap.set(f.cellKey, f);
+      if (f.cellKey) {
+        baseMap.set(f.cellKey, f);
+      }
     });
-    return Array.from(baseMap.values());
+    const result = Array.from(baseMap.values());
+    
+    // 🟢 优化：减少日志输出，避免无限循环
+    // 调试日志已移除，如有需要可以通过其他方式调试
+    
+    return result;
   }, [extendedParsedFields, baseParsedFields]);
 
   // 🟢 追加模式：选出“可追加行字段”（优先使用 {ADD=R?} 指定的 baseRow）
@@ -421,69 +482,121 @@ export default function SectionFormModal({
     if (appendFields.length === 0) return;
     const baseRow0 = recordBaseRow0;
     if (typeof baseRow0 !== 'number') return;
-    const next: Record<string, any> = { ...(formData || {}) };
-    // 清理动态区：清理 200 行窗口（够用）
-    const clearRows = 200;
-    const cols = new Set<number>(appendFields.map((f: any) => f.colIndex).filter((n: any) => typeof n === 'number'));
-    Object.keys(next).forEach(k => {
-      const m = k.match(/^(\d+)-(\d+)$/);
-      if (!m) return;
-      const r0 = parseInt(m[1], 10);
-      const c0 = parseInt(m[2], 10);
-      if (r0 >= baseRow0 && r0 < baseRow0 + clearRows && cols.has(c0)) delete next[k];
-    });
-
-    // 🟢 创建字段映射：cellKey -> colIndex（用于从logs中查找数据）
-    const fieldMapByCellKey = new Map<string, any>();
-    const fieldMapByColIndex = new Map<number, any>();
-    appendFields.forEach((f: any) => {
-      if (f.cellKey) fieldMapByCellKey.set(f.cellKey, f);
-      if (typeof f.colIndex === 'number') fieldMapByColIndex.set(f.colIndex, f);
-    });
-
-    const rowCount = Math.max(1, logs.length);
-    for (let i = 0; i < rowCount; i++) {
-      const entry = logs[i];
-      if (!entry?.data) continue;
-      
-      appendFields.forEach((f: any) => {
-        if (typeof f.rowIndex !== 'number' || typeof f.colIndex !== 'number') return;
-        const key = `${baseRow0 + i}-${f.colIndex}`;
-        
-        if (f.fieldType === 'timenow') {
-          next[key] = entry?.timestamp ? formatZh(entry.timestamp) : '';
-        } else {
-          // 🟢 修复：优先通过cellKey查找，如果找不到则通过列索引查找
-          // 因为新增行的cellKey可能不同，但列索引是相同的
-          let value = entry?.data?.[f.cellKey];
-          
-          // 如果通过cellKey找不到，尝试通过列索引查找（兼容旧数据）
-          if (value === undefined || value === null || value === '') {
-            // 查找同一列索引的所有字段，尝试匹配数据
-            const sameColFields = Array.from(fieldMapByColIndex.values()).filter(
-              (field: any) => field.colIndex === f.colIndex
-            );
-            
-            // 尝试从entry.data中查找匹配的数据（可能是旧行的cellKey）
-            for (const sameColField of sameColFields) {
-              const candidateValue = entry?.data?.[sameColField.cellKey];
-              if (candidateValue !== undefined && candidateValue !== null && candidateValue !== '') {
-                value = candidateValue;
-                break;
-              }
-            }
+    
+    // 🟢 记录已归档的行数（appendOnly模式下，所有logs都是已归档的）
+    if (appendOnly) {
+      setArchivedRowCount(logs.length);
+    }
+    
+    // 🟢 修复：使用函数式更新，确保获取最新的formData
+    setFormData(prevFormData => {
+      const next: Record<string, any> = { ...(prevFormData || {}) };
+      // 清理动态区：清理 200 行窗口（够用）
+      const clearRows = 200;
+      const cols = new Set<number>(appendFields.map((f: any) => f.colIndex).filter((n: any) => typeof n === 'number'));
+      Object.keys(next).forEach(k => {
+        const m = k.match(/^(\d+)-(\d+)$/);
+        if (!m) return;
+        const r0 = parseInt(m[1], 10);
+        const c0 = parseInt(m[2], 10);
+        // 🟢 修复：appendOnly模式下，只清理已归档区域之后的数据，保留已归档的数据
+        if (appendOnly) {
+          // 在已归档记录之后的行才清理，但要保留新追加的行（如果desktopRowCount > archivedRowCount）
+          // 新追加的行索引 = baseRow0 + archivedRowCount
+          const newAppendRowIndex = baseRow0 + logs.length;
+          // 只清理新追加行之后的数据，保留新追加行的数据
+          if (r0 > newAppendRowIndex && r0 < baseRow0 + clearRows && cols.has(c0)) {
+            delete next[k];
           }
-          
-        // 🟢 修复：规范化手写签名数据格式
-        if (f.fieldType === 'handwritten') {
-          value = normalizeHandwrittenSignature(value);
-        }
-          
-          next[key] = value ?? '';
+        } else {
+          // 草稿模式：清理整个动态区
+          if (r0 >= baseRow0 && r0 < baseRow0 + clearRows && cols.has(c0)) delete next[k];
         }
       });
-    }
-    setFormData(next);
+
+      // 🟢 创建字段映射：cellKey -> colIndex（用于从logs中查找数据）
+      const fieldMapByCellKey = new Map<string, any>();
+      const fieldMapByColIndex = new Map<number, any>();
+      appendFields.forEach((f: any) => {
+        if (f.cellKey) fieldMapByCellKey.set(f.cellKey, f);
+        if (typeof f.colIndex === 'number') fieldMapByColIndex.set(f.colIndex, f);
+      });
+
+      const rowCount = Math.max(1, logs.length);
+      for (let i = 0; i < rowCount; i++) {
+        const entry = logs[i];
+        if (!entry?.data) continue;
+        
+        appendFields.forEach((f: any) => {
+          if (typeof f.rowIndex !== 'number' || typeof f.colIndex !== 'number') return;
+          const key = `${baseRow0 + i}-${f.colIndex}`;
+          
+          if (f.fieldType === 'timenow') {
+            next[key] = entry?.timestamp ? formatZh(entry.timestamp) : '';
+          } else {
+            // 🟢 修复：多策略查找数据
+            // 1. 优先通过模板行的cellKey查找（最精确）
+            let value = entry?.data?.[f.cellKey];
+            
+            // 2. 如果找不到，尝试通过列索引匹配（兼容旧数据格式）
+            if (value === undefined || value === null || value === '') {
+              // 查找同一列索引的所有字段，尝试匹配数据
+              const sameColFields = Array.from(fieldMapByColIndex.values()).filter(
+                (field: any) => field.colIndex === f.colIndex
+              );
+              
+              // 尝试从entry.data中查找匹配的数据（可能是旧行的cellKey）
+              for (const sameColField of sameColFields) {
+                const candidateValue = entry?.data?.[sameColField.cellKey];
+                if (candidateValue !== undefined && candidateValue !== null && candidateValue !== '') {
+                  value = candidateValue;
+                  break;
+                }
+              }
+            }
+            
+            // 3. 如果还是找不到，尝试从entry.data的所有键中查找（可能使用了不同的cellKey格式）
+            if ((value === undefined || value === null || value === '') && entry?.data) {
+              // 尝试查找包含相同列号的cellKey（例如：R6C2, R7C2, R8C2 等，列号都是C2）
+              const targetCol = f.colIndex + 1; // 转换为1-based列号
+              for (const [dataKey, dataValue] of Object.entries(entry.data)) {
+                if (dataValue !== undefined && dataValue !== null && dataValue !== '') {
+                  // 检查是否是相同列的cellKey（列号匹配）
+                  const cellKeyMatch = String(dataKey).match(/^R\d+C(\d+)$/i);
+                  if (cellKeyMatch && parseInt(cellKeyMatch[1], 10) === targetCol) {
+                    value = dataValue;
+                    break;
+                  }
+                }
+              }
+            }
+            
+            // 🟢 修复：规范化手写签名数据格式
+            if (f.fieldType === 'handwritten' && value) {
+              value = normalizeHandwrittenSignature(value);
+            }
+            
+            // 🟢 确保即使是空字符串也设置值，以便显示
+            next[key] = value ?? '';
+          }
+        });
+      }
+      
+      // 🟢 调试日志
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔍 [recalcDesktopGridFromLogs] 更新formData:', {
+          prevFormDataKeys: Object.keys(prevFormData || {}).length,
+          nextFormDataKeys: Object.keys(next).length,
+          logsLength: logs.length,
+          baseRow0,
+          appendFieldsLength: appendFields.length,
+          sampleLogData: logs[0]?.data ? Object.keys(logs[0].data).slice(0, 5) : [],
+          sampleFormDataKeys: Object.keys(next).filter(k => k.startsWith(`${baseRow0}-`)).slice(0, 5)
+        });
+      }
+      
+      return next;
+    });
   };
 
   const ensureSerialVisibleForDraft = (rows: number) => {
@@ -494,80 +607,104 @@ export default function SectionFormModal({
   };
 
   const addDesktopBlankRow = () => {
-    // 🟢 从数据库读取：获取 {ADD} 标记行的所有字段定义（从 baseParsedFields 中读取）
-    if (recordBaseRow0 === null || baseParsedFields.length === 0) {
-      setDesktopRowCount(prev => prev + 1);
-      return;
-    }
-
-    // 🟢 关键：从 baseParsedFields 中读取 {ADD} 标记行（recordBaseRow0）的所有字段定义
-    // 这些字段定义已经包含了完整的解析类型（fieldType、options、hint 等）
-    const templateRowFields = baseParsedFields.filter((f: any) => {
-      // 方式1：通过 rowIndex 匹配（推荐，最准确）
-      if (typeof f.rowIndex === 'number' && f.rowIndex === recordBaseRow0) {
-        return true;
-      }
-      // 方式2：通过 cellKey 匹配（兼容旧数据，cellKey 格式为 R{row1}C{col1}）
-      if (f.cellKey) {
-        const m = String(f.cellKey).match(/^R(\d+)C(\d+)$/i);
-        if (m) {
-          const row1 = parseInt(m[1], 10);
-          const row0 = row1 - 1; // 转换为 0-based
-          if (row0 === recordBaseRow0) {
-            return true;
-          }
-        }
-      }
-      return false;
-    });
-    
-    if (templateRowFields.length === 0) {
-      console.warn('[addDesktopBlankRow] 未找到 {ADD} 标记行的字段定义', {
-        recordBaseRow0,
-        baseParsedFieldsCount: baseParsedFields.length,
-        sampleFields: baseParsedFields.slice(0, 3).map((f: any) => ({
-          cellKey: f.cellKey,
-          rowIndex: f.rowIndex,
-          fieldType: f.fieldType
-        }))
+    // 🟢 根据用户要求的逻辑：根据模板id查找{ADD}数组，完全复制该行并按数组设置解析类型
+    if (!boundTemplate?.id || !templateData || !dynamicAddRowMarker) {
+      console.warn('[addDesktopBlankRow] 缺少必要信息:', {
+        templateId: boundTemplate?.id,
+        hasTemplateData: !!templateData,
+        hasMarker: !!dynamicAddRowMarker
       });
       setDesktopRowCount(prev => prev + 1);
       return;
     }
+    
+    // 🟢 1. 根据模板id查找{ADD}数组（dynamicAddRowMarker）
+    const marker = dynamicAddRowMarker as any;
+    const baseRow1 = marker.baseRow1; // 1-based行号
+    const baseRow0 = baseRow1 - 1; // 0-based行号
+    const cellCount = marker.cellCount || 0;
+    const cellFieldTypes = marker.cellFieldTypes || [];
+    const cellFields = marker.cellFields || [];
+    
+    if (!baseRow1 || cellCount === 0) {
+      console.warn('[addDesktopBlankRow] marker信息不完整:', marker);
+      setDesktopRowCount(prev => prev + 1);
+      return;
+    }
+    
+    // 🟢 2. 从模板grid中获取该行的数据（完全复制该行）
+    const templateGrid = templateData.grid || templateData.data;
+    if (!Array.isArray(templateGrid) || !templateGrid[baseRow0]) {
+      console.warn('[addDesktopBlankRow] 无法从模板grid中找到该行:', {
+        baseRow0,
+        gridLength: templateGrid?.length
+      });
+      setDesktopRowCount(prev => prev + 1);
+      return;
+    }
+    
+    const templateRow = templateGrid[baseRow0];
 
     // 🟢 同步更新：先计算好所有更新，再一起 setState，避免时序问题
+    // 使用recordBaseRow0（它已经考虑了repeatBaseRow0的情况）
+    const actualRecordBaseRow0 = recordBaseRow0 !== null ? recordBaseRow0 : baseRow0;
+    
     setDesktopRowCount(prev => {
       const nextCount = prev + 1;
-      const newRowIndex = recordBaseRow0 + (nextCount - 1);
+      // 新行在expanded grid中的索引 = 记录行索引 + (总行数 - 1)
+      // 例如：如果recordBaseRow0=6，desktopRowCount=2，则新行索引=6+(2-1)=7
+      const actualNewRowIndex = actualRecordBaseRow0 + (nextCount - 1);
       
-      // 1️⃣ 生成新行的字段定义（完整复制模板行的所有属性）
-      const newRowFields = templateRowFields.map((f: any) => {
-        const newColIndex = typeof f.colIndex === 'number' ? f.colIndex : 
-          (f.cellKey ? (() => {
-            const m = String(f.cellKey).match(/^R\d+C(\d+)$/i);
-            return m ? parseInt(m[1], 10) - 1 : null;
-          })() : null);
+      // 🟢 4. 按照数组中的数据为每个单元格逐个设置解析类型
+      // 创建新行的字段定义数组
+      const newRowFields: ParsedField[] = [];
+      
+      for (let c = 0; c < cellCount; c++) {
+        const cellValue = templateRow[c]; // 单元格的值（用于label）
+        const cellFieldType = cellFieldTypes[c] || 'text'; // 从数组中获取字段类型
+        const cellField = cellFields[c] || null; // 从数组中获取完整字段定义
         
-        if (newColIndex === null) {
-          console.warn('[addDesktopBlankRow] 无法确定列索引', f);
-          return null;
+        // 如果有完整字段定义，优先使用；否则根据类型创建基础字段
+        let newField: ParsedField;
+        
+        if (cellField) {
+          // 🟢 使用完整字段定义，但更新rowIndex和cellKey
+          newField = {
+            ...cellField,
+            cellKey: `R${actualNewRowIndex + 1}C${c + 1}`,
+            rowIndex: actualNewRowIndex,
+            colIndex: c,
+            // 确保重要属性存在
+            fieldType: cellField.fieldType || cellFieldType,
+            label: cellField.label || String(cellValue || '').trim() || `列${c + 1}`,
+            fieldName: cellField.fieldName || `col${c + 1}`,
+            hint: cellField.hint || '',
+            required: cellField.required || false,
+            options: cellField.options ? (Array.isArray(cellField.options) ? [...cellField.options] : cellField.options) : undefined
+          };
+        } else {
+          // 🟢 根据字段类型创建基础字段
+          const label = String(cellValue || '').trim() || `列${c + 1}`;
+          newField = {
+            cellKey: `R${actualNewRowIndex + 1}C${c + 1}`,
+            rowIndex: actualNewRowIndex,
+            colIndex: c,
+            fieldType: cellFieldType,
+            label: label,
+            fieldName: label || `col${c + 1}`,
+            hint: '',
+            required: false
+          };
         }
         
-        // 🟢 完整复制字段定义，包括所有特殊属性（fieldType、options、hint、required 等）
-        return {
-          ...f, // 复制所有原有属性
-          cellKey: `R${newRowIndex + 1}C${newColIndex + 1}`, // 更新 cellKey
-          rowIndex: newRowIndex, // 更新 rowIndex
-          colIndex: newColIndex, // 确保 colIndex 存在
-          _pos: { r1: newRowIndex + 1, c1: newColIndex + 1 } // 更新 _pos（如果存在）
-        };
-      }).filter((f: any) => f !== null) as ParsedField[];
+        newRowFields.push(newField);
+      }
       
       // 2️⃣ 更新扩展字段（同步执行）
       setExtendedParsedFields(prevFields => {
         // 移除新行位置的旧字段定义，避免重复
         const filtered = prevFields.filter((pf: any) => 
-          !(typeof pf.rowIndex === 'number' && pf.rowIndex === newRowIndex)
+          !(typeof pf.rowIndex === 'number' && pf.rowIndex === actualNewRowIndex)
         );
         return [...filtered, ...newRowFields];
       });
@@ -950,11 +1087,36 @@ export default function SectionFormModal({
       console.log('🔵 子表单打开，检查 existingData:', existingData);
       console.log('🔵 existingData?.data:', existingData?.data);
       console.log('🔵 inheritedData:', inheritedData);
+      console.log('🔵 existingData?.data keys:', existingData?.data ? Object.keys(existingData.data) : []);
+      console.log('🔵 existingData?.data length:', existingData?.data ? Object.keys(existingData.data).length : 0);
+      console.log('🔵 条件检查:', {
+        hasExistingData: !!existingData,
+        hasExistingDataData: !!existingData?.data,
+        existingDataDataLength: existingData?.data ? Object.keys(existingData.data).length : 0,
+        willEnterIfBlock: !!(existingData?.data && Object.keys(existingData.data).length > 0)
+      });
       
       if (existingData?.data && Object.keys(existingData.data).length > 0) {
         // 编辑模式：合并已有数据和继承数据（继承数据优先级更低）
         // 注意：已有数据的优先级更高，覆盖继承数据
-        const mergedData = { ...inheritedData, ...existingData.data };
+        
+        // 🟢 修复：转换数据键格式（R7C10 -> 6-9）
+        const convertedData: Record<string, any> = {};
+        Object.keys(existingData.data).forEach(key => {
+          let convertedKey = key;
+          
+          // 如果key是R7C10格式，转换为6-9格式
+          const r7c10Match = key.match(/^R(\d+)C(\d+)$/i);
+          if (r7c10Match) {
+            const r = parseInt(r7c10Match[1], 10) - 1; // R7 -> 6 (0-based)
+            const c = parseInt(r7c10Match[2], 10) - 1; // C10 -> 9 (0-based)
+            convertedKey = `${r}-${c}`;
+          }
+          
+          convertedData[convertedKey] = existingData.data[key];
+        });
+        
+        const mergedData = { ...inheritedData, ...convertedData };
         
         // 🟢 规范化手写签名数据格式
         const normalizedData: Record<string, any> = {};
@@ -964,6 +1126,15 @@ export default function SectionFormModal({
             (f: any) => {
               if (typeof f.rowIndex === 'number' && typeof f.colIndex === 'number') {
                 return `${f.rowIndex}-${f.colIndex}` === key;
+              }
+              // 也支持通过cellKey匹配（兼容R7C10格式）
+              if (f.cellKey) {
+                const r7c10Match = key.match(/^(\d+)-(\d+)$/);
+                if (r7c10Match) {
+                  const r = parseInt(r7c10Match[1], 10) + 1; // 6 -> R7 (1-based)
+                  const c = parseInt(r7c10Match[2], 10) + 1; // 9 -> C10 (1-based)
+                  return f.cellKey === `R${r}C${c}`;
+                }
               }
               return false;
             }
@@ -985,16 +1156,57 @@ export default function SectionFormModal({
           mergedDataSample: Object.keys(normalizedData).slice(0, 5).reduce((acc, key) => {
             acc[key] = normalizedData[key];
             return acc;
+          }, {} as Record<string, any>),
+          // 🟢 添加详细的数据检查
+          normalizedDataValues: Object.keys(normalizedData).reduce((acc, key) => {
+            const val = normalizedData[key];
+            acc[key] = {
+              type: typeof val,
+              isArray: Array.isArray(val),
+              length: Array.isArray(val) ? val.length : (typeof val === 'string' ? val.length : 'N/A'),
+              preview: Array.isArray(val) ? `[Array(${val.length})]` : (typeof val === 'string' ? val.substring(0, 50) : String(val).substring(0, 50))
+            };
+            return acc;
           }, {} as Record<string, any>)
         });
         // 强制更新，确保数据正确加载
+        // 🟢 修复：先设置isFormDataReady，再设置formData，确保渲染顺序正确
+        console.log('✅ [SectionFormModal] 准备设置formData:', {
+          formDataKeys: Object.keys(normalizedData),
+          formDataSize: Object.keys(normalizedData).length,
+          normalizedDataSample: Object.keys(normalizedData).slice(0, 3).reduce((acc, k) => {
+            acc[k] = normalizedData[k];
+            return acc;
+          }, {} as Record<string, any>)
+        });
+        // 🟢 先标记formData已准备好
+        setIsFormDataReady(true);
+        // 🟢 然后设置formData
         setFormData(normalizedData);
+        console.log('✅ [SectionFormModal] formData和isFormDataReady已设置:', {
+          normalizedDataKeys: Object.keys(normalizedData),
+          normalizedDataSize: Object.keys(normalizedData).length,
+          normalizedDataSample: Object.keys(normalizedData).slice(0, 3).reduce((acc, k) => {
+            acc[k] = normalizedData[k];
+            return acc;
+          }, {} as Record<string, any>)
+        });
         initializedRef.current = currentKey;
       } else {
         // 新建时使用继承的数据
         console.log('🔵 子单初始化数据 - inheritedData:', inheritedData);
+        console.log('🔵 inheritedData keys:', Object.keys(inheritedData));
+        console.log('🔵 inheritedData length:', Object.keys(inheritedData).length);
         // 强制更新，确保数据正确加载
-        setFormData(inheritedData);
+        if (Object.keys(inheritedData).length > 0) {
+          setIsFormDataReady(true);
+          setFormData(inheritedData);
+          console.log('✅ [SectionFormModal] 新建模式：formData和isFormDataReady已设置');
+        } else {
+          // 即使没有继承数据，也标记为准备好（允许空表单）
+          setIsFormDataReady(true);
+          console.log('⚠️ [SectionFormModal] 新建模式：没有继承数据，但标记为准备好');
+        }
         initializedRef.current = currentKey;
       }
 
@@ -1003,11 +1215,28 @@ export default function SectionFormModal({
       setSectionLogs(initLogs);
       setShowAppendCard(false);
       setAppendDraft({});
+      
+      // 🟢 在appendOnly模式下，记录已归档的行数
+      if (appendOnly) {
+        setArchivedRowCount(initLogs.length);
+      } else {
+        setArchivedRowCount(0);
+      }
+      
+      // 🟢 在appendOnly模式下，desktopRowCount应该等于已归档的行数（不包括新追加的行）
+      // 在草稿模式下，desktopRowCount可以包含新增的行
       const persistedRowCount = (existingData as any)?.desktopRowCount;
-      const initRowCount =
-        typeof persistedRowCount === 'number' && Number.isFinite(persistedRowCount)
-          ? Math.max(1, persistedRowCount)
-          : Math.max(1, initLogs.length || 1);
+      let initRowCount: number;
+      if (appendOnly) {
+        // 追加模式：desktopRowCount = 已归档的行数（从logs获取）
+        initRowCount = Math.max(1, initLogs.length || 1);
+      } else {
+        // 草稿模式：可以包含新增的行
+        initRowCount =
+          typeof persistedRowCount === 'number' && Number.isFinite(persistedRowCount)
+            ? Math.max(1, persistedRowCount)
+            : Math.max(1, initLogs.length || 1);
+      }
       setDesktopRowCount(initRowCount);
       
       // 🟢 初始化 extendedParsedFields：根据恢复的行数，复制模板行的字段类型到新行
@@ -1051,12 +1280,14 @@ export default function SectionFormModal({
     } else {
       // 关闭时清空表单数据和初始化标记，确保下次打开时能正确加载
       setFormData({});
+      setIsFormDataReady(false);
       initializedRef.current = null;
       setSectionLogs([]);
       setShowAppendCard(false);
       setAppendDraft({});
       setDesktopRowCount(1);
       setExtendedParsedFields([]);
+      setArchivedRowCount(0);
     }
   }, [isOpen, existingData?.code, JSON.stringify(existingData?.data || {}), JSON.stringify(inheritedData), boundTemplate?.orientation, showDynamicRowsDesktop]);
 
@@ -1123,11 +1354,290 @@ export default function SectionFormModal({
     }
     if (!boundTemplate?.id) return;
 
+    // 🟢 从formData中提取新行的数据（如果有显示追加表单）
+    let dataToSave: Record<string, any> = {};
+    
+    if (showAppendCard && showDynamicRowsDesktop && typeof recordBaseRow0 === 'number') {
+      // 从formData中提取新追加行的数据
+      const newRowIndex = recordBaseRow0 + archivedRowCount;
+      
+      console.log('🟢 [handleAppend] 开始提取新行数据:', {
+        newRowIndex,
+        recordBaseRow0,
+        archivedRowCount,
+        formDataKeys: Object.keys(formData).filter(k => k.startsWith(`${newRowIndex}-`)).slice(0, 10)
+      });
+      
+      // 🟢 修复：从模板grid数据中找出模板行的所有列，确保包含所有字段
+      // 1. 首先从parsedFields中找出模板行的所有字段
+      let templateRowFields = parsedFields.filter((f: any) => {
+        return typeof f.rowIndex === 'number' && f.rowIndex === recordBaseRow0;
+      });
+      
+      // 2. 如果字段数量不足，从模板grid数据中找出所有列，为缺失的列创建字段定义
+      const templateGrid = templateData?.grid || templateData?.data;
+      if (Array.isArray(templateGrid) && templateGrid[recordBaseRow0]) {
+        const templateRow = templateGrid[recordBaseRow0];
+        const maxCols = Math.max(
+          templateRow.length,
+          templateRowFields.reduce((max: number, f: any) => 
+            typeof f.colIndex === 'number' ? Math.max(max, f.colIndex + 1) : max, 0
+          )
+        );
+        
+        // 创建一个以colIndex为key的Map，方便查找
+        const fieldMapByCol = new Map<number, any>();
+        templateRowFields.forEach((f: any) => {
+          if (typeof f.colIndex === 'number') {
+            fieldMapByCol.set(f.colIndex, f);
+          }
+        });
+        
+        // 为每一列创建字段定义（如果还没有）
+        for (let c = 0; c < maxCols; c++) {
+          if (!fieldMapByCol.has(c)) {
+            // 🟢 修复：优先从模板行的其他字段中查找相同列的字段定义（保持fieldType一致）
+            // 首先从 baseParsedFields 中查找模板行相同列的字段
+            let baseField = baseParsedFields.find((f: any) => 
+              typeof f.rowIndex === 'number' && 
+              f.rowIndex === recordBaseRow0 &&
+              typeof f.colIndex === 'number' && 
+              f.colIndex === c
+            );
+            
+            // 如果没找到，优先从所有 parsedFields 中查找相同列的特殊类型字段（timenow、handwritten等）
+            // 这样可以确保特殊字段类型被正确识别
+            if (!baseField) {
+              // 优先查找特殊类型字段
+              baseField = parsedFields.find((f: any) => 
+                typeof f.colIndex === 'number' && 
+                f.colIndex === c &&
+                (f.fieldType === 'timenow' || f.fieldType === 'handwritten' || f.fieldType === 'signature')
+              );
+            }
+            
+            // 如果还是没找到，再从所有 baseParsedFields 中查找相同列的字段（可能在不同行，但列相同）
+            if (!baseField) {
+              baseField = baseParsedFields.find((f: any) => 
+                typeof f.colIndex === 'number' && f.colIndex === c
+              );
+            }
+            
+            // 如果还是没找到，从所有 parsedFields 中查找（包括 extendedParsedFields）
+            if (!baseField) {
+              baseField = parsedFields.find((f: any) => 
+                typeof f.colIndex === 'number' && f.colIndex === c
+              );
+            }
+            
+            if (baseField) {
+              // 🟢 使用基础字段的完整定义（包括 fieldType, options 等），但调整rowIndex和cellKey
+              const newField: any = {
+                ...baseField, // 复制所有属性
+                cellKey: `R${recordBaseRow0 + 1}C${c + 1}`,
+                rowIndex: recordBaseRow0,
+                colIndex: c,
+                // 🟢 确保 fieldType 等关键属性被正确复制
+                fieldType: baseField.fieldType || 'text',
+                label: baseField.label || baseField.fieldName || '',
+                fieldName: baseField.fieldName || '',
+                hint: baseField.hint || '',
+                required: baseField.required || false,
+                options: baseField.options ? (Array.isArray(baseField.options) ? [...baseField.options] : baseField.options) : undefined
+              };
+              templateRowFields.push(newField);
+              fieldMapByCol.set(c, newField);
+            } else {
+              // 创建默认字段定义
+              const cellKey = `R${recordBaseRow0 + 1}C${c + 1}`;
+              const cellValue = templateRow[c];
+              const label = typeof cellValue === 'string' ? cellValue.trim() : '';
+              
+              // 🟢 尝试从单元格内容推断字段类型
+              // 检查 label 或 fieldName 是否包含特殊关键词
+              let inferredFieldType = 'text';
+              
+              // timenow 字段：通常包含"时间"且是自动生成的
+              if ((label.includes('时间') || label.match(/年|月|日|时/)) && 
+                  (label.includes('自动') || label.includes('生成') || label.includes('系统'))) {
+                inferredFieldType = 'timenow';
+              } 
+              // date 字段：包含日期时间关键词但不是自动生成的
+              else if (label.includes('时间') || label.includes('日期') || label.match(/年|月|日|时/)) {
+                inferredFieldType = 'date';
+              } 
+              // handwritten 字段：手写签名
+              else if (label.includes('手写') || (label.includes('签名') && label.includes('手写'))) {
+                inferredFieldType = 'handwritten';
+              } 
+              // signature 字段：电子签名/审批意见
+              else if (label.includes('签名') || label.includes('签字') || label.includes('意见')) {
+                inferredFieldType = 'signature';
+              }
+              
+              templateRowFields.push({
+                cellKey,
+                rowIndex: recordBaseRow0,
+                colIndex: c,
+                fieldType: inferredFieldType,
+                label: label || `列${c + 1}`,
+                fieldName: label || `col${c + 1}`,
+                hint: '',
+                required: false
+              });
+              fieldMapByCol.set(c, templateRowFields[templateRowFields.length - 1]);
+            }
+          }
+        }
+      }
+      
+      // 3. 按colIndex排序，确保字段顺序正确
+      templateRowFields.sort((a: any, b: any) => {
+        const colA = typeof a.colIndex === 'number' ? a.colIndex : 0;
+        const colB = typeof b.colIndex === 'number' ? b.colIndex : 0;
+        return colA - colB;
+      });
+      
+      // 🟢 同时也从parsedFields中查找新行的字段定义（可能已经通过extendedParsedFields添加）
+      const newRowFields = parsedFields.filter(
+        (f: any) => typeof f.rowIndex === 'number' && f.rowIndex === newRowIndex
+      );
+      
+      console.log('🟢 [handleAppend] 字段定义:', {
+        templateRowFieldsCount: templateRowFields.length,
+        newRowFieldsCount: newRowFields.length,
+        templateRowFieldsSample: templateRowFields.slice(0, 5).map(f => ({
+          cellKey: f.cellKey,
+          rowIndex: f.rowIndex,
+          colIndex: f.colIndex,
+          fieldType: f.fieldType,
+          label: f.label
+        })),
+        newRowFieldsSample: newRowFields.slice(0, 3).map(f => ({
+          cellKey: f.cellKey,
+          rowIndex: f.rowIndex,
+          colIndex: f.colIndex,
+          fieldType: f.fieldType
+        }))
+      });
+      
+      // 🟢 修复：遍历所有模板行字段，确保提取所有列的数据
+      // 而不是只遍历appendFields（appendFields可能不包含所有字段）
+      templateRowFields.forEach((templateField: any) => {
+        if (typeof templateField.colIndex !== 'number') return;
+        
+        const colIndex = templateField.colIndex;
+        
+        // formData中使用的是 `${rowIndex}-${colIndex}` 格式（主要格式）
+        const formDataKey = `${newRowIndex}-${colIndex}`;
+        // 也尝试使用R7C10格式（兼容性）
+        const cellKeyForm = `R${newRowIndex + 1}C${colIndex + 1}`;
+        
+        // 🟢 修复：尝试多种格式查找数据，确保能找到所有字段的值
+        // 1. 首先尝试 `${rowIndex}-${colIndex}` 格式（主要格式）
+        let value = formData[formDataKey];
+        
+        // 2. 如果没找到，尝试 `R{rowIndex+1}C{colIndex+1}` 格式
+        if (value === undefined || value === null) {
+          value = formData[cellKeyForm];
+        }
+        
+        // 3. 如果还是没找到，尝试从新行的cellKey查找
+        if ((value === undefined || value === null) && newRowFields.length > 0) {
+          const newRowField = newRowFields.find((f: any) => 
+            typeof f.colIndex === 'number' && f.colIndex === colIndex
+          );
+          if (newRowField?.cellKey) {
+            value = formData[newRowField.cellKey];
+          }
+        }
+        
+        // 🟢 提取数据：timenow字段由系统自动填充，不需要用户填写
+        if (templateField.fieldType === 'timenow') {
+          // timenow字段会自动由系统填充，跳过数据提取（但会在后端自动填充）
+          return;
+        }
+        
+        // 🟢 修复：保存所有字段的值（包括空字符串）
+        // 对于选项字段，值可能是字符串（选中的选项）或数组
+        // 对于其他字段，值可能是字符串、数字等
+        if (value !== undefined && value !== null) {
+          // 确保选项字段的值被正确保存
+          if (templateField.fieldType === 'option') {
+            // 选项字段：如果是数组，保持数组格式；如果是字符串，直接保存
+            dataToSave[templateField.cellKey] = value;
+          } else {
+            // 其他字段直接保存
+            dataToSave[templateField.cellKey] = value;
+          }
+        } else {
+          // 🟢 即使没有值，也保存空字符串（确保所有字段都被保存，方便后续处理）
+          // 但timenow字段已经跳过，不会到这里
+          dataToSave[templateField.cellKey] = '';
+        }
+        
+        // 🟢 调试日志：只在开发环境且字段有值或为选项字段时输出（减少日志量）
+        if (process.env.NODE_ENV === 'development' && (
+          (value !== undefined && value !== null && value !== '') || 
+          templateField.fieldType === 'option'
+        )) {
+          console.log('🟢 [handleAppend] 提取数据:', {
+            colIndex,
+            formDataKey,
+            cellKeyForm,
+            value: typeof value === 'string' ? value.substring(0, 50) : (Array.isArray(value) ? `[Array(${value.length})]` : value),
+            templateCellKey: templateField.cellKey,
+            fieldType: templateField.fieldType,
+            label: templateField.label,
+            hasValue: value !== undefined && value !== null,
+            isEmpty: value === '' || value === null || value === undefined
+          });
+        }
+      });
+      
+      console.log('🟢 [handleAppend] 提取完成:', {
+        templateRowFieldsCount: templateRowFields.length,
+        dataToSaveKeys: Object.keys(dataToSave),
+        dataToSaveCount: Object.keys(dataToSave).length,
+        dataToSaveAll: Object.keys(dataToSave).reduce((acc, k) => {
+          const val = dataToSave[k];
+          const templateField = templateRowFields.find(f => f.cellKey === k);
+          acc[k] = {
+            value: typeof val === 'string' ? val.substring(0, 50) : (Array.isArray(val) ? `[Array(${val.length})]` : val),
+            fieldType: templateField?.fieldType || 'unknown',
+            label: templateField?.label || 'unknown'
+          };
+          return acc;
+        }, {} as Record<string, any>),
+        // 检查哪些字段没有被保存
+        missingFields: templateRowFields
+          .filter(f => f.fieldType !== 'timenow' && !dataToSave.hasOwnProperty(f.cellKey))
+          .map(f => ({
+            cellKey: f.cellKey,
+            fieldType: f.fieldType,
+            label: f.label,
+            colIndex: f.colIndex
+          }))
+      });
+    } else {
+      // 从appendDraft中获取数据（兼容移动端或非表格模式）
+      dataToSave = buildDraftPayload();
+    }
+
     // 校验必填（timenow/serial 由系统写入，不要求用户填写）
     const required = appendFields.filter((f: any) => f?.required && f.fieldType !== 'timenow' && f.fieldType !== 'serial');
     const missing: string[] = [];
     for (const f of required) {
-      const v = appendDraft[f.cellKey];
+      // 使用原始模板行的cellKey来查找数据
+      const templateField = baseParsedFields.find((tf: any) => 
+        typeof tf.rowIndex === 'number' && 
+        tf.rowIndex === recordBaseRow0 &&
+        typeof tf.colIndex === 'number' &&
+        typeof f.colIndex === 'number' &&
+        tf.colIndex === f.colIndex
+      );
+      const keyToCheck = templateField?.cellKey || f.cellKey;
+      const v = dataToSave[keyToCheck] || appendDraft[keyToCheck];
       if (v === undefined || v === null || String(v).trim() === '') {
         missing.push(f.label || f.fieldName || f.cellKey);
       }
@@ -1137,7 +1647,7 @@ export default function SectionFormModal({
       return;
     }
 
-    const data = buildDraftPayload();
+    const data = Object.keys(dataToSave).length > 0 ? dataToSave : buildDraftPayload();
 
     setIsAppending(true);
     try {
@@ -1153,11 +1663,27 @@ export default function SectionFormModal({
 
       // 更新本地展示（无需关闭弹窗）
       if (json?.section?.data && typeof json.section.data === 'object') {
-        setFormData(json.section.data);
+        // 🟢 转换数据格式：R7C10 -> 6-9
+        const convertedData: Record<string, any> = {};
+        Object.keys(json.section.data).forEach(key => {
+          const r7c10Match = key.match(/^R(\d+)C(\d+)$/i);
+          if (r7c10Match) {
+            const r = parseInt(r7c10Match[1], 10) - 1;
+            const c = parseInt(r7c10Match[2], 10) - 1;
+            convertedData[`${r}-${c}`] = json.section.data[key];
+          } else {
+            convertedData[key] = json.section.data[key];
+          }
+        });
+        setFormData(convertedData);
       }
       if (Array.isArray(json?.section?.logs)) {
         setSectionLogs(json.section.logs);
         setDesktopRowCount(Math.max(1, json.section.logs.length));
+        // 🟢 更新已归档行数
+        setArchivedRowCount(json.section.logs.length);
+        // 🟢 重新计算表格显示（确保已归档记录和新追加内容正确显示）
+        recalcDesktopGridFromLogs(json.section.logs);
       }
       setAppendDraft({});
       setShowAppendCard(false);
@@ -1421,14 +1947,32 @@ export default function SectionFormModal({
               )}
               {appendOnly && (
                 <button
-                  onClick={handleAppend}
-                  disabled={isAppending}
-                  className={`px-4 py-2 rounded shadow flex items-center gap-2 ${
-                    isAppending ? 'bg-slate-300 text-slate-600 cursor-not-allowed' : 'bg-amber-600 text-white hover:bg-amber-700'
-                  }`}
-                  title="仅追加新记录，不修改既有行"
+                  onClick={() => {
+                    // 🟢 追加模式：点击按钮后在表格中新增一行供用户填写
+                    if (!showAppendCard) {
+                      // 首次点击：显示追加表单（在表格中新增一行）
+                      setShowAppendCard(true);
+                      // 🟢 在appendOnly模式下，根据模板id查找{ADD}数组，完全复制该行并按数组设置解析类型
+                      if (showDynamicRowsDesktop) {
+                        // 直接调用 addDesktopBlankRow，它会根据模板id查找{ADD}数组并设置解析类型
+                        addDesktopBlankRow();
+                      }
+                    } else {
+                      // 再次点击：保存追加的记录
+                      handleAppend();
+                    }
+                  }}
+                  className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 flex items-center gap-2"
                 >
-                  <Save size={16} /> {isAppending ? '追加中...' : '追加记录'}
+                  {showAppendCard ? (
+                    <>
+                      <Save size={16} /> 保存追加
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={16} /> 追加记录
+                    </>
+                  )}
                 </button>
               )}
               <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded text-slate-500">
@@ -1450,18 +1994,35 @@ export default function SectionFormModal({
             }}
           >
             <div ref={excelHostRef} className="relative">
-              {templateData && (
+              {(() => {
+                // 🟢 修复：appendOnly模式下，即使formData为空也应该渲染（允许用户填写新行）
+                // 在appendOnly模式下，如果没有已归档记录，formData可能为空，但仍然需要渲染表格
+                const formDataKeysCount = Object.keys(formData).length;
+                const shouldRender = !!(templateData && isFormDataReady && (
+                  formDataKeysCount > 0 || 
+                  (appendOnly && showAppendCard) || 
+                  appendOnly
+                ));
+                
+                // 🟢 优化：减少日志输出，避免无限循环
+                // 调试日志已移除，如有需要可以通过其他方式调试
+                
+                return shouldRender;
+              })() && (
                 <ExcelRenderer
                 // 🟢 ExcelRenderer 内部对 templateData 采用惰性初始化，为了让"+增加一行"立刻生效，
                 // 在桌面动态记录模式下把 key 绑定到 desktopRowCount 和 extendedParsedFields，确保字段定义同步更新。
-                key={`${boundTemplate?.id}-${isOpen ? 'open' : 'closed'}-${existingData?.code || 'new'}-${showDynamicRowsDesktop ? `${desktopRowCount}-${extendedParsedFields.length}` : 'static'}`}
+                // 🟢 修复：移除不稳定的formData相关key值，避免无限循环
+                key={`${boundTemplate?.id}-${isOpen ? 'open' : 'closed'}-${existingData?.code || 'new'}-${showDynamicRowsDesktop ? `${desktopRowCount}-${extendedParsedFields.length}-${archivedRowCount}` : 'static'}`}
                 templateData={displayTemplateData || templateData}
                 initialData={formData}
                 parsedFields={parsedFields}
                 permitCode={sectionCode}
                 orientation={orientation}
-                mode={readOnly ? "view" : "edit"}
-                onDataChange={readOnly ? undefined : setFormData}
+                // 🟢 修复：在appendOnly模式下，即使readOnly为true，也应该允许编辑新追加的行
+                // 所以如果appendOnly为true，mode应该是'edit'；否则根据readOnly决定
+                mode={appendOnly ? "edit" : (readOnly ? "view" : "edit")}
+                onDataChange={(appendOnly || !readOnly) ? setFormData : undefined}
                 onParsedFieldsChange={(fields) => {
                   // 🟢 允许 ExcelRenderer 在设计模式下更新字段定义
                   // 在动态记录模式下，我们主要通过 extendedParsedFields 管理新增行的字段
@@ -1578,65 +2139,41 @@ export default function SectionFormModal({
             })()}
 
             {/* ✅ 桌面端审批后：追加一行输入面板（仅追加，不改历史） */}
+            {/* 🟢 注意：在showDynamicRowsDesktop模式下，新增的行直接在表格中显示，这里只显示取消按钮 */}
             {showDynamicRowsDesktop && appendOnly && showAppendCard && (
               <div className="mt-4 border rounded-xl bg-amber-50 border-amber-200 p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="font-bold text-amber-800">新增一行记录</div>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium text-amber-800">
+                    请在表格中填写新增行的内容，然后点击"提交新增"按钮保存
+                  </div>
                   <button
                     type="button"
-                    onClick={() => { setShowAppendCard(false); setAppendDraft({}); }}
-                    className="text-xs text-slate-600 hover:text-slate-900"
+                    onClick={() => { 
+                      setShowAppendCard(false); 
+                      setAppendDraft({});
+                      // 🟢 取消时，移除新增的行和字段定义
+                      if (recordBaseRow0 !== null) {
+                        const newRowIndex = recordBaseRow0 + archivedRowCount;
+                        setExtendedParsedFields(prev => prev.filter(f => 
+                          typeof f.rowIndex !== 'number' || f.rowIndex !== newRowIndex
+                        ));
+                        setDesktopRowCount(prev => Math.max(1, prev - 1));
+                        // 清理新行的formData
+                        setFormData(prev => {
+                          const next = { ...prev };
+                          appendFields.forEach((f: any) => {
+                            if (typeof f.colIndex === 'number') {
+                              const key = `${newRowIndex}-${f.colIndex}`;
+                              delete next[key];
+                            }
+                          });
+                          return next;
+                        });
+                      }
+                    }}
+                    className="px-3 py-1 text-sm text-slate-600 hover:text-slate-900 hover:bg-amber-100 rounded"
                   >
                     取消
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {appendFields.map((f: any) => {
-                    const label = f.label || f.fieldName || f.cellKey;
-                    const value = appendDraft[f.cellKey] ?? '';
-                    const disabled = isAppending || f.fieldType === 'timenow';
-                    const commonClass = 'w-full border rounded px-3 py-2 text-sm outline-none focus:border-amber-400 transition bg-white';
-                    return (
-                      <div key={`desktop-append-${f.cellKey}`} className="space-y-1">
-                        <label className="text-xs font-medium text-amber-900">
-                          {label}{f.required ? <span className="text-red-500"> *</span> : null}
-                        </label>
-                        {f.fieldType === 'option' && Array.isArray(f.options) ? (
-                          <select
-                            className={commonClass}
-                            value={value}
-                            disabled={disabled}
-                            onChange={(e) => setAppendDraft(prev => ({ ...prev, [f.cellKey]: e.target.value }))}
-                          >
-                            <option value="">请选择</option>
-                            {f.options.map((opt: string) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            className={`${commonClass} ${disabled ? 'bg-slate-100 text-slate-500' : ''}`}
-                            type={f.fieldType === 'number' ? 'number' : (f.fieldType === 'date' ? 'datetime-local' : 'text')}
-                            value={f.fieldType === 'timenow' ? '' : value}
-                            placeholder={f.fieldType === 'timenow' ? '将由系统自动写入时间' : (f.hint || (f.fieldType === 'serial' ? '请输入序号' : '请输入'))}
-                            disabled={disabled}
-                            onChange={(e) => setAppendDraft(prev => ({ ...prev, [f.cellKey]: e.target.value }))}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleAppend}
-                    disabled={isAppending}
-                    className={`flex-1 px-4 py-2 rounded font-bold ${
-                      isAppending ? 'bg-slate-300 text-slate-600 cursor-not-allowed' : 'bg-amber-600 text-white hover:bg-amber-700'
-                    }`}
-                  >
-                    {isAppending ? '提交中...' : '提交新增'}
                   </button>
                 </div>
               </div>
@@ -1656,20 +2193,23 @@ export default function SectionFormModal({
         </div>
       </div>
 
-      {/* 🟢 桌面端：把“+增加一行”悬浮球放到 A4 白纸外（灰底区域），并对齐到 {ADD=R?} 标记行 */}
+      {/* 🟢 桌面端：把"+增加一行"悬浮球放到 A4 白纸外（灰底区域），并对齐到 {ADD=R?} 标记行 */}
       {showDynamicRowsDesktop && rowPlusTop !== null && rowPlusLeft !== null && !readOnly && (
         <button
           type="button"
           onClick={() => {
             if (!appendOnly) {
+              // 草稿模式：直接新增一行
               addDesktopBlankRow();
             } else {
+              // 追加模式：新增一行（根据模板id查找{ADD}数组并设置解析类型）
               setShowAppendCard(true);
+              addDesktopBlankRow();
             }
           }}
           className="fixed z-[60] w-10 h-10 rounded-full bg-amber-600 text-white text-xl font-bold shadow-lg hover:bg-amber-700 active:scale-95 transition"
           style={{ top: rowPlusTop, left: rowPlusLeft, transform: 'translateY(-50%)' }}
-          title={appendOnly ? '审批后：新增一行并提交追加' : '草稿：新增一行'}
+          title={appendOnly ? '追加记录：根据模板id查找{ADD}数组并新增一行' : '草稿：新增一行'}
         >
           +
         </button>

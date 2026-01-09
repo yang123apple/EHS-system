@@ -67,29 +67,60 @@ export default function MultiSignatureDisplay({
   }
 
   return (
-    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-      {signatureArray.map((sig, index) => (
-        <div key={index} className="relative group">
-          <SignatureImage
-            base64={sig}
-            maxWidth={maxWidth}
-            maxHeight={maxHeight}
-            className="object-contain border border-slate-200 rounded"
-          />
-          {!readonly && onRemoveSignature && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onRemoveSignature(index);
+    <div 
+      className={`flex flex-wrap items-center gap-2 ${className}`}
+      style={{
+        minHeight: '30px', // 🟢 确保最小高度
+        minWidth: '50px', // 🟢 确保最小宽度
+      }}
+    >
+      {signatureArray.map((sig, index) => {
+        // 🟢 调试日志
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🔍 [MultiSignatureDisplay] 渲染签名[${index}]:`, {
+            sigLength: sig?.length,
+            sigPreview: typeof sig === 'string' ? sig.substring(0, 50) : sig,
+            maxWidth,
+            maxHeight
+          });
+        }
+        
+        return (
+          <div 
+            key={index} 
+            className="relative group"
+            style={{
+              minWidth: '20px', // 🟢 确保容器最小宽度
+              minHeight: '20px', // 🟢 确保容器最小高度
+              display: 'inline-block', // 🟢 确保容器是块级元素
+            }}
+          >
+            <SignatureImage
+              base64={sig}
+              maxWidth={Math.max(maxWidth, 60)} // 🟢 确保最小宽度60px
+              maxHeight={Math.max(maxHeight, 40)} // 🟢 确保最小高度40px
+              className="object-contain border border-slate-200 rounded"
+              style={{
+                display: 'block', // 🟢 确保图片是块级元素
+                visibility: 'visible', // 🟢 确保图片可见
+                opacity: 1, // 🟢 确保图片不透明
               }}
-              className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
-              title="删除签名"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          )}
-        </div>
-      ))}
+            />
+            {!readonly && onRemoveSignature && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveSignature(index);
+                }}
+                className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                title="删除签名"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        );
+      })}
       {!readonly && (
         <button
           onClick={(e) => {

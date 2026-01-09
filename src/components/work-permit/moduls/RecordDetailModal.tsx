@@ -142,19 +142,53 @@ export default function RecordDetailModal({
             obj[f.cellKey] = data[idx];
           }
         });
+        
+        // 🟢 修复：如果原始数据是数组，但可能包含SECTION_*数据在_sheetData中
+        // 检查是否有_sheetData字段（可能在其他地方）
+        if (typeof record.dataJson === 'string') {
+          try {
+            const parsed = JSON.parse(record.dataJson);
+            if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+              // 提取所有SECTION_*数据
+              Object.keys(parsed).forEach(key => {
+                if (key.startsWith('SECTION_')) {
+                  obj[key] = parsed[key];
+                }
+              });
+            }
+          } catch (e) {
+            // 忽略解析错误
+          }
+        }
+        
         console.log("📊 [RecordDetail] 数组重建为对象后:", obj);
         return obj;
       }
       
-      console.log("📊 [RecordDetail] 解析的 recordData:", data);
-      console.log("📊 [RecordDetail] recordData 键列表:", Object.keys(data));
+      // 🟢 修复：确保SECTION_*数据被正确提取
+      // 如果data是对象，直接使用；但需要确保所有SECTION_*键都被包含
+      const result: any = { ...data };
+      
+      // 检查是否有嵌套的_sheetData结构
+      if (data._sheetData && typeof data._sheetData === 'object') {
+        // 合并_sheetData中的SECTION_*数据
+        Object.keys(data._sheetData).forEach(key => {
+          if (key.startsWith('SECTION_')) {
+            result[key] = data._sheetData[key];
+          }
+        });
+      }
+      
+      console.log("📊 [RecordDetail] 解析的 recordData:", result);
+      console.log("📊 [RecordDetail] recordData 键列表:", Object.keys(result));
+      console.log("📊 [RecordDetail] SECTION_键列表:", Object.keys(result).filter(k => k.startsWith('SECTION_')));
       console.log("📊 [RecordDetail] recordData 类型检查:", {
-        isArray: Array.isArray(data),
-        isObject: typeof data === 'object',
-        keys: Object.keys(data).slice(0, 5)
+        isArray: Array.isArray(result),
+        isObject: typeof result === 'object',
+        keys: Object.keys(result).slice(0, 10)
       });
       
-      return data;
+      return result;
     } catch (e) {
       console.error("解析 dataJson 失败", e);
       return {};
@@ -1209,9 +1243,47 @@ export default function RecordDetailModal({
       
       {/* 🔵 V3.4 Section表单查看弹窗 */}
       {sectionModalOpen && currentSectionCell && (() => {
-        const sectionData = recordData[`SECTION_${currentSectionCell.cellKey}`];
+        // 🟢 修复：尝试多种方式提取sectionData
+        let sectionData = recordData[`SECTION_${currentSectionCell.cellKey}`];
+        
+        // 如果没找到，尝试从其他可能的位置查找
+        if (!sectionData) {
+          // 检查是否有嵌套的_sheetData结构
+          if (recordData._sheetData && typeof recordData._sheetData === 'object') {
+            sectionData = recordData._sheetData[`SECTION_${currentSectionCell.cellKey}`];
+          }
+          
+          // 检查所有以SECTION_开头的键
+          const sectionKeys = Object.keys(recordData).filter(k => k.startsWith('SECTION_'));
+          if (sectionKeys.length > 0) {
+            console.log('🔍 [RecordDetail] 找到的SECTION键:', sectionKeys);
+            // 尝试匹配cellKey
+            const matchedKey = sectionKeys.find(k => k.includes(currentSectionCell.cellKey));
+            if (matchedKey) {
+              sectionData = recordData[matchedKey];
+              console.log('✅ [RecordDetail] 通过匹配找到sectionData:', matchedKey);
+            }
+          }
+        }
+        
+        // 调试日志
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 [RecordDetail] 子表单数据提取:', {
+            cellKey: currentSectionCell.cellKey,
+            sectionKey: `SECTION_${currentSectionCell.cellKey}`,
+            hasSectionData: !!sectionData,
+            sectionDataKeys: sectionData ? Object.keys(sectionData) : [],
+            recordDataKeys: Object.keys(recordData).filter(k => k.startsWith('SECTION_')),
+            recordDataSample: Object.keys(recordData).slice(0, 10)
+          });
+        }
         
         if (!sectionData) {
+          console.warn('⚠️ [RecordDetail] 未找到子表单数据:', {
+            cellKey: currentSectionCell.cellKey,
+            sectionKey: `SECTION_${currentSectionCell.cellKey}`,
+            recordDataKeys: Object.keys(recordData)
+          });
           return null;
         }
         
