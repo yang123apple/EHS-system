@@ -138,7 +138,7 @@ export const PATCH = withPermission('work_permit', 'create_permit', async (req: 
     if (attachments !== undefined) updateData.attachments = attachments;
     // 🟢 处理 timenow 字段：如果更新了 dataJson，自动填充 timenow 字段
     if (dataJson !== undefined) {
-      let processedDataJson = typeof dataJson === 'string' ? JSON.parse(dataJson) : { ...dataJson };
+      const processedDataJson = typeof dataJson === 'string' ? JSON.parse(dataJson) : { ...dataJson };
       
       // 获取模板的 parsedFields
       const record = await prisma.workPermitRecord.findUnique({
@@ -345,7 +345,7 @@ export const POST = withPermission('work_permit', 'create_permit', async (req: R
     const templateType = template?.type || '其他';
     
     // 🟢 处理 timenow 字段：自动填充当前时间
-    let processedDataJson = typeof dataJson === 'string' ? JSON.parse(dataJson) : { ...dataJson };
+    const processedDataJson = typeof dataJson === 'string' ? JSON.parse(dataJson) : { ...dataJson };
     if (template?.parsedFields) {
       try {
         const parsedFields = JSON.parse(template.parsedFields as string);

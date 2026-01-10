@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+
 "use client";
 
 import React, { useState } from 'react';
@@ -15,7 +15,8 @@ import {
   Settings,
   ShieldAlert,
   FileText,
-  BookOpen
+  BookOpen,
+  Archive
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
@@ -38,6 +39,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isMobileOpen, clos
     { name: '作业许可', href: '/work-permit', icon: FileText, permission: 'work_permit' },
     { name: '隐患排查', href: '/hidden-danger', icon: ShieldAlert, permission: 'hidden_danger' },
     { name: '文档管理', href: '/docs', icon: BookOpen, permission: 'doc_sys' },
+    { name: '档案库', href: '/ehs-archive', icon: Archive },
     // Admin only items
     { name: '账户管理', href: '/admin/account', icon: Users, role: 'admin' },
     { name: '组织架构', href: '/admin/org', icon: Network, role: 'admin' },

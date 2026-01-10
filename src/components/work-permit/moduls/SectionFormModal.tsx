@@ -1370,7 +1370,7 @@ export default function SectionFormModal({
       
       // 🟢 修复：从模板grid数据中找出模板行的所有列，确保包含所有字段
       // 1. 首先从parsedFields中找出模板行的所有字段
-      let templateRowFields = parsedFields.filter((f: any) => {
+      const templateRowFields = parsedFields.filter((f: any) => {
         return typeof f.rowIndex === 'number' && f.rowIndex === recordBaseRow0;
       });
       

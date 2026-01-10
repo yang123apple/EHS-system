@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+
 // src/app/hidden-danger/_components/views/OverviewDashboard.tsx
 import { AlertTriangle, Clock, Plus, Inbox, Activity, CheckCircle2, Flame, Upload } from 'lucide-react';
 import { HazardCard } from '../HazardCard';
