@@ -1,5 +1,6 @@
 // prisma/seed.ts
 import { PrismaClient } from '@prisma/client'
+import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
@@ -23,13 +24,16 @@ async function main() {
     }
   })
 
-  // 3. 创建管理员
+  // 3. 创建管理员（使用 bcrypt 加密密码）
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash('admin', salt);
+  
   const admin = await prisma.user.create({
     data: {
       id: '88888888',
       username: 'admin',
       name: '超级管理员',
-      password: 'admin', // 生产环境请加密
+      password: hashedPassword, // 使用 bcrypt 加密
       role: 'admin',
       departmentId: 'dept_ehs',
       jobTitle: 'EHS总监',

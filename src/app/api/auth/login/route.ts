@@ -5,6 +5,7 @@ import { PeopleFinder } from '@/lib/peopleFinder';
 import { getClientIP } from '@/services/systemLogService';
 import AuditService from '@/services/audit.service';
 import { LogModule } from '@/types/audit';
+import bcrypt from 'bcryptjs';
 
 export async function POST(req: Request) {
   try {
@@ -22,8 +23,9 @@ export async function POST(req: Request) {
       }
     });
 
-    // 简单的明文密码比对（实际生产应使用 bcrypt 等）
-    if (user && user.password === password) {
+    // 使用 bcrypt 验证密码哈希
+    const isPasswordValid = user && user.password && await bcrypt.compare(password, user.password);
+    if (isPasswordValid) {
         // 检测是否为首次登录：查询历史登录日志数量
         try {
           const priorLogins = await prisma.systemLog.count({ where: { userId: user.id, action: 'LOGIN' } });

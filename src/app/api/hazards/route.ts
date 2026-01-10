@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/mockDb';
 import { HazardRecord } from '@/types/hidden-danger';
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
+
+// Prisma 类型定义
+type PrismaHazardRecord = Prisma.HazardRecordGetPayload<{}>;
 import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
 import { setEndOfDay, extractDatePart, normalizeDate } from '@/utils/dateUtils';
 
@@ -22,40 +26,75 @@ const generateChanges = (oldData: HazardRecord, newData: Partial<HazardRecord>) 
 };
 
 // 转换 Prisma HazardRecord 到前端 HazardRecord 类型
-function mapHazard(pHazard: any): HazardRecord {
+function mapHazard(pHazard: PrismaHazardRecord): HazardRecord {
   try {
-    return {
-      ...pHazard,
-      photos: pHazard.photos ? (typeof pHazard.photos === 'string' ? JSON.parse(pHazard.photos) : pHazard.photos) : [],
-      rectifyPhotos: pHazard.rectifyPhotos ? (typeof pHazard.rectifyPhotos === 'string' ? JSON.parse(pHazard.rectifyPhotos) : pHazard.rectifyPhotos) : [],
-      logs: pHazard.logs ? (typeof pHazard.logs === 'string' ? JSON.parse(pHazard.logs) : pHazard.logs) : [],
-      ccDepts: pHazard.ccDepts ? (typeof pHazard.ccDepts === 'string' ? JSON.parse(pHazard.ccDepts) : pHazard.ccDepts) : [],
-      ccUsers: pHazard.ccUsers ? (typeof pHazard.ccUsers === 'string' ? JSON.parse(pHazard.ccUsers) : pHazard.ccUsers) : [],
-      old_personal_ID: pHazard.old_personal_ID ? (typeof pHazard.old_personal_ID === 'string' ? JSON.parse(pHazard.old_personal_ID) : pHazard.old_personal_ID) : [],
-      // 🟢 新增：处理候选处理人列表（或签模式）
-      candidateHandlers: pHazard.candidateHandlers ? (typeof pHazard.candidateHandlers === 'string' ? JSON.parse(pHazard.candidateHandlers) : pHazard.candidateHandlers) : undefined,
-      reportTime: normalizeDate(pHazard.reportTime),
-      rectifyTime: normalizeDate(pHazard.rectifyTime),
-      verifyTime: normalizeDate(pHazard.verifyTime),
-      deadline: normalizeDate(pHazard.deadline),
-      emergencyPlanDeadline: normalizeDate(pHazard.emergencyPlanDeadline),
-      emergencyPlanSubmitTime: normalizeDate(pHazard.emergencyPlanSubmitTime),
-      createdAt: normalizeDate(pHazard.createdAt),
-      updatedAt: normalizeDate(pHazard.updatedAt),
+    const parseJsonField = (field: string | null): string[] => {
+      if (!field) return [];
+      if (typeof field === 'string') {
+        try { return JSON.parse(field); } catch { return []; }
+      }
+      return Array.isArray(field) ? field : [];
     };
+
+    return {
+      id: pHazard.id,
+      code: pHazard.code,
+      status: pHazard.status,
+      riskLevel: pHazard.riskLevel,
+      type: pHazard.type,
+      location: pHazard.location,
+      desc: pHazard.desc,
+      reporterId: pHazard.reporterId,
+      reporterName: pHazard.reporterName,
+      responsibleId: pHazard.responsibleId ?? undefined,
+      responsibleName: pHazard.responsibleName ?? undefined,
+      responsibleDept: pHazard.responsibleDept ?? undefined,
+      verifierId: pHazard.verifierId ?? undefined,
+      verifierName: pHazard.verifierName ?? undefined,
+      rectifyDesc: pHazard.rectifyDesc ?? undefined,
+      rectifyRequirement: pHazard.rectifyRequirement ?? undefined,
+      requireEmergencyPlan: pHazard.requireEmergencyPlan ?? false,
+      emergencyPlanContent: pHazard.emergencyPlanContent ?? undefined,
+      approvalMode: pHazard.approvalMode ?? undefined,
+      currentStepIndex: pHazard.currentStepIndex ?? undefined,
+      currentStepId: pHazard.currentStepId ?? undefined,
+      photos: parseJsonField(pHazard.photos),
+      rectifyPhotos: parseJsonField(pHazard.rectifyPhotos),
+      logs: pHazard.logs ? (typeof pHazard.logs === 'string' ? JSON.parse(pHazard.logs) : []) : [],
+      ccDepts: parseJsonField(pHazard.ccDepts),
+      ccUsers: parseJsonField(pHazard.ccUsers),
+      old_personal_ID: parseJsonField(pHazard.old_personal_ID),
+      candidateHandlers: pHazard.candidateHandlers ? (typeof pHazard.candidateHandlers === 'string' ? JSON.parse(pHazard.candidateHandlers) : undefined) : undefined,
+      reportTime: normalizeDate(pHazard.reportTime) ?? new Date().toISOString(),
+      rectifyTime: normalizeDate(pHazard.rectifyTime) ?? undefined,
+      verifyTime: normalizeDate(pHazard.verifyTime) ?? undefined,
+      deadline: normalizeDate(pHazard.deadline) ?? undefined,
+      emergencyPlanDeadline: normalizeDate(pHazard.emergencyPlanDeadline) ?? undefined,
+      emergencyPlanSubmitTime: normalizeDate(pHazard.emergencyPlanSubmitTime) ?? undefined,
+      createdAt: normalizeDate(pHazard.createdAt) ?? new Date().toISOString(),
+      updatedAt: normalizeDate(pHazard.updatedAt) ?? new Date().toISOString(),
+    } as HazardRecord;
   } catch (error) {
     console.error('[mapHazard] 转换失败:', error, pHazard);
-    // 如果解析失败，返回原始数据但确保 photos 是数组
+    // 如果解析失败，返回基本数据结构
     return {
-      ...pHazard,
-      photos: Array.isArray(pHazard.photos) ? pHazard.photos : [],
-      rectifyPhotos: Array.isArray(pHazard.rectifyPhotos) ? pHazard.rectifyPhotos : [],
-      logs: Array.isArray(pHazard.logs) ? pHazard.logs : [],
-      ccDepts: Array.isArray(pHazard.ccDepts) ? pHazard.ccDepts : [],
-      ccUsers: Array.isArray(pHazard.ccUsers) ? pHazard.ccUsers : [],
-      old_personal_ID: Array.isArray(pHazard.old_personal_ID) ? pHazard.old_personal_ID : [],
-      candidateHandlers: Array.isArray(pHazard.candidateHandlers) ? pHazard.candidateHandlers : undefined,
-    };
+      id: pHazard.id,
+      code: pHazard.code,
+      status: pHazard.status,
+      riskLevel: pHazard.riskLevel,
+      type: pHazard.type,
+      location: pHazard.location,
+      desc: pHazard.desc,
+      reporterId: pHazard.reporterId,
+      reporterName: pHazard.reporterName,
+      reportTime: new Date().toISOString(),
+      photos: [],
+      rectifyPhotos: [],
+      logs: [],
+      ccDepts: [],
+      ccUsers: [],
+      old_personal_ID: [],
+    } as HazardRecord;
   }
 }
 
@@ -80,7 +119,7 @@ export const GET = withErrorHandling(
     // ✅ 新增：专门处理统计数据的请求
     if (type === 'stats') {
       const hazards = await prisma.hazardRecord.findMany();
-      
+
       // 1. 风险占比
       const riskStats = {
         low: hazards.filter(h => h.riskLevel === 'low').length,
@@ -92,7 +131,7 @@ export const GET = withErrorHandling(
       // 2. 计算近30天同一区域同类隐患重复率
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      
+
       // 分组计数: "区域-类型"
       const recurrenceMap: Record<string, number> = {};
       hazards.forEach(h => {
@@ -111,7 +150,7 @@ export const GET = withErrorHandling(
     }
 
     // 普通列表查询
-    const where: any = {};
+    const where: Prisma.HazardRecordWhereInput = {};
 
     if (filterType) where.type = filterType;
     else if (type && type !== 'stats') where.type = type;
@@ -167,7 +206,7 @@ export const GET = withErrorHandling(
           limit,
           stack: dbError?.stack
         });
-        
+
         // 如果是列不存在错误（P2022），说明数据库 schema 未同步，使用原始 SQL 查询
         if (dbError?.code === 'P2022' || dbError?.message?.includes('does not exist in the current database')) {
           console.warn('[Hazard GET] 检测到字段不存在错误，可能是数据库迁移未完成，使用原始 SQL 查询');
@@ -187,9 +226,9 @@ export const GET = withErrorHandling(
               ORDER BY "createdAt" DESC
               LIMIT ${limit} OFFSET ${skip}
             `;
-            
+
             const total = await prisma.hazardRecord.count({ where });
-            
+
             return NextResponse.json({
               data: hazardsRaw.map(mapHazard),
               meta: {
@@ -205,7 +244,7 @@ export const GET = withErrorHandling(
             throw new Error('数据库 schema 未同步，请运行: npx prisma migrate deploy');
           }
         }
-        
+
         // 如果是关联查询错误（如用户不存在），尝试不包含关联数据
         if (dbError?.code === 'P2025' || dbError?.message?.includes('foreign key') || dbError?.message?.includes('relation')) {
           console.warn('[Hazard GET] 检测到关联查询错误，尝试不包含关联数据重新查询');
@@ -235,7 +274,7 @@ export const GET = withErrorHandling(
             throw fallbackError;
           }
         }
-        
+
         // 重新抛出错误，让 withErrorHandling 处理
         throw dbError;
       }
@@ -256,7 +295,7 @@ export const GET = withErrorHandling(
         meta: dbError?.meta,
         stack: dbError?.stack
       });
-      
+
       // 如果是列不存在错误（P2022），说明数据库 schema 未同步，使用原始 SQL 查询
       if (dbError?.code === 'P2022' || dbError?.message?.includes('does not exist in the current database')) {
         console.warn('[Hazard GET] 检测到字段不存在错误，可能是数据库迁移未完成，使用原始 SQL 查询');
@@ -275,14 +314,14 @@ export const GET = withErrorHandling(
             FROM HazardRecord
             ORDER BY "createdAt" DESC
           `;
-          
+
           return NextResponse.json(dataRaw.map(mapHazard));
         } catch (fallbackError: any) {
           console.error('[Hazard GET] 原始 SQL 查询也失败:', fallbackError);
           throw new Error('数据库 schema 未同步，请运行: npx prisma migrate deploy');
         }
       }
-      
+
       // 如果是关联查询错误，尝试不包含关联数据
       if (dbError?.code === 'P2025' || dbError?.message?.includes('foreign key') || dbError?.message?.includes('relation')) {
         console.warn('[Hazard GET] 检测到关联查询错误，尝试不包含关联数据重新查询');
@@ -297,7 +336,7 @@ export const GET = withErrorHandling(
           throw fallbackError;
         }
       }
-      
+
       // 重新抛出错误，让 withErrorHandling 处理
       throw dbError;
     }
@@ -307,7 +346,7 @@ export const GET = withErrorHandling(
 export const POST = withErrorHandling(
   withPermission('hidden_danger', 'report', async (request: NextRequest, context, user) => {
     const body = await request.json();
-    
+
     // 过滤掉 Prisma schema 中不存在的字段（但保留 currentStepIndex 和 currentStepId）
     const {
       dopersonal_ID,
@@ -326,7 +365,7 @@ export const POST = withErrorHandling(
       old_personal_ID: oldPersonalIdInput,
       ...validData
     } = body;
-    
+
     // 处理数组字段：转换为 JSON 字符串
     // 处理日期字段：转换为 Date 对象
     const processedData: any = {
@@ -337,7 +376,7 @@ export const POST = withErrorHandling(
       logs: logsInput ? (Array.isArray(logsInput) ? JSON.stringify(logsInput) : logsInput) : null,
       old_personal_ID: oldPersonalIdInput ? (Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput) : null,
     };
-    
+
     // 处理日期字段
     if (processedData.reportTime && typeof processedData.reportTime === 'string') {
       processedData.reportTime = new Date(processedData.reportTime);
@@ -346,7 +385,7 @@ export const POST = withErrorHandling(
     if (processedData.deadline && typeof processedData.deadline === 'string') {
       processedData.deadline = setEndOfDay(extractDatePart(processedData.deadline));
     }
-    
+
     try {
       const res = await prisma.hazardRecord.create({
         data: processedData
@@ -377,10 +416,10 @@ export const POST = withErrorHandling(
 export const PATCH = withErrorHandling(
   withAuth(async (request: NextRequest, context, user) => {
     const body = await request.json();
-    const { 
-      id, 
-      operatorId, 
-      operatorName, 
+    const {
+      id,
+      operatorId,
+      operatorName,
       actionName,
       // 过滤掉 Prisma schema 中不存在的字段（但保留 currentStepIndex 和 currentStepId）
       dopersonal_ID,
@@ -397,12 +436,12 @@ export const PATCH = withErrorHandling(
       ccUserNames,
       candidateHandlers: candidateHandlersInput, // 🟢 新增：或签候选人列表
       approvalMode: approvalModeInput, // 🟢 新增：审批模式
-      ...updates 
+      ...updates
     } = body;
-    
+
     // 获取旧数据
     const oldRecord: any = await prisma.hazardRecord.findUnique({ where: { id } });
-    
+
     if (!oldRecord) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
@@ -426,7 +465,7 @@ export const PATCH = withErrorHandling(
     let currentLogs = [];
     try {
       currentLogs = JSON.parse(oldRecord.logs || '[]');
-    } catch(e) {}
+    } catch (e) { }
 
     const updatedLogs = [newLog, ...currentLogs];
 
@@ -435,7 +474,7 @@ export const PATCH = withErrorHandling(
       ...updates,
       logs: JSON.stringify(updatedLogs)
     };
-    
+
     // 🔴 关键修复：确保 dopersonal_ID 和 dopersonal_Name 被保存
     if (dopersonal_ID !== undefined) {
       finalUpdates.dopersonal_ID = dopersonal_ID;
@@ -462,8 +501,8 @@ export const PATCH = withErrorHandling(
       if (candidateHandlersInput === null || candidateHandlersInput === undefined) {
         finalUpdates.candidateHandlers = null;
       } else {
-        finalUpdates.candidateHandlers = Array.isArray(candidateHandlersInput) 
-          ? JSON.stringify(candidateHandlersInput) 
+        finalUpdates.candidateHandlers = Array.isArray(candidateHandlersInput)
+          ? JSON.stringify(candidateHandlersInput)
           : candidateHandlersInput;
       }
     }
@@ -497,7 +536,7 @@ export const DELETE = withErrorHandling(
   withPermission('hidden_danger', 'delete', async (request: NextRequest, context, user) => {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    
+
     if (!id) {
       return NextResponse.json({ error: 'Missing ID' }, { status: 400 });
     }

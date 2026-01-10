@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { withAdmin } from '@/middleware/auth';
+import bcrypt from 'bcryptjs';
 
 // POST: 重置用户密码为默认密码 (123)
 export const POST = withAdmin<{ params: Promise<{ id: string }> }>(async (req, context, currentUser) => {
@@ -19,9 +20,12 @@ export const POST = withAdmin<{ params: Promise<{ id: string }> }>(async (req, c
   }
 
   try {
-    // 将密码重置为默认密码 "123"
+    // 将密码重置为默认密码 "123"，使用 bcrypt 加密
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash('123', salt);
+    
     const updatedUser = await db.updateUser(id, { 
-      password: '123' 
+      password: hashedPassword
     });
 
     if (!updatedUser) {

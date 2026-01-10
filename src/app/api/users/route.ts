@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
 import { assignOnboardingPlanToUser } from '@/services/onboardingService';
 import { withAuth, withAdmin } from '@/middleware/auth';
+import bcrypt from 'bcryptjs';
 
 // GET: 获取所有用户 (Support Pagination)
 export const GET = withAuth(async (req, context, user) => {
@@ -96,12 +97,17 @@ export const POST = withAdmin(async (req, context, user) => {
       return NextResponse.json({ error: '账号已存在' }, { status: 400 });
     }
 
+    // 对密码进行哈希加密
+    const plainPassword = body.password || '123456'; // 默认密码
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(plainPassword, salt);
+
     // 创建
     const newUser = await prisma.user.create({
       data: {
         username: body.username,
         name: body.name,
-        password: body.password || '123456', // 默认密码
+        password: hashedPassword,
         role: 'user',
         avatar: '/image/default_avatar.jpg',
         permissions: '{}', // 默认空权限

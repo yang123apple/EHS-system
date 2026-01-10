@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "start /min cmd /c start-minio.bat",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

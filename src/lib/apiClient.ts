@@ -4,12 +4,23 @@
  * 自动处理认证、权限和错误
  */
 
+// API 错误数据接口
+interface ApiErrorData {
+  error?: string;
+  message?: string;
+  details?: string;
+  code?: string;
+  isNetworkError?: boolean;
+  originalError?: string;
+  [key: string]: unknown;
+}
+
 /**
  * 获取当前用户信息（从localStorage）
  */
 function getCurrentUser() {
   if (typeof window === 'undefined') return null;
-  
+
   try {
     const stored = localStorage.getItem('ehs_user');
     if (stored) {
@@ -18,7 +29,7 @@ function getCurrentUser() {
   } catch (error) {
     console.error('[API Client] 获取用户信息失败:', error);
   }
-  
+
   return null;
 }
 
@@ -28,11 +39,11 @@ function getCurrentUser() {
  * 支持对象类型的 body，会自动转换为 JSON
  */
 export async function apiFetch(
-  url: string, 
-  options: Omit<RequestInit, 'body'> & { body?: RequestInit['body'] | Record<string, any> } = {}
+  url: string,
+  options: Omit<RequestInit, 'body'> & { body?: RequestInit['body'] | Record<string, unknown> } = {}
 ): Promise<Response> {
   const user = getCurrentUser();
-  
+
   // 如果是需要认证的请求（非登录接口）但用户不存在，直接返回 401 响应
   // 这样可以避免在退出登录后发起无意义的请求
   if (!url.includes('/api/auth/login') && !user) {
@@ -43,7 +54,7 @@ export async function apiFetch(
       statusText: 'Unauthorized',
       headers: { 'Content-Type': 'application/json' }
     });
-    
+
     // 在客户端环境下，如果是 401 错误，可以选择静默处理或跳转到登录页
     if (typeof window !== 'undefined') {
       // 检查是否在登录页面，避免循环跳转
@@ -60,25 +71,25 @@ export async function apiFetch(
         }, 100);
       }
     }
-    
+
     return errorResponse;
   }
-  
+
   // 合并headers
   const headers = new Headers(options.headers || {});
-  
+
   // 添加用户ID到请求头（临时方案）
   if (user?.id) {
     headers.set('x-user-id', user.id);
   }
-  
+
   // 如果body是对象，自动转换为JSON
   let body = options.body;
   if (body && typeof body === 'object' && !(body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
     body = JSON.stringify(body);
   }
-  
+
   // Next.js 16: 默认不缓存 fetch 请求，需要明确指定缓存策略
   // 如果 options 中没有 cache 配置，默认使用 'no-store' 确保实时数据
   const fetchOptions: RequestInit = {
@@ -88,18 +99,18 @@ export async function apiFetch(
     // Next.js 16 缓存策略：如果没有指定，默认不缓存（适合实时数据）
     cache: options.cache ?? 'no-store',
   };
-  
+
   // 发送请求，捕获网络错误
   let response: Response;
   try {
     response = await fetch(url, fetchOptions);
-  } catch (error: any) {
+  } catch (error: unknown) {
     // 捕获网络错误（Failed to fetch, CORS错误, 连接超时等）
     console.error('[API Client] 网络请求失败:', error);
-    
+
     // 创建一个模拟的错误响应，包含网络错误信息
-    const errorMessage = error?.message || '网络连接失败';
-    const isNetworkError = 
+    const errorMessage = (error instanceof Error ? error.message : null) || '网络连接失败';
+    const isNetworkError =
       errorMessage.includes('Failed to fetch') ||
       errorMessage.includes('NetworkError') ||
       errorMessage.includes('Network request failed') ||
@@ -107,10 +118,10 @@ export async function apiFetch(
       errorMessage.includes('ERR_CONNECTION_REFUSED') ||
       errorMessage.includes('ERR_CONNECTION_TIMED_OUT') ||
       errorMessage.includes('ERR_NAME_NOT_RESOLVED');
-    
+
     // 返回一个模拟的 500 错误响应，包含网络错误信息
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: isNetworkError ? '网络连接失败' : '请求失败',
         details: errorMessage,
         isNetworkError: true,
@@ -123,7 +134,7 @@ export async function apiFetch(
       }
     );
   }
-  
+
   // 处理认证失败
   if (response.status === 401) {
     // 检查是否还有登录用户，如果没有则是正常的退出登录流程，不需要警告
@@ -134,13 +145,13 @@ export async function apiFetch(
       // window.location.href = '/login';
     }
   }
-  
+
   // 处理权限不足 - 只记录日志，不读取响应体（让调用方处理）
   if (response.status === 403) {
     console.error('[API Client] 权限不足 (403)');
     // 不读取响应体，让调用方来处理
   }
-  
+
   return response;
 }
 
@@ -155,18 +166,18 @@ export class ApiClient {
   private static async handleResponseError(response: Response): Promise<void> {
     // 处理网络错误（状态码为 0 表示 fetch 无法完成）
     if (response.status === 0) {
-      let error: any;
+      let error: ApiErrorData;
       try {
         const text = await response.text();
         error = text ? JSON.parse(text) : { error: '网络连接失败' };
       } catch (e) {
         error = { error: '网络连接失败', details: '无法连接到服务器，请检查网络连接或服务器是否运行' };
       }
-      
+
       const errorMessage = error.error || error.details || '网络连接失败';
       throw new ApiError(errorMessage, 0, { ...error, isNetworkError: true });
     }
-    
+
     // 对于 401 错误，检查是否是退出登录导致的，如果是则静默处理
     if (response.status === 401) {
       const currentUser = getCurrentUser();
@@ -176,15 +187,15 @@ export class ApiClient {
         return;
       }
     }
-    
+
     // 尝试解析错误响应
-    let error: any;
+    let error: ApiErrorData;
     const contentType = response.headers.get('content-type');
-    
+
     // 先尝试读取响应文本（只能读取一次）
     try {
       const text = await response.text();
-      
+
       // 如果是 JSON 类型，尝试解析
       if (contentType && contentType.includes('application/json')) {
         try {
@@ -201,10 +212,10 @@ export class ApiClient {
       // 读取响应失败
       error = { error: '无法读取错误响应', details: '未知错误' };
     }
-    
+
     // 提取错误信息：优先使用 error.error，其次是 error.message，最后是 error
     const errorMessage = error.error || error.message || (typeof error === 'string' ? error : '请求失败');
-    
+
     // 保留完整的错误信息，包括 details 和 code（用于数据库错误等）
     throw new ApiError(errorMessage, response.status, error);
   }
@@ -214,23 +225,23 @@ export class ApiClient {
    */
   static async get<T = any>(url: string, params?: Record<string, any>): Promise<T> {
     // 构建查询字符串
-    const queryString = params 
+    const queryString = params
       ? '?' + new URLSearchParams(
-          Object.entries(params)
-            .filter(([_, v]) => v !== undefined && v !== null && v !== '')
-            .map(([k, v]) => [k, String(v)])
-        ).toString()
+        Object.entries(params)
+          .filter(([_, v]) => v !== undefined && v !== null && v !== '')
+          .map(([k, v]) => [k, String(v)])
+      ).toString()
       : '';
-    
+
     const response = await apiFetch(url + queryString, {
       method: 'GET',
     });
-    
+
     if (!response.ok) {
       await ApiClient.handleResponseError(response);
       return null as T; // 如果是静默处理的 401，返回 null
     }
-    
+
     return response.json();
   }
 
@@ -242,12 +253,12 @@ export class ApiClient {
       method: 'POST',
       body: data,
     });
-    
+
     if (!response.ok) {
       await ApiClient.handleResponseError(response);
       return null as T;
     }
-    
+
     return response.json();
   }
 
@@ -259,12 +270,12 @@ export class ApiClient {
       method: 'PUT',
       body: data,
     });
-    
+
     if (!response.ok) {
       await ApiClient.handleResponseError(response);
       return null as T;
     }
-    
+
     return response.json();
   }
 
@@ -276,12 +287,12 @@ export class ApiClient {
       method: 'PATCH',
       body: data,
     });
-    
+
     if (!response.ok) {
       await ApiClient.handleResponseError(response);
       return null as T;
     }
-    
+
     return response.json();
   }
 
@@ -289,23 +300,23 @@ export class ApiClient {
    * DELETE 请求
    */
   static async delete<T = any>(url: string, params?: Record<string, any>): Promise<T> {
-    const queryString = params 
+    const queryString = params
       ? '?' + new URLSearchParams(
-          Object.entries(params)
-            .filter(([_, v]) => v !== undefined && v !== null)
-            .map(([k, v]) => [k, String(v)])
-        ).toString()
+        Object.entries(params)
+          .filter(([_, v]) => v !== undefined && v !== null)
+          .map(([k, v]) => [k, String(v)])
+      ).toString()
       : '';
-    
+
     const response = await apiFetch(url + queryString, {
       method: 'DELETE',
     });
-    
+
     if (!response.ok) {
       await ApiClient.handleResponseError(response);
       return null as T;
     }
-    
+
     return response.json();
   }
 
@@ -318,12 +329,12 @@ export class ApiClient {
       body: formData,
       // 不设置 Content-Type，让浏览器自动设置（包含boundary）
     });
-    
+
     if (!response.ok) {
       await ApiClient.handleResponseError(response);
       return null as T;
     }
-    
+
     return response.json();
   }
 }
@@ -333,22 +344,22 @@ export class ApiClient {
  */
 export class ApiError extends Error {
   status: number;
-  data: any;
-  
-  constructor(message: string, status: number, data?: any) {
+  data: ApiErrorData | undefined;
+
+  constructor(message: string, status: number, data?: ApiErrorData) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.data = data;
   }
-  
+
   /**
    * 判断是否是权限错误
    */
   isPermissionError(): boolean {
     return this.status === 403;
   }
-  
+
   /**
    * 判断是否是认证错误
    */

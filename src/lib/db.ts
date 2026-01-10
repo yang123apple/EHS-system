@@ -2,19 +2,33 @@
 import { prisma } from '@/lib/prisma';
 import { User, DepartmentNode, HazardRecord, HazardConfig } from '@/types/database';
 import { todayString, parseDateForDB } from '@/utils/dateUtils';
+import bcrypt from 'bcryptjs';
+import { Prisma } from '@prisma/client';
+
+// Prisma 类型定义
+type PrismaUserWithDepartment = Prisma.UserGetPayload<{ include: { department: true } }>;
+type PrismaDepartment = Prisma.DepartmentGetPayload<{}>;
+type PrismaHazardRecord = Prisma.HazardRecordGetPayload<{}>;
 
 // 转换 Prisma User 到前端 User 类型
-function mapUser(pUser: any): User {
+function mapUser(pUser: PrismaUserWithDepartment): User {
   return {
-    ...pUser,
-    // 确保 department 是 string 或 undefined，因为 pUser.department 可能是关联对象
+    id: pUser.id,
+    username: pUser.username,
+    name: pUser.name,
+    password: pUser.password,
+    avatar: pUser.avatar,
+    role: pUser.role as User['role'], // 显式转换为 UserRole 类型
     department: pUser.department?.name || '',
+    departmentId: pUser.departmentId ?? undefined,
+    jobTitle: pUser.jobTitle ?? undefined,
+    directManagerId: pUser.directManagerId ?? undefined,
     permissions: pUser.permissions ? JSON.parse(pUser.permissions) : {},
   };
 }
 
 // 转换 Prisma Department 到前端 DepartmentNode 类型
-function mapDept(pDept: any): DepartmentNode {
+function mapDept(pDept: PrismaDepartment): DepartmentNode {
   return {
     ...pDept,
     children: [] // 树状结构需要在 getOrgTree 中处理
@@ -22,7 +36,7 @@ function mapDept(pDept: any): DepartmentNode {
 }
 
 // 转换 Prisma HazardRecord 到前端 HazardRecord 类型
-function mapHazard(pHazard: any): HazardRecord {
+function mapHazard(pHazard: PrismaHazardRecord): HazardRecord {
   return {
     ...pHazard,
     photos: pHazard.photos ? JSON.parse(pHazard.photos) : [],
@@ -31,7 +45,7 @@ function mapHazard(pHazard: any): HazardRecord {
     ccDepts: pHazard.ccDepts ? JSON.parse(pHazard.ccDepts) : [],
     ccUsers: pHazard.ccUsers ? JSON.parse(pHazard.ccUsers) : [],
     old_personal_ID: pHazard.old_personal_ID ? JSON.parse(pHazard.old_personal_ID) : [],
-    reportTime: pHazard.reportTime.toISOString(),
+    reportTime: pHazard.reportTime?.toISOString() || new Date().toISOString(),
     rectifyTime: pHazard.rectifyTime?.toISOString(),
     verifyTime: pHazard.verifyTime?.toISOString(),
     deadline: pHazard.deadline?.toISOString(),
@@ -51,29 +65,36 @@ export const db = {
     });
     return users.map(mapUser);
   },
-  
+
   saveUser: async (user: User) => {
     // 剔除前端多余的字段 (department 名称)
     // 假设 user.departmentId 已正确设置
     const { id, permissions, department, ...rest } = user;
 
     // 如果 id 是纯数字(mock数据)，则让 prisma 生成 cuid；如果是 cuid 则使用
-    const userData: any = { ...rest, permissions: JSON.stringify(permissions) };
-    if (id && id.length > 10) userData.id = id;
+    const userData: Prisma.UserCreateInput = { ...rest, permissions: JSON.stringify(permissions) } as Prisma.UserCreateInput;
+    if (id && id.length > 10) (userData as Prisma.UserCreateInput & { id?: string }).id = id;
+
+    // 对密码进行哈希加密（如果密码未加密）
+    let hashedPassword = user.password;
+    if (user.password && !user.password.startsWith('$2a$') && !user.password.startsWith('$2b$')) {
+      const salt = await bcrypt.genSalt(10);
+      hashedPassword = await bcrypt.hash(user.password, salt);
+    }
 
     // 如果 rest 中还有其他不在 schema 中的字段，Prisma 会报错，所以最好是只取已知字段
     // 这里为了简洁，假设 TS 类型约束了 user 字段。如果有额外字段，Prisma client 会过滤还是报错取决于配置。
     // 安全起见，手动 pick 核心字段
     const safeData = {
-        username: user.username,
-        name: user.name,
-        password: user.password,
-        avatar: user.avatar,
-        role: user.role,
-        departmentId: user.departmentId,
-        jobTitle: user.jobTitle,
-        directManagerId: user.directManagerId,
-        permissions: JSON.stringify(permissions || {})
+      username: user.username,
+      name: user.name,
+      password: hashedPassword,
+      avatar: user.avatar,
+      role: user.role,
+      departmentId: user.departmentId,
+      jobTitle: user.jobTitle,
+      directManagerId: user.directManagerId,
+      permissions: JSON.stringify(permissions || {})
     };
 
     const newUser = await prisma.user.create({ data: safeData, include: { department: true } });
@@ -82,7 +103,7 @@ export const db = {
 
   updateUser: async (id: string, data: Partial<User>) => {
     const { permissions, department, ...rest } = data; // 剔除 department (string)
-    const updateData: any = { ...rest };
+    const updateData: Prisma.UserUpdateInput = { ...rest };
     if (permissions) updateData.permissions = JSON.stringify(permissions);
 
     try {
@@ -122,7 +143,7 @@ export const db = {
     const list = await prisma.department.findMany();
     const map: Record<string, DepartmentNode> = {};
     const tree: DepartmentNode[] = [];
-    
+
     const nodes = list.map(mapDept);
 
     nodes.forEach((node) => { map[node.id] = { ...node, children: [] }; });
@@ -178,42 +199,42 @@ export const db = {
     return hazards.map(mapHazard);
   },
 
-  createHazard: async (data: any) => {
-      // 1. 生成 code (YYYYMMDDNNN)
-      const todayStr = todayString().replace(/-/g, '');
-      const count = await prisma.hazardRecord.count({
-        where: { code: { startsWith: todayStr } }
-      });
-      const code = `${todayStr}${(count + 1).toString().padStart(3, '0')}`;
+  createHazard: async (data: Partial<HazardRecord> & { type: string; location: string; desc: string; reporterId: string; reporterName: string }) => {
+    // 1. 生成 code (YYYYMMDDNNN)
+    const todayStr = todayString().replace(/-/g, '');
+    const count = await prisma.hazardRecord.count({
+      where: { code: { startsWith: todayStr } }
+    });
+    const code = `${todayStr}${(count + 1).toString().padStart(3, '0')}`;
 
-      const {
-        id, photos, logs, ccDepts, ccUsers, old_personal_ID,
-        riskLevel, status, type, location, desc, reporterId, reporterName,
-        responsibleId, responsibleName, responsibleDept, deadline
-      } = data;
+    const {
+      id, photos, logs, ccDepts, ccUsers, old_personal_ID,
+      riskLevel, status, type, location, desc, reporterId, reporterName,
+      responsibleId, responsibleName, responsibleDept, deadline
+    } = data;
 
-      const newHazard = await prisma.hazardRecord.create({
-        data: {
-          code,
-          riskLevel: riskLevel || 'low',
-          status: status || 'reported',
-          type,
-          location,
-          desc,
-          reporterId,
-          reporterName,
-          responsibleId,
-          responsibleName,
-          responsibleDept,
-          deadline: deadline ? parseDateForDB(deadline, true) : null,
-          photos: JSON.stringify(photos || []),
-          logs: JSON.stringify(logs || []),
-          ccDepts: JSON.stringify(ccDepts || []),
-          ccUsers: JSON.stringify(ccUsers || []),
-          old_personal_ID: JSON.stringify(old_personal_ID || [])
-        }
-      });
-      return mapHazard(newHazard);
+    const newHazard = await prisma.hazardRecord.create({
+      data: {
+        code,
+        riskLevel: riskLevel || 'low',
+        status: status || 'reported',
+        type,
+        location,
+        desc,
+        reporterId,
+        reporterName,
+        responsibleId,
+        responsibleName,
+        responsibleDept,
+        deadline: deadline ? parseDateForDB(deadline, true) : null,
+        photos: JSON.stringify(photos || []),
+        logs: JSON.stringify(logs || []),
+        ccDepts: JSON.stringify(ccDepts || []),
+        ccUsers: JSON.stringify(ccUsers || []),
+        old_personal_ID: JSON.stringify(old_personal_ID || [])
+      }
+    });
+    return mapHazard(newHazard);
   },
 
   updateHazard: async (id: string, data: Partial<HazardRecord>) => {
@@ -224,7 +245,7 @@ export const db = {
       ...rest
     } = data;
 
-    const updateData: any = { ...rest };
+    const updateData: Prisma.HazardRecordUpdateInput = { ...rest };
 
     if (photos) updateData.photos = JSON.stringify(photos);
     if (rectifyPhotos) updateData.rectifyPhotos = JSON.stringify(rectifyPhotos);
@@ -267,20 +288,20 @@ export const db = {
   },
 
   updateHazardConfig: async (data: Partial<HazardConfig>) => {
-     if (data.types) {
-       await prisma.hazardConfig.upsert({
-         where: { key: 'hazard_types' },
-         update: { value: JSON.stringify(data.types) },
-         create: { key: 'hazard_types', value: JSON.stringify(data.types) }
-       });
-     }
-     if (data.areas) {
-       await prisma.hazardConfig.upsert({
-         where: { key: 'hazard_areas' },
-         update: { value: JSON.stringify(data.areas) },
-         create: { key: 'hazard_areas', value: JSON.stringify(data.areas) }
-       });
-     }
-     return data; // Return what was passed as a confirmation
+    if (data.types) {
+      await prisma.hazardConfig.upsert({
+        where: { key: 'hazard_types' },
+        update: { value: JSON.stringify(data.types) },
+        create: { key: 'hazard_types', value: JSON.stringify(data.types) }
+      });
+    }
+    if (data.areas) {
+      await prisma.hazardConfig.upsert({
+        where: { key: 'hazard_areas' },
+        update: { value: JSON.stringify(data.areas) },
+        create: { key: 'hazard_areas', value: JSON.stringify(data.areas) }
+      });
+    }
+    return data; // Return what was passed as a confirmation
   }
 };
