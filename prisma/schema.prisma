@@ -118,6 +118,7 @@ model User {
   trainingAssignments TrainingAssignment[]
   learnedRecords      MaterialLearnedRecord[]
   uploadedFiles       FileMetadata[] @relation("FileUploader")
+  archives            ArchiveNode[]
 }
 
 model Department {
@@ -463,6 +464,9 @@ model FileMetadata {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  archiveNodes   ArchiveNode[]
+  archiveHistory ArchiveHistory[]
+
   @@index([md5Hash])
   @@index([category])
   @@index([uploadedAt])
@@ -526,4 +530,88 @@ model SubPermit {
   @@index([cellKey])
   @@index([status])
   @@index([createdAt])
+}
+
+// New Models for EHS Archive System
+
+model Equipment {
+  id        String   @id @default(cuid())
+  name      String
+  code      String?  @unique // Equipment ID/Code
+  type      String?  // Boiler, Pressure Vessel, etc.
+  location  String?
+  status    String   @default("active") // active, maintenance, scrapped
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  archives  ArchiveNode[]
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String   @default("blue")
+  archives  ArchiveNode[]
+}
+
+model ArchiveNode {
+  id            String   @id @default(cuid())
+  name          String
+  isFolder      Boolean  @default(false)
+
+  parentId      String?
+  parent        ArchiveNode? @relation("ArchiveHierarchy", fields: [parentId], references: [id])
+  children      ArchiveNode[] @relation("ArchiveHierarchy")
+
+  // Categorization
+  // 'enterprise' (One-Enterprise)
+  // 'equipment' (One-Equipment)
+  // 'personnel' (One-Personnel)
+  // 'generic'
+  rootType      String   @default("generic")
+
+  // Relations to Context
+  equipmentId   String?
+  equipment     Equipment? @relation(fields: [equipmentId], references: [id])
+
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+
+  // File Data (If isFolder is false)
+  fileId        String?  // Relation to FileMetadata
+  file          FileMetadata? @relation(fields: [fileId], references: [id])
+
+  // Metadata
+  tags          Tag[]
+  expiryDate    DateTime?
+  alertDays     Int      @default(30)
+
+  // Versioning
+  version       Int      @default(1)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  history       ArchiveHistory[]
+
+  @@index([rootType])
+  @@index([equipmentId])
+  @@index([userId])
+  @@index([parentId])
+}
+
+model ArchiveHistory {
+    id String @id @default(cuid())
+    nodeId String
+    node ArchiveNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+    version Int
+
+    fileId String
+    file FileMetadata @relation(fields: [fileId], references: [id])
+
+    updatedBy String? // Store User ID or Name
+    updatedAt DateTime @default(now())
+
+    changeLog String? // Optional description of change
 }

@@ -13,7 +13,7 @@ export const GET = withAuth(async (req: NextRequest, context, user) => {
       return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
     }
 
-    let where: any = { userId };
+    const where: any = { userId };
 
     // 如果提供了materialIds，只查询这些材料
     if (materialIds) {

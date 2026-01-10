@@ -193,7 +193,7 @@ async function updateParentPermitJson(
   }
   
   try {
-    let dataJson: any = JSON.parse(parentPermit.dataJson);
+    const dataJson: any = JSON.parse(parentPermit.dataJson);
     
     // 处理数组格式（Excel grid 格式）
     if (Array.isArray(dataJson) && dataJson.length > 0) {
@@ -256,7 +256,7 @@ async function removeSubPermitFromParentJson(
   }
   
   try {
-    let dataJson: any = JSON.parse(parentPermit.dataJson);
+    const dataJson: any = JSON.parse(parentPermit.dataJson);
     
     // 处理数组格式
     if (Array.isArray(dataJson) && dataJson.length > 0) {

@@ -54,7 +54,7 @@ export default function MultiSignatureDisplay({
   };
   
   // 兼容旧数据：如果是字符串，转换为数组
-  let rawArray = Array.isArray(signatures) 
+  const rawArray = Array.isArray(signatures)
     ? signatures 
     : (signatures && typeof signatures === 'string' && signatures.length > 0 ? [signatures] : []);
   

@@ -230,7 +230,7 @@ export function calculateA4ColumnWidths(data: any[][]): number[] {
   // ========================================================================
   
   const columnWidths: number[] = [];
-  let constrainedColumns: Set<number> = new Set();
+  const constrainedColumns: Set<number> = new Set();
   let remainingWidth = TARGET_USABLE_WIDTH;
   let remainingWeight = totalWeight;
 

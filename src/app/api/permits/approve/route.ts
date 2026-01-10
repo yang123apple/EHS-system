@@ -104,7 +104,7 @@ export const POST = withAuth(async (req: Request, context, user) => {
             : [];
           
           // 获取发起人部门
-          let applicantDept = record.project?.requestDept || '';
+          const applicantDept = record.project?.requestDept || '';
           
           const allApprovers = await resolveApprovers(
             applicantDept,

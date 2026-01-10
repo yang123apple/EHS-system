@@ -265,7 +265,7 @@ function hasOptionMarker(str: string): boolean {
 /** 移除字符串中的所有选项标记符 */
 function stripOptionMarkers(str: string): string {
   // 移除Unicode标记符
-  let result = str.replace(/[£□☑✓✔]/g, '').trim();
+  const result = str.replace(/[£□☑✓✔]/g, '').trim();
   
   // 移除Wingdings标记字符（单独出现时）
   if (/^[ROPQSTUVWXYZ]$/.test(result)) {
@@ -805,8 +805,8 @@ export function foldStructureForDynamicAdd(
         const maxCols = row ? row.length : 0;
         
         // 如果提供了parsedFields，解析字段类型；否则先创建空的字段类型数组
-        let cellFieldTypes: (ParsedField['fieldType'] | null)[] = [];
-        let cellFields: (ParsedField | null)[] = [];
+        const cellFieldTypes: (ParsedField['fieldType'] | null)[] = [];
+        const cellFields: (ParsedField | null)[] = [];
         
         if (options?.parsedFields && prevKeptOriginalRowIndex >= 0) {
           // 获取保留行的字段定义（使用原始行索引，因为parsedFields可能还基于原始grid）
