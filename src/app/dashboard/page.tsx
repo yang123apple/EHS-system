@@ -14,7 +14,8 @@ import {
   Users,
   TrendingUp,
   TrendingDown,
-  Archive
+  Archive,
+  FileWarning
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -105,6 +106,20 @@ export default function Dashboard() {
       borderColor: "border-teal-200",
       hoverBorder: "group-hover:border-teal-300",
       hoverBg: "group-hover:bg-teal-50/50",
+      status: "正常",
+      statusColor: "success" as const
+    },
+    {
+      key: "incident",
+      title: "事故事件管理",
+      description: "事故上报、调查分析、整改闭环全流程管理",
+      href: "/incident",
+      icon: FileWarning,
+      iconColor: "text-amber-600",
+      iconBg: "bg-amber-50",
+      borderColor: "border-amber-200",
+      hoverBorder: "group-hover:border-amber-300",
+      hoverBg: "group-hover:bg-amber-50/50",
       status: "正常",
       statusColor: "success" as const
     }

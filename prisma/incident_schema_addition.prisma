@@ -1,0 +1,105 @@
+// ============ 事故事件管理模块 Schema ============
+// 请将此部分添加到 prisma/schema.prisma 文件中
+
+model Incident {
+  id                    String    @id @default(cuid())
+  code                  String?   @unique // 事故编号，如：INC-2024-001
+  
+  // ============ 基础信息 ============
+  type                  String    // 事故类型：injury(伤害事故), near_miss(未遂事故), property_damage(财产损失), environmental(环境事故)
+  severity              String    // 严重程度：minor(轻微), moderate(中等), serious(严重), critical(重大)
+  occurredAt            DateTime  // 事故发生时间
+  location              String    // 发生地点
+  description           String    // 事故描述
+  
+  // ============ 关联关系 ============
+  reporterId            String    // 上报人ID
+  reporter              User      @relation("IncidentReporter", fields: [reporterId], references: [id])
+  reporterName          String    // 上报人姓名（快照）
+  reporterDept          String?    // 上报人部门（快照）
+  reportTime            DateTime  @default(now()) // 上报时间
+  
+  departmentId          String?    // 责任部门ID
+  department            Department? @relation("IncidentDepartment", fields: [departmentId], references: [id])
+  departmentName        String?    // 责任部门名称（快照）
+  
+  // ============ 调查详情（5Why分析法） ============
+  // 直接原因
+  directCause           String?   // 直接原因描述
+  
+  // 间接原因
+  indirectCause         String?   // 间接原因描述
+  
+  // 管理原因
+  managementCause       String?   // 管理原因描述
+  
+  // 根本原因（综合）
+  rootCause             String?   // 根本原因分析
+  
+  // ============ 整改措施 (CAPA) ============
+  correctiveActions     String?   // 纠正措施（JSON格式，支持多条）
+  preventiveActions     String?   // 预防措施（JSON格式，支持多条）
+  actionDeadline        DateTime? // 整改措施完成期限
+  actionResponsibleId   String?   // 整改措施负责人ID
+  actionResponsibleName String?   // 整改措施负责人姓名
+  
+  // ============ 附件与证据 ============
+  photos                String?   // 现场照片（JSON数组，存储MinIO路径）
+  attachments           String?   // 其他附件（JSON数组，存储MinIO路径）
+  investigationReport   String?   // 调查报告（MinIO路径）
+  
+  // ============ 工作流集成 ============
+  status                String    @default("reported") // 状态：reported(已上报), investigating(调查中), reviewed(待审批), closed(已结案), rejected(已驳回)
+  currentStepIndex      Int?      @default(0) // 当前工作流步骤索引
+  currentStepId         String?   // 当前工作流步骤ID
+  flowId                String?   // 关联的工作流定义ID
+  workflowLogs          String?   // 工作流审批日志（JSON格式）
+  
+  // 当前处理人（动态字段，随工作流流转更新）
+  currentHandlerId      String?
+  currentHandlerName     String?
+  candidateHandlers      String?   // 候选处理人列表（JSON格式，用于或签/会签）
+  approvalMode          String?   // 当前步骤的审批模式（OR=或签，AND=会签）
+  
+  // ============ 审批与结案 ============
+  reviewerId            String?   // 审批人ID
+  reviewerName          String?   // 审批人姓名
+  reviewTime            DateTime? // 审批时间
+  reviewComment         String?   // 审批意见
+  
+  closerId              String?   // 结案人ID
+  closerName            String?   // 结案人姓名
+  closeTime             DateTime? // 结案时间
+  closeReason           String?   // 结案原因
+  
+  // ============ 数字签名 ============
+  signatures            SignatureRecord[] // 关联的签名记录（调查报告签字、结案签字等）
+  
+  // ============ 通知与抄送 ============
+  ccDepts               String?   // 抄送部门（JSON数组）
+  ccUsers               String?   // 抄送用户（JSON数组）
+  
+  // ============ 时间戳 ============
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  // ============ 索引优化 ============
+  @@index([type])
+  @@index([severity])
+  @@index([status])
+  @@index([reporterId])
+  @@index([departmentId])
+  @@index([occurredAt])
+  @@index([createdAt])
+  @@index([status, occurredAt]) // 复合索引：按状态和时间查询
+  @@index([departmentId, occurredAt]) // 复合索引：按部门和时间统计
+}
+
+// ============ 在 User 模型中添加关系 ============
+// 在 User 模型的 relations 部分添加：
+//   reportedIncidents    Incident[] @relation("IncidentReporter")
+
+// ============ 在 Department 模型中添加关系 ============
+// 在 Department 模型的 relations 部分添加：
+//   incidents           Incident[] @relation("IncidentDepartment")
+

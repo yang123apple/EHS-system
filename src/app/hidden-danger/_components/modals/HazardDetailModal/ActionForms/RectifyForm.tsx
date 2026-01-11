@@ -1,11 +1,12 @@
 // src/app/(dashboard)/hidden-danger/_components/modals/HazardDetailModal/ActionForms/RectifyForm.tsx
-import { useState } from 'react';
-import { Camera, Image as ImageIcon, Send, XCircle } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Camera, Image as ImageIcon, Send, XCircle, Upload, X } from 'lucide-react';
 
 export function RectifyForm({ hazard, onProcess, user }: any) {
   const [data, setData] = useState({ rectifyDesc: '', photos: [] as string[] });
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -18,15 +19,36 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
     
     if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
       alert('仅支持上传 JPG、PNG、JPEG 格式的照片');
-      e.target.value = ''; // 清空输入
+      e.target.value = '';
+      return;
+    }
+
+    // 验证文件大小（5MB）
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert('图片大小不能超过 5MB');
+      e.target.value = '';
       return;
     }
     
     const reader = new FileReader();
     reader.onload = (evt) => {
-      setData(prev => ({ ...prev, photos: [...prev.photos, evt.target?.result as string] }));
+      const result = evt.target?.result as string;
+      setData(prev => ({ ...prev, photos: [...prev.photos, result] }));
     };
     reader.readAsDataURL(file);
+
+    // 清空 input，允许重复上传同一文件
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setData(prev => ({
+      ...prev,
+      photos: prev.photos.filter((_, i) => i !== index)
+    }));
   };
 
   const handleReject = () => {
@@ -45,21 +67,51 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
           <Camera size={16}/> 提交整改结果
         </h5>
         
-        {/* 照片上传区 */}
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {data.photos.map((p, i) => (
-            <img key={i} src={p} className="w-16 h-16 object-cover rounded border bg-white" alt="整改后"/>
-          ))}
-          <label className="w-16 h-16 border-2 border-dashed border-blue-300 rounded flex flex-col items-center justify-center text-blue-400 cursor-pointer hover:bg-white transition-colors">
-            <ImageIcon size={20}/>
-            <input 
-              type="file" 
-              accept="image/jpeg,image/jpg,image/png" 
-              capture="environment"
-              className="hidden" 
-              onChange={handlePhotoUpload} 
-            />
+        {/* 整改完成后的照片上传 */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            整改完成后的照片 <span className="text-slate-400 text-xs">(可选)</span>
           </label>
+          
+          {/* 已有照片预览 */}
+          {data.photos.length > 0 && (
+            <div className="grid grid-cols-4 gap-2 mb-2">
+              {data.photos.map((p, i) => (
+                <div key={i} className="relative group">
+                  <img 
+                    src={p} 
+                    className="w-full h-20 object-cover rounded-lg border border-blue-200" 
+                    alt={`整改照片 ${i + 1}`}
+                  />
+                  <button
+                    onClick={() => handleRemovePhoto(i)}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 上传按钮 */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-dashed border-blue-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
+          >
+            <Upload size={20} className="mx-auto mb-2 text-blue-400" />
+            <p className="text-sm text-slate-600">点击上传整改照片</p>
+            <p className="text-xs text-slate-400 mt-1">支持 JPG、PNG 格式，最大 5MB</p>
+          </div>
+          
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png"
+            capture="environment"
+            onChange={handlePhotoUpload}
+            className="hidden"
+          />
         </div>
 
         <textarea 

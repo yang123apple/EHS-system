@@ -1,9 +1,12 @@
 // src/app/(dashboard)/hidden-danger/_components/modals/HazardDetailModal/ActionForms/VerifyForm.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { HazardRecord, SimpleUser, HazardWorkflowConfig } from '@/types/hidden-danger';
-import { CheckCircle, Ban, Wand2, Loader2, Info } from 'lucide-react';
+import { CheckCircle, Ban, Wand2, Loader2, Info, Upload, X } from 'lucide-react';
 import { matchHandler } from '@/app/hidden-danger/_utils/handler-matcher';
 import { apiFetch } from '@/lib/apiClient';
+import { ROOT_CAUSE_OPTIONS } from '@/constants/hazard';
+import SignatureManager from '@/components/common/SignatureManager';
+import { useAuth } from '@/context/AuthContext';
 
 interface VerifyFormProps {
   hazard: HazardRecord;
@@ -12,11 +15,17 @@ interface VerifyFormProps {
 }
 
 export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
+  const { user } = useAuth();
   const [rejectReason, setRejectReason] = useState('');
+  const [rootCause, setRootCause] = useState<string>('');
+  const [verifyDesc, setVerifyDesc] = useState('');
+  const [verifyPhotos, setVerifyPhotos] = useState<string[]>([]);
+  const [signature, setSignature] = useState<string>(''); // 电子签名（单个签名）
   const [workflowConfig, setWorkflowConfig] = useState<HazardWorkflowConfig | null>(null);
   const [isMatching, setIsMatching] = useState(false);
   const [matchResult, setMatchResult] = useState<string>('');
   const [suggestedVerifier, setSuggestedVerifier] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 加载工作流配置
   useEffect(() => {
@@ -35,6 +44,47 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
     } catch (error) {
       console.error('加载工作流配置失败:', error);
     }
+  };
+
+  // 处理图片上传
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 验证文件格式
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+    const fileExtension = file.name.toLowerCase().split('.').pop() || '';
+    const allowedExtensions = ['jpg', 'jpeg', 'png'];
+
+    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
+      alert('仅支持上传 JPG、PNG、JPEG 格式的照片');
+      e.target.value = '';
+      return;
+    }
+
+    // 验证文件大小（5MB）
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert('图片大小不能超过 5MB');
+      e.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const result = evt.target?.result as string;
+      setVerifyPhotos(prev => [...prev, result]);
+    };
+    reader.readAsDataURL(file);
+
+    // 清空 input，允许重复上传同一文件
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setVerifyPhotos(prev => prev.filter((_, i) => i !== index));
   };
 
   // 智能匹配验收人（用于提示）
@@ -150,10 +200,127 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
         </div>
       )}
 
+      {/* 根本原因分析 */}
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">
+          根本原因分析
+        </label>
+        <select
+          value={rootCause}
+          onChange={(e) => setRootCause(e.target.value)}
+          className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-purple-200 focus:border-purple-300 outline-none bg-white"
+        >
+          <option value="">请选择根本原因分类</option>
+          {ROOT_CAUSE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* 验收描述 */}
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">
+          验收描述
+        </label>
+        <textarea
+          value={verifyDesc}
+          onChange={(e) => setVerifyDesc(e.target.value)}
+          className="w-full border border-slate-300 rounded-lg p-3 text-sm h-24 focus:ring-2 focus:ring-purple-200 focus:border-purple-300 outline-none resize-none"
+          placeholder="请详细描述验收情况、整改效果评价等..."
+        />
+      </div>
+
+      {/* 验收照片上传 */}
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">
+          验收照片 <span className="text-slate-400 text-xs">(可选)</span>
+        </label>
+        
+        {/* 上传按钮 */}
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          className="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center cursor-pointer hover:border-purple-300 hover:bg-purple-50/50 transition-colors"
+        >
+          <Upload size={20} className="mx-auto mb-2 text-slate-400" />
+          <p className="text-sm text-slate-600">点击上传验收照片</p>
+          <p className="text-xs text-slate-400 mt-1">支持 JPG、PNG 格式，最大 5MB</p>
+        </div>
+        
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/jpg,image/png"
+          onChange={handlePhotoUpload}
+          className="hidden"
+        />
+
+        {/* 图片预览 */}
+        {verifyPhotos.length > 0 && (
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {verifyPhotos.map((photo, index) => (
+              <div key={index} className="relative group">
+                <img
+                  src={photo}
+                  alt={`验收照片 ${index + 1}`}
+                  className="w-full h-24 object-cover rounded-lg border border-slate-200"
+                />
+                <button
+                  onClick={() => handleRemovePhoto(index)}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 电子签名 */}
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">
+          电子签名 <span className="text-red-500">*</span>
+          <span className="text-xs text-slate-500 ml-2">（隐患验收人）</span>
+        </label>
+        <SignatureManager
+          value={signature}
+          onChange={(value) => setSignature(value as string)}
+          allowMultiple={false}
+          maxWidth={300}
+          maxHeight={120}
+          canvasWidth={600}
+          canvasHeight={300}
+          className="border border-slate-300 rounded-lg p-3 bg-white"
+        />
+      </div>
+
       <div className="flex flex-col gap-2">
         <button 
-          onClick={() => onProcess('verify_pass', hazard)}
-          className="w-full bg-green-600 text-white py-2 rounded text-sm font-bold shadow hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+          onClick={() => {
+            // 验证签名
+            if (!signature || !signature.trim()) {
+              alert('请完成电子签名后再提交验收');
+              return;
+            }
+
+            const payload: any = {};
+            if (rootCause) payload.rootCause = rootCause;
+            if (verifyDesc) payload.verifyDesc = verifyDesc;
+            if (verifyPhotos.length > 0) payload.verifyPhotos = verifyPhotos;
+            // 传递签名数据
+            payload.signature = signature;
+            payload.signerId = user?.id;
+            payload.signerName = user?.name;
+            onProcess('verify_pass', hazard, payload);
+          }}
+          disabled={!signature || !signature.trim()}
+          className={`w-full py-2 rounded text-sm font-bold shadow transition-colors flex items-center justify-center gap-2 ${
+            !signature || !signature.trim()
+              ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+              : 'bg-green-600 text-white hover:bg-green-700'
+          }`}
         >
           <CheckCircle size={16}/> 验收通过
         </button>

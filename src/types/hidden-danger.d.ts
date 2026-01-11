@@ -50,6 +50,9 @@ export interface HazardRecord {
   verifierId?: string;
   verifierName?: string;
   verifyTime?: string;
+  verifyPhotos?: string[]; // 验收时的现场照片路径（JSON字符串解析为数组）
+  verifyDesc?: string; // 验收时的描述/评价
+  rootCause?: string; // 根本原因分析分类（如：人的不安全行为、物的不安全状态、管理缺陷等）
   logs?: HazardLog[];
   // V2 字段
   rectifyRequirement?: string;
@@ -61,6 +64,8 @@ export interface HazardRecord {
   ccUsers?: string[];
   ccUserNames?: string[]; // 抄送用户名称列表
   rejectReason?: string; // 驳回原因
+  // 关联关系
+  extensions?: HazardExtension[]; // 延期记录
 }
 
 export interface CCRule {
@@ -83,6 +88,19 @@ export interface EmergencyPlanRule {
 export interface HazardConfig {
   types: string[];
   areas: string[];
+}
+
+// 隐患整改延期历史记录
+export interface HazardExtension {
+  id: string;
+  hazardId: string;
+  oldDeadline: string; // ISO 日期字符串
+  newDeadline: string; // ISO 日期字符串
+  reason: string;
+  applicantId: string;
+  approverId?: string; // 批准人ID（Nullable）
+  status: 'pending' | 'approved' | 'rejected'; // 状态：pending(待审批), approved(已批准), rejected(已驳回)
+  createdAt: string; // ISO 日期字符串
 }
 
 export interface SimpleUser {

@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import { 
   Users, 
   Network, 
@@ -16,12 +17,53 @@ import {
   Database,
   MessageSquare,
   Zap,
-  TrendingUp
+  TrendingUp,
+  Loader2
 } from 'lucide-react';
+
+interface AdminStats {
+  quickStats: {
+    onlineUsers: number;
+    todayOperations: number;
+    databaseSize: string;
+  };
+  moduleStats: {
+    account: { activeUsers: number };
+    org: { departmentCount: number };
+    logs: { todayLogs: number };
+    notifications: { templateCount: number };
+    aiApi: { todayCalls: number };
+  };
+}
 
 export default function AdminPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // 获取统计数据
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await fetch('/api/admin/stats');
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success) {
+            setStats(result.data);
+          }
+        }
+      } catch (error) {
+        console.error('获取统计数据失败:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user && user.role === 'admin') {
+      fetchStats();
+    }
+  }, [user]);
 
   // 权限检查
   if (user && user.role !== 'admin') {
@@ -38,6 +80,11 @@ export default function AdminPage() {
     );
   }
 
+  // 格式化数字（添加千位分隔符）
+  const formatNumber = (num: number): string => {
+    return num.toLocaleString('zh-CN');
+  };
+
   const adminModules = [
     {
       id: 'account',
@@ -49,7 +96,10 @@ export default function AdminPage() {
       path: '/admin/account',
       features: ['用户管理', '角色权限', '账户审核', '密码重置'],
       status: 'active',
-      stats: { label: '活跃用户', value: '68' },
+      stats: { 
+        label: '活跃用户', 
+        value: loading ? '...' : formatNumber(stats?.moduleStats.account.activeUsers || 0)
+      },
     },
     {
       id: 'org',
@@ -61,17 +111,20 @@ export default function AdminPage() {
       path: '/admin/org',
       features: ['部门管理', '层级结构', '人员分配', '批量导入'],
       status: 'active',
-      stats: { label: '部门数', value: '18' },
+      stats: { 
+        label: '部门数', 
+        value: loading ? '...' : formatNumber(stats?.moduleStats.org.departmentCount || 0)
+      },
     },
     {
-      id: 'system',
-      title: '系统设置',
-      description: '系统配置、数据备份和基础参数设置',
-      icon: Settings,
+      id: 'backup',
+      title: '数据灾备中心',
+      description: '数据备份、恢复和灾难恢复管理',
+      icon: Database,
       color: 'purple',
       gradient: 'from-purple-500 to-purple-600',
-      path: '/admin/system',
-      features: ['系统配置', '数据备份', '参数设置', '功能开关'],
+      path: '/admin/system/backup',
+      features: ['自动备份', '手动备份', '数据恢复', '备份验证'],
       status: 'active',
       stats: { label: '系统健康', value: '良好' },
     },
@@ -85,7 +138,10 @@ export default function AdminPage() {
       path: '/admin/logs',
       features: ['登录日志', '操作日志', '审计追踪', '统计分析'],
       status: 'active',
-      stats: { label: '今日日志', value: '156' },
+      stats: { 
+        label: '今日日志', 
+        value: loading ? '...' : formatNumber(stats?.moduleStats.logs.todayLogs || 0)
+      },
     },
     {
       id: 'notifications',
@@ -97,7 +153,10 @@ export default function AdminPage() {
       path: '/admin/notifications',
       features: ['模板编辑', '变量占位符', '触发条件', '推送规则'],
       status: 'active',
-      stats: { label: '模板数', value: '12' },
+      stats: { 
+        label: '模板数', 
+        value: loading ? '...' : formatNumber(stats?.moduleStats.notifications.templateCount || 0)
+      },
     },
     {
       id: 'ai-api',
@@ -109,7 +168,10 @@ export default function AdminPage() {
       path: '/admin/ai-api',
       features: ['接口配置', '调用日志', '限流策略', '使用统计'],
       status: 'active',
-      stats: { label: '今日调用', value: '342' },
+      stats: { 
+        label: '今日调用', 
+        value: loading ? '...' : formatNumber(stats?.moduleStats.aiApi.todayCalls || 0)
+      },
     },
   ];
 
@@ -168,7 +230,13 @@ export default function AdminPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">在线用户</p>
-                  <p className="text-2xl font-bold text-gray-800">23</p>
+                  <p className="text-2xl font-bold text-gray-800">
+                    {loading ? (
+                      <Loader2 className="w-6 h-6 animate-spin inline-block" />
+                    ) : (
+                      formatNumber(stats?.quickStats.onlineUsers || 0)
+                    )}
+                  </p>
                 </div>
                 <Users className="w-10 h-10 text-green-500 opacity-20" />
               </div>
@@ -178,7 +246,13 @@ export default function AdminPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">今日操作</p>
-                  <p className="text-2xl font-bold text-gray-800">1,247</p>
+                  <p className="text-2xl font-bold text-gray-800">
+                    {loading ? (
+                      <Loader2 className="w-6 h-6 animate-spin inline-block" />
+                    ) : (
+                      formatNumber(stats?.quickStats.todayOperations || 0)
+                    )}
+                  </p>
                 </div>
                 <TrendingUp className="w-10 h-10 text-purple-500 opacity-20" />
               </div>
@@ -188,7 +262,13 @@ export default function AdminPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">数据库大小</p>
-                  <p className="text-2xl font-bold text-gray-800">2.3 GB</p>
+                  <p className="text-2xl font-bold text-gray-800">
+                    {loading ? (
+                      <Loader2 className="w-6 h-6 animate-spin inline-block" />
+                    ) : (
+                      stats?.quickStats.databaseSize || '0 MB'
+                    )}
+                  </p>
                 </div>
                 <Database className="w-10 h-10 text-orange-500 opacity-20" />
               </div>

@@ -60,6 +60,9 @@ function mapHazard(pHazard: PrismaHazardRecord): HazardRecord {
       currentStepId: pHazard.currentStepId ?? undefined,
       photos: parseJsonField(pHazard.photos),
       rectifyPhotos: parseJsonField(pHazard.rectifyPhotos),
+      verifyPhotos: parseJsonField(pHazard.verifyPhotos),
+      verifyDesc: pHazard.verifyDesc ?? undefined,
+      rootCause: pHazard.rootCause ?? undefined,
       logs: pHazard.logs ? (typeof pHazard.logs === 'string' ? JSON.parse(pHazard.logs) : []) : [],
       ccDepts: parseJsonField(pHazard.ccDepts),
       ccUsers: parseJsonField(pHazard.ccUsers),
@@ -73,6 +76,8 @@ function mapHazard(pHazard: PrismaHazardRecord): HazardRecord {
       emergencyPlanSubmitTime: normalizeDate(pHazard.emergencyPlanSubmitTime) ?? undefined,
       createdAt: normalizeDate(pHazard.createdAt) ?? new Date().toISOString(),
       updatedAt: normalizeDate(pHazard.updatedAt) ?? new Date().toISOString(),
+      // 延期记录通过独立的 API 获取，这里不包含
+      extensions: undefined,
     } as HazardRecord;
   } catch (error) {
     console.error('[mapHazard] 转换失败:', error, pHazard);
@@ -436,6 +441,13 @@ export const PATCH = withErrorHandling(
       ccUserNames,
       candidateHandlers: candidateHandlersInput, // 🟢 新增：或签候选人列表
       approvalMode: approvalModeInput, // 🟢 新增：审批模式
+      // 🔐 签名相关字段
+      signature,
+      signerId,
+      signerName,
+      verifyDesc,
+      verifyPhotos,
+      rootCause,
       ...updates
     } = body;
 
@@ -496,6 +508,16 @@ export const PATCH = withErrorHandling(
     if (oldPersonalIdInput !== undefined) {
       finalUpdates.old_personal_ID = Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput;
     }
+    // 🔐 处理验收相关字段
+    if (verifyDesc !== undefined) {
+      finalUpdates.verifyDesc = verifyDesc;
+    }
+    if (verifyPhotos !== undefined) {
+      finalUpdates.verifyPhotos = Array.isArray(verifyPhotos) ? JSON.stringify(verifyPhotos) : verifyPhotos;
+    }
+    if (rootCause !== undefined) {
+      finalUpdates.rootCause = rootCause;
+    }
     // 🟢 新增：处理候选处理人列表（或签/会签模式）
     if (candidateHandlersInput !== undefined) {
       if (candidateHandlersInput === null || candidateHandlersInput === undefined) {
@@ -520,6 +542,48 @@ export const PATCH = withErrorHandling(
       where: { id },
       data: finalUpdates
     });
+
+    // 🔐 处理电子签名：如果是验收通过操作且提供了签名数据，创建签名记录
+    // 判断条件：1. actionName 是验收相关 2. 状态变为 closed 且提供了签名 3. 提供了签名数据
+    const isVerifyAction = actionName === '验收通过' || actionName === 'verify_pass' || 
+                           (res.status === 'closed' && oldRecord.status !== 'closed');
+    if (isVerifyAction && signature && signerId && signerName) {
+      try {
+        // 导入签名服务
+        const { createSignature, extractClientInfo } = await import('@/services/signatureService');
+        
+        // 准备签名数据（将隐患数据序列化为 JSON）
+        const hazardDataJson = JSON.stringify({
+          id: res.id,
+          code: res.code,
+          status: res.status,
+          verifyDesc: res.verifyDesc || updates.verifyDesc,
+          verifyPhotos: res.verifyPhotos || updates.verifyPhotos,
+          rootCause: res.rootCause || updates.rootCause,
+          updatedAt: new Date().toISOString()
+        });
+
+        // 获取客户端信息
+        const clientInfo = extractClientInfo(request);
+
+        // 创建签名记录
+        await createSignature({
+          hazardId: id,
+          signerId,
+          signerName,
+          action: 'pass', // 验收通过
+          comment: verifyDesc || null,
+          stepIndex: res.currentStepIndex ?? (oldRecord.currentStepIndex ?? 3), // 验收步骤索引（通常是最后一步）
+          stepName: '隐患验收',
+          clientInfo
+        }, hazardDataJson, false); // 不保存完整快照，仅保存 Hash
+
+        console.log(`✅ [隐患验收] 已创建签名记录，隐患ID: ${id}, 签字人: ${signerName}`);
+      } catch (signatureError) {
+        console.error('[隐患验收] 创建签名记录失败:', signatureError);
+        // 签名创建失败不影响主流程，但记录错误
+      }
+    }
 
     // 记录操作日志
     await logApiOperation(user, 'hidden_danger', actionName || 'update', {

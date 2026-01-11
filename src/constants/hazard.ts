@@ -40,3 +40,21 @@ export const STRATEGY_NAME_MAP: Record<string, string> = {
   'responsible': '责任人',
   'reporter': '上报人',
 };
+
+// 根本原因分析分类选项
+export const ROOT_CAUSE_OPTIONS = [
+  { value: 'unsafe_act', label: '人的不安全行为 (Unsafe Act)' },
+  { value: 'unsafe_condition', label: '物的不安全状态 (Unsafe Condition)' },
+  { value: 'management_defect', label: '管理缺陷 (Management Defect)' },
+  { value: 'environmental', label: '环境因素 (Environmental)' },
+  { value: 'others', label: '其他 (Others)' },
+] as const;
+
+// 根本原因分类映射（用于显示）
+export const ROOT_CAUSE_MAP: Record<string, string> = {
+  'unsafe_act': '人的不安全行为',
+  'unsafe_condition': '物的不安全状态',
+  'management_defect': '管理缺陷',
+  'environmental': '环境因素',
+  'others': '其他',
+};

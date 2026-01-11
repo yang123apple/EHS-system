@@ -4,6 +4,8 @@
  */
 
 import { BackupSchedulerService } from '@/services/backup/backupScheduler.service';
+import { DatabaseBackupService } from '@/services/backup/databaseBackup.service';
+import { FileBackupService } from '@/services/backup/fileBackup.service';
 
 let isInitialized = false;
 let backupScheduler: BackupSchedulerService | null = null;
@@ -56,6 +58,100 @@ async function initializeMinIO(): Promise<boolean> {
 }
 
 /**
+ * 检查并执行初始全量备份
+ * 如果检测不到全量备份，将自动执行一次全量备份
+ */
+async function checkAndPerformInitialBackup(): Promise<void> {
+  try {
+    console.log('🔍 检查全量备份状态...');
+    
+    const dbService = new DatabaseBackupService();
+    const fileService = new FileBackupService();
+    
+    // 检查数据库和文件备份状态
+    const [dbStats, fileStats] = await Promise.all([
+      dbService.getBackupStats(),
+      fileService.getBackupStats(),
+    ]);
+    
+    const hasDbBackup = dbStats.fullBackups.count > 0;
+    const hasFileBackup = fileStats.fullBackups.count > 0;
+    
+    console.log(`   • 数据库全量备份: ${hasDbBackup ? '✅ 已存在' : '❌ 未找到'}`);
+    console.log(`   • 文件全量备份: ${hasFileBackup ? '✅ 已存在' : '❌ 未找到'}`);
+    
+    // 如果都没有全量备份，执行一次全量备份
+    if (!hasDbBackup || !hasFileBackup) {
+      console.log('');
+      console.log('📦 检测到缺少全量备份，开始执行初始全量备份...');
+      console.log('=' .repeat(50));
+      
+      const backupResults = {
+        database: { success: false, message: '' },
+        files: { success: false, message: '' },
+      };
+      
+      // 执行数据库全量备份
+      if (!hasDbBackup) {
+        try {
+          console.log('📦 执行数据库全量备份...');
+          const dbResult = await dbService.performFullBackup();
+          backupResults.database.success = dbResult.success;
+          backupResults.database.message = dbResult.success 
+            ? `✅ 数据库全量备份完成: ${dbResult.sizeBytes} 字节`
+            : `❌ 数据库全量备份失败: ${dbResult.message || '未知错误'}`;
+          console.log(backupResults.database.message);
+        } catch (error: any) {
+          backupResults.database.message = `❌ 数据库全量备份异常: ${error.message}`;
+          console.error(backupResults.database.message);
+        }
+      } else {
+        backupResults.database.success = true;
+        backupResults.database.message = '✓ 数据库已有全量备份，跳过';
+      }
+      
+      // 执行文件全量备份
+      if (!hasFileBackup) {
+        try {
+          console.log('📦 执行文件全量备份...');
+          const fileResult = await fileService.performFullBackup();
+          backupResults.files.success = fileResult.success;
+          backupResults.files.message = fileResult.success
+            ? `✅ 文件全量备份完成: ${fileResult.sizeBytes} 字节，${fileResult.filesCount} 个文件`
+            : `❌ 文件全量备份失败: ${fileResult.message || '未知错误'}`;
+          console.log(backupResults.files.message);
+        } catch (error: any) {
+          backupResults.files.message = `❌ 文件全量备份异常: ${error.message}`;
+          console.error(backupResults.files.message);
+        }
+      } else {
+        backupResults.files.success = true;
+        backupResults.files.message = '✓ 文件已有全量备份，跳过';
+      }
+      
+      console.log('=' .repeat(50));
+      console.log('📊 初始全量备份结果:');
+      console.log(`   ${backupResults.database.success ? '✅' : '❌'} ${backupResults.database.message}`);
+      console.log(`   ${backupResults.files.success ? '✅' : '❌'} ${backupResults.files.message}`);
+      console.log('');
+    } else {
+      console.log('✅ 全量备份检查通过，无需执行初始备份');
+      console.log('');
+    }
+    
+    // 清理资源
+    await Promise.all([
+      dbService.cleanup(),
+      fileService.cleanup(),
+    ]);
+  } catch (error: any) {
+    console.error('❌ 检查全量备份失败:', error.message);
+    console.error('   提示: 应用将继续启动，但建议手动检查备份状态');
+    // 不抛出错误，允许应用继续启动
+  }
+}
+
+/**
  * 初始化应用程序
  * 在服务器启动时调用一次
  */
@@ -76,6 +172,9 @@ export async function initializeApp() {
   };
 
   try {
+    // 0. 检查并执行初始全量备份（如果不存在）
+    await checkAndPerformInitialBackup();
+    
     // 1. 启动备份调度服务（存算分离架构）
     console.log('⏰ 启动备份调度服务（存算分离架构）...');
     try {

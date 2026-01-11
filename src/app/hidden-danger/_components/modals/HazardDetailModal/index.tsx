@@ -7,6 +7,7 @@ import { AssignForm } from './ActionForms/AssignForm';
 import { RectifyForm } from './ActionForms/RectifyForm';
 import { VerifyForm } from './ActionForms/VerifyForm';
 import { ExtensionCard } from './ExtensionCard';
+import { RejectModal } from '../RejectModal';
 import {
   canViewHazard,
   canAssignHazard,
@@ -28,6 +29,7 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
   const hasApproveExtensionPermission = canApproveExtension(hazard, user);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [showRejectModal, setShowRejectModal] = useState(false);
 
   // 确保 photos 始终是数组
   const photos = Array.isArray(hazard.photos) ? hazard.photos : (hazard.photos ? [hazard.photos] : []);
@@ -207,12 +209,7 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                       开始整改
                     </button>
                     <button 
-                      onClick={() => {
-                        const reason = prompt('请输入驳回原因：');
-                        if (reason) {
-                          onProcess('reject_by_responsible', hazard, { rejectReason: reason }, user);
-                        }
-                      }}
+                      onClick={() => setShowRejectModal(true)}
                       className="px-6 bg-red-500 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-red-600 active:scale-95 transition-all"
                     >
                       驳回
@@ -325,6 +322,18 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
           </div>
         </div>
       )}
+
+      {/* 驳回模态框 */}
+      <RejectModal
+        isOpen={showRejectModal}
+        onClose={() => setShowRejectModal(false)}
+        onConfirm={(reason, photos) => {
+          onProcess('reject_by_responsible', hazard, { rejectReason: reason, rejectPhotos: photos }, user);
+          setShowRejectModal(false);
+        }}
+        title="驳回整改任务"
+        description="请说明驳回原因，并提供相关凭证图片（可选）。任务将回退到'已指派'状态，需要重新处理。"
+      />
     </>
   );
 }

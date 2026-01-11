@@ -11,10 +11,12 @@ import { prisma } from '@/lib/prisma';
 import { createHash } from 'crypto';
 
 export interface SignatureInput {
-  permitId: string;
+  permitId?: string;
+  incidentId?: string;
+  hazardId?: string;
   signerId: string;
   signerName: string;
-  action: 'pass' | 'reject' | 'issue' | 'site_confirm';
+  action: 'pass' | 'reject' | 'issue' | 'site_confirm' | 'investigate' | 'close';
   comment?: string;
   stepIndex: number;
   stepName?: string;
@@ -61,8 +63,7 @@ export async function createSignature(
   const dataSnapshotHash = calculateDataHash(dataJson);
   
   // 准备签名记录数据
-  const signatureData = {
-    permitId: input.permitId,
+  const signatureData: any = {
     signerId: input.signerId,
     signerName: input.signerName,
     action: input.action,
@@ -73,6 +74,21 @@ export async function createSignature(
     dataSnapshot: saveSnapshot ? dataJson : null,
     clientInfo: input.clientInfo ? JSON.stringify(input.clientInfo) : null,
   };
+
+  // 支持作业票、事故和隐患三种类型
+  if (input.permitId) {
+    signatureData.permitId = input.permitId;
+  }
+  if (input.incidentId) {
+    signatureData.incidentId = input.incidentId;
+  }
+  if (input.hazardId) {
+    signatureData.hazardId = input.hazardId;
+  }
+
+  if (!signatureData.permitId && !signatureData.incidentId && !signatureData.hazardId) {
+    throw new Error('必须提供 permitId、incidentId 或 hazardId 之一');
+  }
   
   // 创建签名记录
   const signature = await prisma.signatureRecord.create({
@@ -87,22 +103,31 @@ export async function createSignature(
 /**
  * 验证签名后数据是否被篡改
  * 
- * @param permitId - 作业票ID
+ * @param permitId - 作业票ID（可选）
  * @param currentDataJson - 当前表单数据 JSON 字符串
  * @param signatureId - 签名记录ID（可选，如果不提供则验证所有签名）
+ * @param incidentId - 事故ID（可选，与 permitId 二选一）
  * @returns 验证结果
  */
 export async function verifySignature(
-  permitId: string,
+  permitId: string | undefined,
   currentDataJson: string,
-  signatureId?: string
+  signatureId?: string,
+  incidentId?: string
 ): Promise<SignatureVerificationResult> {
   try {
     // 计算当前数据的 Hash
     const currentHash = calculateDataHash(currentDataJson);
     
     // 查询签名记录
-    const whereClause: any = { permitId };
+    const whereClause: any = {};
+    if (permitId) {
+      whereClause.permitId = permitId;
+    } else if (incidentId) {
+      whereClause.incidentId = incidentId;
+    } else {
+      throw new Error('必须提供 permitId 或 incidentId 之一');
+    }
     if (signatureId) {
       whereClause.id = signatureId;
     }
@@ -158,21 +183,41 @@ export async function getSignaturesByPermitId(permitId: string) {
 }
 
 /**
+ * 获取事故的所有签名记录
+ * 
+ * @param incidentId - 事故ID
+ * @returns 签名记录列表
+ */
+export async function getSignaturesByIncidentId(incidentId: string) {
+  return await prisma.signatureRecord.findMany({
+    where: { incidentId },
+    orderBy: { signedAt: 'asc' },
+  });
+}
+
+/**
  * 获取某个步骤的所有签名记录
  * 
- * @param permitId - 作业票ID
+ * @param permitId - 作业票ID（可选）
  * @param stepIndex - 步骤索引
+ * @param incidentId - 事故ID（可选，与 permitId 二选一）
  * @returns 签名记录列表
  */
 export async function getSignaturesByStep(
-  permitId: string,
-  stepIndex: number
+  stepIndex: number,
+  permitId?: string,
+  incidentId?: string
 ) {
+  const whereClause: any = { stepIndex };
+  if (permitId) {
+    whereClause.permitId = permitId;
+  } else if (incidentId) {
+    whereClause.incidentId = incidentId;
+  } else {
+    throw new Error('必须提供 permitId 或 incidentId 之一');
+  }
   return await prisma.signatureRecord.findMany({
-    where: {
-      permitId,
-      stepIndex,
-    },
+    where: whereClause,
     orderBy: { signedAt: 'asc' },
   });
 }
@@ -180,20 +225,27 @@ export async function getSignaturesByStep(
 /**
  * 检查某个步骤是否已有签名
  * 
- * @param permitId - 作业票ID
  * @param stepIndex - 步骤索引
+ * @param permitId - 作业票ID（可选）
+ * @param incidentId - 事故ID（可选，与 permitId 二选一）
  * @param signerId - 签字人ID（可选，如果提供则检查特定签字人）
  * @returns 是否已有签名
  */
 export async function hasSignature(
-  permitId: string,
   stepIndex: number,
+  permitId?: string,
+  incidentId?: string,
   signerId?: string
 ): Promise<boolean> {
-  const whereClause: any = {
-    permitId,
-    stepIndex,
-  };
+  const whereClause: any = { stepIndex };
+  
+  if (permitId) {
+    whereClause.permitId = permitId;
+  } else if (incidentId) {
+    whereClause.incidentId = incidentId;
+  } else {
+    throw new Error('必须提供 permitId 或 incidentId 之一');
+  }
   
   if (signerId) {
     whereClause.signerId = signerId;
