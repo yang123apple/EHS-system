@@ -305,7 +305,8 @@ export class SystemLogService {
       baseConditions.push({ userId: userId });
     }
     if (module) {
-      baseConditions.push({ module: { contains: module } });
+      // 使用精确匹配，确保只查询指定模块的日志
+      baseConditions.push({ module: module });
     }
     if (startDate || endDate) {
       const dateCondition: any = {};

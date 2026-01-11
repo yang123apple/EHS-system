@@ -249,6 +249,7 @@ export async function logApiOperation(
       'doc_sys': 'document',
       'work_permit': 'permit',
       'training': 'training',
+      'archive': 'archive_file',
     };
     
     const moduleToLogModule: Record<string, string> = {
@@ -256,6 +257,7 @@ export async function logApiOperation(
       'doc_sys': 'DOCUMENT',
       'work_permit': 'WORK_PERMIT',
       'training': 'TRAINING',
+      'archive': 'ARCHIVE',
     };
     
     const targetType = (moduleToTargetType[module] || module) as any;
@@ -313,7 +315,7 @@ export async function logApiOperation(
       userDepartmentId,
       userJobTitle: user.jobTitle || null,
       action: standardAction,
-      actionLabel: `${actionLabel}${targetType === 'document' ? '文档' : targetType === 'hazard' ? '隐患' : targetType === 'permit' ? '作业票' : ''}`,
+      actionLabel: `${actionLabel}${targetType === 'document' ? '文档' : targetType === 'hazard' ? '隐患' : targetType === 'permit' ? '作业票' : targetType === 'archive_file' ? '档案' : ''}`,
       module: logModule,
       targetId,
       targetType,

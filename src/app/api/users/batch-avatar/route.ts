@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { prisma } from '@/lib/prisma';
+import crypto from 'crypto';
 
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
 const AVATAR_DIR = path.join(PUBLIC_DIR, 'uploads', 'avatars');
@@ -56,16 +57,66 @@ export async function POST(req: Request) {
         // 4. 保存文件
         const buffer = Buffer.from(await file.arrayBuffer());
         const safeFileName = `AVATAR-${targetUser.id}-${Date.now()}${ext}`;
-        fs.writeFileSync(path.join(AVATAR_DIR, safeFileName), buffer);
+        const filePath = path.join(AVATAR_DIR, safeFileName);
+        const relativePath = `/uploads/avatars/${safeFileName}`;
+        let fileWritten = false;
 
-        // 5. 更新数据库
-        await prisma.user.update({
-            where: { id: targetUser.id },
-            data: { avatar: `/uploads/avatars/${safeFileName}` }
-        });
+        try {
+          fs.writeFileSync(filePath, buffer);
+          fileWritten = true;
 
-        successCount++;
-        matchLog.push(targetUser.name);
+          // 5. 更新数据库（使用事务）
+          await prisma.$transaction(async (tx) => {
+            // 更新用户头像
+            await tx.user.update({
+              where: { id: targetUser.id },
+              data: { avatar: relativePath }
+            });
+
+            // 同步到FileMetadata表（用于备份索引）
+            try {
+              const md5Hash = crypto.createHash('md5').update(buffer).digest('hex');
+              await tx.fileMetadata.upsert({
+                where: { filePath: relativePath },
+                update: {
+                  fileName: file.name,
+                  fileType: ext.replace('.', '') || 'jpg',
+                  fileSize: file.size,
+                  md5Hash,
+                  category: 'avatars',
+                  uploaderId: targetUser.id,
+                  uploadedAt: new Date()
+                },
+                create: {
+                  filePath: relativePath,
+                  fileName: file.name,
+                  fileType: ext.replace('.', '') || 'jpg',
+                  fileSize: file.size,
+                  md5Hash,
+                  category: 'avatars',
+                  uploaderId: targetUser.id,
+                  uploadedAt: new Date()
+                }
+              });
+            } catch (metaError) {
+              // FileMetadata保存失败不影响主流程，只记录日志
+              console.warn('保存FileMetadata失败（不影响主流程）:', metaError);
+            }
+          });
+
+          successCount++;
+          matchLog.push(targetUser.name);
+        } catch (error) {
+          // 如果数据库保存失败，清理已写入的文件
+          if (fileWritten && fs.existsSync(filePath)) {
+            try {
+              fs.unlinkSync(filePath);
+            } catch (cleanupError) {
+              console.error('清理文件失败:', cleanupError);
+            }
+          }
+          console.error(`保存头像失败: ${extractedName}`, error);
+        }
       } else {
         console.log(`❌ 匹配失败: 数据库中未找到姓名 [${extractedName}]`);
       }

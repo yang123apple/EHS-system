@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'fs/promises';
+import { unlink } from 'fs/promises';
 import { join } from 'path';
+import { prisma } from '@/lib/prisma';
+import crypto from 'crypto';
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,11 +31,54 @@ export async function POST(req: NextRequest) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = uniqueSuffix + '-' + file.name.replace(/\s/g, '_');
     const filepath = join(uploadDir, filename);
+    const relativePath = `/uploads/${filename}`;
+    let fileWritten = false;
 
-    await writeFile(filepath, buffer);
+    try {
+      await writeFile(filepath, buffer);
+      fileWritten = true;
 
-    const url = `/uploads/${filename}`;
-    return NextResponse.json({ url });
+      // 同步到FileMetadata表（用于备份索引）
+      try {
+        const md5Hash = crypto.createHash('md5').update(buffer).digest('hex');
+        await prisma.fileMetadata.upsert({
+          where: { filePath: relativePath },
+          update: {
+            fileName: file.name,
+            fileType: file.name.split('.').pop()?.toLowerCase() || 'unknown',
+            fileSize: file.size,
+            md5Hash,
+            category: 'other',
+            uploadedAt: new Date()
+          },
+          create: {
+            filePath: relativePath,
+            fileName: file.name,
+            fileType: file.name.split('.').pop()?.toLowerCase() || 'unknown',
+            fileSize: file.size,
+            md5Hash,
+            category: 'other',
+            uploadedAt: new Date()
+          }
+        });
+      } catch (metaError) {
+        // FileMetadata保存失败不影响主流程，只记录日志
+        console.warn('保存FileMetadata失败（不影响主流程）:', metaError);
+      }
+
+      const url = relativePath;
+      return NextResponse.json({ url });
+    } catch (ioError) {
+      // 如果FileMetadata保存失败，清理已写入的文件
+      if (fileWritten) {
+        try {
+          await unlink(filepath);
+        } catch (cleanupError) {
+          console.error('清理文件失败:', cleanupError);
+        }
+      }
+      throw ioError;
+    }
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 });

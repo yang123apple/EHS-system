@@ -124,12 +124,61 @@ export const db = {
     return user ? mapUser(user) : undefined;
   },
 
-  deleteUser: async (id: string) => {
+  deleteUser: async (id: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      await prisma.user.delete({ where: { id } });
-      return true;
-    } catch (e) {
-      return false;
+      // 使用事务处理所有相关数据的清理和用户删除
+      await prisma.$transaction(async (tx) => {
+        // 1. 清除该用户上报的隐患记录中的关联（设置为null而非删除记录）
+        await tx.hazardRecord.updateMany({
+          where: { reporterId: id },
+          data: { reporterId: 'DELETED_USER' } // 保留记录但标记用户已删除
+        });
+
+        // 2. 清除该用户作为整改责任人的隐患记录
+        await tx.hazardRecord.updateMany({
+          where: { responsibleId: id },
+          data: { responsibleId: null, responsibleName: null }
+        });
+
+        // 3. 删除培训分配记录
+        await tx.trainingAssignment.deleteMany({
+          where: { userId: id }
+        });
+
+        // 4. 删除学习记录
+        await tx.materialLearnedRecord.deleteMany({
+          where: { userId: id }
+        });
+
+        // 5. 清除上传的培训资料关联
+        await tx.trainingMaterial.updateMany({
+          where: { uploaderId: id },
+          data: { uploaderId: 'DELETED_USER' }
+        });
+
+        // 6. 清除发布的培训任务关联
+        await tx.trainingTask.updateMany({
+          where: { publisherId: id },
+          data: { publisherId: 'DELETED_USER' }
+        });
+
+        // 7. 清除文件上传者关联
+        await tx.fileMetadata.updateMany({
+          where: { uploaderId: id },
+          data: { uploaderId: null }
+        });
+
+        // 8. 最后删除用户
+        await tx.user.delete({ where: { id } });
+      });
+
+      return { success: true };
+    } catch (e: any) {
+      console.error('deleteUser error:', e);
+      return {
+        success: false,
+        error: e?.message || '删除用户时发生未知错误'
+      };
     }
   },
 

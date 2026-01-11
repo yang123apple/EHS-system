@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -82,6 +83,42 @@ export async function POST(
         where: { id },
         data: { thumbnail: thumbnailPath },
       });
+
+      // 同步到FileMetadata表（用于备份索引）
+      try {
+        const thumbnailFullPath = path.join(publicDir, thumbnailPath);
+        if (fsSync.existsSync(thumbnailFullPath)) {
+          const fsPromises = await import('fs/promises');
+          const buffer = await fsPromises.readFile(thumbnailFullPath);
+          const crypto = await import('crypto');
+          const md5Hash = crypto.createHash('md5').update(buffer).digest('hex');
+          const stats = await fsPromises.stat(thumbnailFullPath);
+
+          await prisma.fileMetadata.upsert({
+            where: { filePath: thumbnailPath },
+            update: {
+              fileName: path.basename(thumbnailPath),
+              fileType: 'jpg',
+              fileSize: stats.size,
+              md5Hash,
+              category: 'thumbnails',
+              uploadedAt: new Date()
+            },
+            create: {
+              filePath: thumbnailPath,
+              fileName: path.basename(thumbnailPath),
+              fileType: 'jpg',
+              fileSize: stats.size,
+              md5Hash,
+              category: 'thumbnails',
+              uploadedAt: new Date()
+            }
+          });
+        }
+      } catch (metaError) {
+        // FileMetadata保存失败不影响主流程，只记录日志
+        console.warn('保存FileMetadata失败（不影响主流程）:', metaError);
+      }
 
       return NextResponse.json({ 
         thumbnail: thumbnailPath,

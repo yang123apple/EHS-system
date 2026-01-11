@@ -24,6 +24,8 @@ export enum LogModule {
   SYSTEM = 'SYSTEM',
   /** 通知中心 */
   NOTIFICATION = 'NOTIFICATION',
+  /** 档案库管理 */
+  ARCHIVE = 'ARCHIVE',
 }
 
 // ============ 操作类型枚举 ============
@@ -202,6 +204,19 @@ export const BusinessActionRegistry = {
     DELETE: 'NTF_DEL_003',             // 删除通知
     BATCH_SEND: 'NTF_BSN_004',         // 批量发送
     UPDATE_TEMPLATE: 'NTF_UTM_005',    // 更新通知模板
+  },
+  
+  // ========== 档案库管理 ==========
+  ARCHIVE: {
+    UPLOAD_ENTERPRISE: 'ARC_UPE_001',  // 上传企业档案
+    UPLOAD_EQUIPMENT: 'ARC_UPD_002',    // 上传设备档案
+    UPLOAD_PERSONNEL: 'ARC_UPP_003',    // 上传人员档案
+    DELETE_FILE: 'ARC_DEL_004',         // 删除档案文件
+    CREATE_EQUIPMENT: 'ARC_CRT_005',    // 创建设备
+    UPDATE_EQUIPMENT: 'ARC_UPD_006',    // 更新设备信息
+    UPDATE_CONFIG: 'ARC_CFG_007',       // 更新档案配置
+    VIEW_FILE: 'ARC_VEW_008',           // 查看档案文件
+    DOWNLOAD_FILE: 'ARC_DWN_009',       // 下载档案文件
   },
 } as const;
 

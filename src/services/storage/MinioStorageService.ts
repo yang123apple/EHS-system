@@ -323,3 +323,6 @@ class MinioStorageService {
 // 导出单例实例
 export const minioStorageService = MinioStorageService.getInstance();
 
+// 导出类（用于类型定义）
+export { MinioStorageService };
+

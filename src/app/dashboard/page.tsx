@@ -2,10 +2,10 @@
 "use client";
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import { 
-  FileSignature, 
-  AlertTriangle, 
-  BarChart3, 
+import {
+  FileSignature,
+  AlertTriangle,
+  BarChart3,
   ArrowRight,
   ShieldCheck,
   FolderOpen,
@@ -13,7 +13,8 @@ import {
   GraduationCap,
   Users,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  Archive
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -27,7 +28,7 @@ export default function Dashboard() {
       key: "work_permit",
       title: "作业许可管理",
       description: "新建工程项目、办理动火/高处/有限空间等电子作业票",
-      href: "/work-permit", 
+      href: "/work-permit",
       icon: FileSignature,
       iconColor: "text-orange-600",
       iconBg: "bg-orange-50",
@@ -55,7 +56,7 @@ export default function Dashboard() {
       key: "doc_sys",
       title: "ESH文档管理系统",
       description: "EHS 手册、程序文件与记录管理",
-      href: "/docs", 
+      href: "/docs",
       icon: FolderOpen,
       iconColor: "text-indigo-600",
       iconBg: "bg-indigo-50",
@@ -69,7 +70,7 @@ export default function Dashboard() {
       key: "training",
       title: "培训管理系统",
       description: "在线培训、考试管理与学习进度跟踪",
-      href: "/training/my-tasks", 
+      href: "/training/my-tasks",
       icon: GraduationCap,
       iconColor: "text-green-600",
       iconBg: "bg-green-50",
@@ -83,7 +84,7 @@ export default function Dashboard() {
       key: "data_dashboard",
       title: "EHS 数据看板",
       description: "实时监控安全生产指标与趋势分析",
-      href: "#", 
+      href: "#",
       icon: BarChart3,
       iconColor: "text-purple-600",
       iconBg: "bg-purple-50",
@@ -92,12 +93,38 @@ export default function Dashboard() {
       hoverBg: "group-hover:bg-purple-50/50",
       status: "开发中",
       statusColor: "default" as const
+    },
+    {
+      key: "archives",
+      title: "EHS 档案库",
+      description: "企业证照、人员资质、设备检修档案管理",
+      href: "/archives",
+      icon: Archive,
+      iconColor: "text-teal-600",
+      iconBg: "bg-teal-50",
+      borderColor: "border-teal-200",
+      hoverBorder: "group-hover:border-teal-300",
+      hoverBg: "group-hover:bg-teal-50/50",
+      status: "正常",
+      statusColor: "success" as const
     }
   ];
 
   const visibleModules = modules.filter(item => {
-      if (user?.role === 'admin') return true;
-      return user?.permissions && user.permissions[item.key] !== undefined;
+    if (user?.role === 'admin') return true;
+    if (!user?.permissions) return false;
+
+    let perms = user.permissions;
+    // Handle case where permissions is a JSON string
+    if (typeof perms === 'string') {
+      try {
+        perms = JSON.parse(perms);
+      } catch (e) {
+        return false;
+      }
+    }
+
+    return perms[item.key] !== undefined;
   });
 
   return (
@@ -106,13 +133,13 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
-            <ShieldCheck className="text-blue-600 w-6 h-6"/>
+            <ShieldCheck className="text-blue-600 w-6 h-6" />
             <span>EHS 安全管理工作台</span>
           </h1>
           <p className="text-sm text-slate-500 mt-1.5">欢迎回来，{user?.name || '用户'}，请选择您要处理的业务模块</p>
         </div>
         <div className="text-xs text-slate-500 font-mono bg-white px-3 py-1.5 rounded-md border border-slate-200">
-           {new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}
+          {new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}
         </div>
       </div>
 
@@ -121,8 +148,8 @@ export default function Dashboard() {
         {visibleModules.map((item) => {
           const IconComponent = item.icon;
           return (
-            <Link 
-              key={item.key} 
+            <Link
+              key={item.key}
               href={item.href}
               className="group block"
             >
@@ -139,8 +166,8 @@ export default function Dashboard() {
                     <div className={cn("p-2 rounded-lg", item.iconBg)}>
                       <IconComponent className={cn("w-4 h-4", item.iconColor)} />
                     </div>
-                    <Badge 
-                      variant={item.statusColor} 
+                    <Badge
+                      variant={item.statusColor}
                       className="text-[10px] px-1.5 py-0.5 h-5 font-medium"
                     >
                       {item.status}
@@ -183,7 +210,7 @@ export default function Dashboard() {
             <Card className="h-[170px] bg-gradient-to-br from-slate-900 to-slate-800 border-slate-700 hover:border-blue-600/50 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 relative overflow-hidden">
               {/* Background Glow */}
               <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
-              
+
               <CardContent className="p-4 h-full flex flex-col relative z-10">
                 <div className="flex items-start justify-between mb-3">
                   <div className="bg-slate-800/50 p-2 rounded-lg border border-slate-700 text-blue-400">
@@ -219,33 +246,33 @@ export default function Dashboard() {
       <div className="pt-6 border-t border-slate-200">
         <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">实时概览</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard 
-            label="进行中作业" 
-            value="3" 
-            unit="个" 
-            icon={<FileSignature className="w-4 h-4 text-orange-500" />} 
+          <StatCard
+            label="进行中作业"
+            value="3"
+            unit="个"
+            icon={<FileSignature className="w-4 h-4 text-orange-500" />}
             trend="+1"
             trendType="up"
           />
-          <StatCard 
-            label="待审批单据" 
-            value="12" 
-            unit="条" 
-            color="text-orange-600" 
-            icon={<AlertTriangle className="w-4 h-4 text-orange-500" />} 
+          <StatCard
+            label="待审批单据"
+            value="12"
+            unit="条"
+            color="text-orange-600"
+            icon={<AlertTriangle className="w-4 h-4 text-orange-500" />}
           />
-          <StatCard 
-            label="本月隐患" 
-            value="0" 
-            unit="起" 
-            color="text-green-600" 
-            icon={<ShieldCheck className="w-4 h-4 text-green-500" />} 
+          <StatCard
+            label="本月隐患"
+            value="0"
+            unit="起"
+            color="text-green-600"
+            icon={<ShieldCheck className="w-4 h-4 text-green-500" />}
           />
-          <StatCard 
-            label="在线人员" 
-            value="45" 
-            unit="人" 
-            icon={<Users className="w-4 h-4 text-blue-500" />} 
+          <StatCard
+            label="在线人员"
+            value="45"
+            unit="人"
+            icon={<Users className="w-4 h-4 text-blue-500" />}
           />
         </div>
       </div>
@@ -279,8 +306,8 @@ function StatCard({ label, value, unit, color = "text-slate-900", icon, trend, t
           {trend && (
             <div className={cn(
               "ml-auto flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded",
-              trendType === "up" 
-                ? "text-green-600 bg-green-50" 
+              trendType === "up"
+                ? "text-green-600 bg-green-50"
                 : "text-red-600 bg-red-50"
             )}>
               {trendType === "up" ? (

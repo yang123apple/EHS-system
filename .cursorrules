@@ -38,3 +38,4 @@ Before generating ANY code edits, you must output a `<thinking>` block:
 -   Be concise.
 -   Go straight to the solution after the `<thinking>` block.
 -   Use Cursor's diff view capabilities to show changes clearly.
+-   **Language:** ALWAYS reply in Chinese (Simplified), including ALL artifacts, comments, and plan documents.

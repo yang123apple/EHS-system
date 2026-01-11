@@ -202,9 +202,27 @@ model Document {
   uploader   String?
   uploadTime DateTime @default(now())
   searchText String?
+  
+  // 🟢 EHS Archive Fields
+  archiveCategory String?   // 'enterprise', 'equipment', 'personnel'
+  expiryDate      DateTime? // License/Certificate expiration date
+  warningDays     Int       @default(30) // Days before expiry to warn
+  entityId        String?   // Link to User.id or Equipment ID
+  
+  tags            Tag[]     @relation("DocumentTags")
+  
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   history    DocumentHistory[]
+}
+
+model Tag {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  color     String     @default("#blue") // UI display color
+  documents Document[] @relation("DocumentTags")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 }
 
 model DocumentHistory {
@@ -527,3 +545,67 @@ model SubPermit {
   @@index([status])
   @@index([createdAt])
 }
+
+// ============ EHS 档案库系统 ============
+
+// 设备档案
+model Equipment {
+  id                String    @id @default(cuid())
+  name              String    // 设备名称
+  code              String    @unique // 设备编号
+  description       String?   // 设备描述
+  startDate         DateTime  // 启用日期
+  expectedEndDate   DateTime? // 预计报废日期
+  isSpecialEquip    Boolean   @default(false) // 是否特种设备
+  inspectionCycle   Int?      // 定检周期（月）
+  lastInspection    DateTime? // 上次定检日期
+  nextInspection    DateTime? // 下次定检日期
+  status            String    @default("active") // active, disposed, under_maintenance
+  files             ArchiveFile[] @relation("EquipmentFiles")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([status])
+  @@index([isSpecialEquip])
+  @@index([nextInspection])
+}
+
+// 档案文件（通用）
+model ArchiveFile {
+  id            String    @id @default(cuid())
+  name          String    // 显示名称
+  fileType      String    // 文件类型分类（从配置库选择）
+  isDynamic     Boolean   @default(false) // 静态/动态资料
+  description   String?   // 文件描述
+  filePath      String    // MinIO 存储路径（格式：bucket:key）
+  originalName  String    // 原始文件名
+  mimeType      String    // MIME 类型
+  fileSize      Int       // 文件大小（字节）
+  
+  // 关联分类（三选一）
+  category      String    // 'enterprise' | 'equipment' | 'personnel'
+  equipmentId   String?
+  equipment     Equipment? @relation("EquipmentFiles", fields: [equipmentId], references: [id], onDelete: Cascade)
+  userId        String?   // 关联 User.id（一人一档）
+  
+  uploaderId    String?   // 上传者ID
+  uploaderName  String?   // 上传者姓名
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([category])
+  @@index([equipmentId])
+  @@index([userId])
+  @@index([fileType])
+  @@index([createdAt])
+}
+
+// 档案系统配置
+model ArchiveConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique // watermark, enterprise_types, equipment_types, personnel_types
+  value     String   // JSON 格式存储
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+

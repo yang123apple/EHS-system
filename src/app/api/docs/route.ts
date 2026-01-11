@@ -6,6 +6,7 @@ import mammoth from 'mammoth'; // 用于提取 Word 文本
 import * as XLSX from 'xlsx';  // 用于提取 Excel 文本
 import { prisma } from '@/lib/prisma';
 import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
+import crypto from 'crypto';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'docs');
 
@@ -158,10 +159,52 @@ export const POST = withErrorHandling(
     const fileId = Date.now().toString(36);
     const safeFileName = `${ext.toUpperCase()}-${fileId}.${ext}`;
     const buffer = Buffer.from(await file.arrayBuffer());
+    const filePath = path.join(UPLOAD_DIR, safeFileName);
+    const relativePath = `/uploads/docs/${safeFileName}`;
+    let fileWritten = false;
     
     try {
-      fs.writeFileSync(path.join(UPLOAD_DIR, safeFileName), buffer);
+      fs.writeFileSync(filePath, buffer);
+      fileWritten = true;
+
+      // 同步到FileMetadata表（用于备份索引）
+      try {
+        const md5Hash = crypto.createHash('md5').update(buffer).digest('hex');
+        await prisma.fileMetadata.upsert({
+          where: { filePath: relativePath },
+          update: {
+            fileName: file.name,
+            fileType: ext,
+            fileSize: file.size,
+            md5Hash,
+            category: 'docs',
+            uploaderId: user?.id,
+            uploadedAt: new Date()
+          },
+          create: {
+            filePath: relativePath,
+            fileName: file.name,
+            fileType: ext,
+            fileSize: file.size,
+            md5Hash,
+            category: 'docs',
+            uploaderId: user?.id,
+            uploadedAt: new Date()
+          }
+        });
+      } catch (metaError) {
+        // FileMetadata保存失败不影响主流程，只记录日志
+        console.warn('保存FileMetadata失败（不影响主流程）:', metaError);
+      }
     } catch (ioError) {
+      // 如果文件写入失败，清理可能已写入的文件
+      if (fileWritten && fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (cleanupError) {
+          console.error('清理文件失败:', cleanupError);
+        }
+      }
       return NextResponse.json({ error: '服务器写入文件失败' }, { status: 500 });
     }
 

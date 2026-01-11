@@ -134,6 +134,9 @@ export const TargetTypeLabels: Record<string, string> = {
   'notification': '通知',
   'template': '模板',
   'workflow': '工作流',
+  'archive_file': '档案文件',
+  'equipment': '设备',
+  'archive_config': '档案配置',
 };
 
 /**
