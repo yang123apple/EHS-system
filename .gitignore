@@ -37,6 +37,12 @@ prisma/*.db
 
 # MinIO data (CRITICAL!)
 data/
+# 但允许提交核心配置数据和恢复脚本
+!data/core_data/
+!data/*.py
+!data/*.js
+!data/*.txt
+!data/*.md
 
 # IDE
 .vscode/
