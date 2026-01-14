@@ -1,0 +1,194 @@
+{
+  "version": "1.0.0",
+  "backupTime": "2026-01-13T11:04:59.237Z",
+  "backupTimestamp": 1768302299248,
+  "databaseType": "SQLite (Prisma)",
+  "tables": [
+    {
+      "name": "user",
+      "recordCount": 89,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "department",
+      "recordCount": 18,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "project",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "workPermitTemplate",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "workPermitRecord",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "hazardRecord",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "hazardExtension",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "hazardConfig",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "incident",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "document",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "tag",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "documentHistory",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "systemLog",
+      "recordCount": 28,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "notification",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "trainingMaterial",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "examQuestion",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "trainingTask",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "autoAssignRule",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "trainingAssignment",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "materialLearnedRecord",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "notificationTemplate",
+      "recordCount": 13,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "aIApiConfig",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "aIApiLog",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "aIApiRateLimit",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "fileMetadata",
+      "recordCount": 18,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "signatureRecord",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "subPermit",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "equipment",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "archiveFile",
+      "recordCount": 18,
+      "status": "success",
+      "error": null
+    },
+    {
+      "name": "archiveConfig",
+      "recordCount": 0,
+      "status": "success",
+      "error": null
+    }
+  ],
+  "summary": {
+    "totalTables": 30,
+    "totalRecords": 184,
+    "successTables": 30,
+    "failedTables": 0
+  }
+}
