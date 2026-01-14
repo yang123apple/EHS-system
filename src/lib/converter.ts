@@ -40,10 +40,11 @@ export async function convertToPdf(inputPath: string, originalFilename: string):
             libreOfficeCmd = `"${cmdPath}"`;
             break;
           } else {
-            // 检查命令是否在PATH中
-            await execAsync(`where ${cmdPath}`).catch(() => 
-              execAsync(`which ${cmdPath}`)
-            );
+            // 检查命令是否在PATH中（跨平台）
+            const os = await import('os');
+            const isWindows = os.platform() === 'win32';
+            const checkCmd = isWindows ? `where ${cmdPath}` : `which ${cmdPath}`;
+            await execAsync(checkCmd);
             libreOfficeCmd = cmdPath;
             break;
           }
