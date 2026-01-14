@@ -10,7 +10,7 @@ export type CreateArchiveParams = {
   level: number;
   dept?: string;
   uploader?: string;
-  archiveCategory: 'enterprise' | 'equipment' | 'personnel';
+  archiveCategory: 'enterprise' | 'equipment' | 'personnel' | 'msds';
   expiryDate?: Date;
   warningDays?: number;
   entityId?: string;

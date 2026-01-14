@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { FileText, Download, Trash2, Eye, Clock, User } from 'lucide-react';
+import { FileText, Download, Trash2, Eye, Clock, User, Edit } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface ArchiveFile {
@@ -22,9 +22,10 @@ interface ArchiveFileCardProps {
     file: ArchiveFile;
     onDelete?: (id: string) => void;
     onPreview?: (file: ArchiveFile) => void;
+    onEdit?: (file: ArchiveFile) => void;
 }
 
-export default function ArchiveFileCard({ file, onDelete, onPreview }: ArchiveFileCardProps) {
+export default function ArchiveFileCard({ file, onDelete, onPreview, onEdit }: ArchiveFileCardProps) {
     const getFileIcon = () => {
         if (file.mimeType.includes('pdf')) return <FileText size={32} className="text-red-500" />;
         if (file.mimeType.includes('word')) return <FileText size={32} className="text-blue-500" />;
@@ -106,6 +107,15 @@ export default function ArchiveFileCard({ file, onDelete, onPreview }: ArchiveFi
                 >
                     <Download size={16} />
                 </button>
+                {onEdit && (
+                    <button
+                        onClick={() => onEdit(file)}
+                        className="p-2 hover:bg-blue-50 rounded-lg text-slate-500 hover:text-blue-600"
+                        title="编辑"
+                    >
+                        <Edit size={16} />
+                    </button>
+                )}
                 {onDelete && (
                     <button
                         onClick={() => {

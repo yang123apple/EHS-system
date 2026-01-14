@@ -4,7 +4,10 @@ import React from 'react';
 import { X, Plus, User } from 'lucide-react';
 import ArchiveFileCard from './ArchiveFileCard';
 import FileUploadModal from './FileUploadModal';
+import FileEditModal from './FileEditModal';
 import { apiFetch } from '@/lib/apiClient';
+import { useAuth } from '@/context/AuthContext';
+import { PermissionManager } from '@/lib/permissions';
 
 interface Personnel {
     id: string;
@@ -13,6 +16,7 @@ interface Personnel {
     avatar?: string;
     jobTitle?: string;
     department: string;
+    isActive?: boolean; // 🟢 在职状态
 }
 
 interface ArchiveFile {
@@ -36,13 +40,20 @@ interface PersonnelDetailModalProps {
 }
 
 export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: PersonnelDetailModalProps) {
+    const { user } = useAuth();
     const [personnel, setPersonnel] = React.useState<Personnel | null>(null);
     const [files, setFiles] = React.useState<ArchiveFile[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [showUploadModal, setShowUploadModal] = React.useState(false);
+    const [showEditModal, setShowEditModal] = React.useState(false);
+    const [editingFile, setEditingFile] = React.useState<ArchiveFile | null>(null);
     const [fileTypes, setFileTypes] = React.useState<string[]>([]);
     const [page, setPage] = React.useState(1);
     const [totalPages, setTotalPages] = React.useState(1);
+
+    // 权限检查
+    const canUpload = PermissionManager.hasPermission(user, 'archives', 'personnel_upload');
+    const canDelete = PermissionManager.hasPermission(user, 'archives', 'personnel_delete');
 
     React.useEffect(() => {
         if (isOpen && personnelId) {
@@ -51,6 +62,13 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
             loadConfig();
         }
     }, [isOpen, personnelId, page]);
+
+    // 当上传弹窗打开时，重新加载文件类型配置，确保获取最新的文件类型库
+    React.useEffect(() => {
+        if (showUploadModal) {
+            loadConfig();
+        }
+    }, [showUploadModal]);
 
     const loadConfig = async () => {
         try {
@@ -121,6 +139,17 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
         }
     };
 
+    const handleEdit = (file: ArchiveFile) => {
+        setEditingFile(file);
+        setShowEditModal(true);
+    };
+
+    const handleEditSuccess = async () => {
+        await loadFiles();
+        setShowEditModal(false);
+        setEditingFile(null);
+    };
+
     if (!isOpen || !personnel) return null;
 
     return (
@@ -129,19 +158,41 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
                 <div className="bg-white rounded-xl w-full max-w-4xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
                     <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
                         <div className="flex items-center gap-3">
-                            <div className="p-2 bg-green-50 rounded-lg">
+                            <div className={`p-2 rounded-lg ${
+                                personnel.isActive !== false 
+                                    ? 'bg-green-50' 
+                                    : 'bg-slate-100'
+                            }`}>
                                 {personnel.avatar ? (
                                     <img
                                         src={personnel.avatar}
                                         alt={personnel.name}
-                                        className="w-10 h-10 rounded-full object-cover"
+                                        className={`w-10 h-10 rounded-full object-cover ${
+                                            personnel.isActive === false 
+                                                ? 'grayscale opacity-60' 
+                                                : ''
+                                        }`}
                                     />
                                 ) : (
-                                    <User size={24} className="text-green-600" />
+                                    <User 
+                                        size={24} 
+                                        className={
+                                            personnel.isActive !== false 
+                                                ? 'text-green-600' 
+                                                : 'text-slate-400'
+                                        } 
+                                    />
                                 )}
                             </div>
                             <div>
-                                <h2 className="text-lg font-bold text-slate-900">{personnel.name}</h2>
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-lg font-bold text-slate-900">{personnel.name}</h2>
+                                    {personnel.isActive === false && (
+                                        <span className="px-2 py-0.5 text-xs bg-slate-200 text-slate-600 rounded-full">
+                                            离职
+                                        </span>
+                                    )}
+                                </div>
                                 <p className="text-xs text-slate-500">{personnel.username}</p>
                             </div>
                         </div>
@@ -173,19 +224,31 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
                                     <span className="text-slate-500">部门:</span>
                                     <span className="ml-2 text-slate-900">{personnel.department}</span>
                                 </div>
+                                <div>
+                                    <span className="text-slate-500">在职状态:</span>
+                                    <span className={`ml-2 font-medium ${
+                                        personnel.isActive !== false 
+                                            ? 'text-green-600' 
+                                            : 'text-slate-500'
+                                    }`}>
+                                        {personnel.isActive !== false ? '在职' : '离职'}
+                                    </span>
+                                </div>
                             </div>
                         </div>
 
                         {/* 档案文件 */}
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="font-semibold text-slate-900">档案文件 ({files.length})</h3>
-                            <button
-                                onClick={() => setShowUploadModal(true)}
-                                className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                            >
-                                <Plus size={16} />
-                                <span>上传文件</span>
-                            </button>
+                            {canUpload && (
+                                <button
+                                    onClick={() => setShowUploadModal(true)}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                                >
+                                    <Plus size={16} />
+                                    <span>上传文件</span>
+                                </button>
+                            )}
                         </div>
 
                         {loading ? (
@@ -201,7 +264,7 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
                                     <ArchiveFileCard
                                         key={file.id}
                                         file={file}
-                                        onDelete={handleDelete}
+                                        onDelete={canDelete ? handleDelete : undefined}
                                     />
                                 ))}
                             </div>
@@ -237,6 +300,18 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
                 onUpload={handleUpload}
                 fileTypes={fileTypes}
                 title="上传人员档案文件"
+            />
+
+            <FileEditModal
+                isOpen={showEditModal}
+                onClose={() => {
+                    setShowEditModal(false);
+                    setEditingFile(null);
+                }}
+                file={editingFile}
+                fileTypes={fileTypes}
+                onSuccess={handleEditSuccess}
+                title="编辑人员档案文件"
             />
         </>
     );

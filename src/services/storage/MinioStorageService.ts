@@ -4,7 +4,7 @@
  * 
  * 设计原则：
  * - 大文件必须使用 Presigned URL 直传，避免流经 Node.js 服务器
- * - 小文件（<10MB）可以使用服务端上传
+ * - 小文件（<50MB）可以使用服务端上传
  * - 自动管理 Bucket 策略和生命周期
  */
 
@@ -42,7 +42,7 @@ class MinioStorageService {
   private static instance: MinioStorageService;
 
   // 文件大小阈值：超过此大小必须使用 Presigned URL
-  private readonly PRESIGNED_UPLOAD_THRESHOLD = 10 * 1024 * 1024; // 10MB
+  private readonly PRESIGNED_UPLOAD_THRESHOLD = 50 * 1024 * 1024; // 50MB
 
   // 预签名 URL 默认过期时间（秒）
   private readonly DEFAULT_PRESIGNED_EXPIRES = 7 * 24 * 60 * 60; // 7天
@@ -136,7 +136,7 @@ class MinioStorageService {
   /**
    * 服务端上传文件（仅用于小文件）
    * 
-   * 注意：大文件（>10MB）应该使用 Presigned URL 直传
+   * 注意：大文件（>50MB）应该使用 Presigned URL 直传
    * 
    * @param bucket 存储桶类型
    * @param objectName 对象键

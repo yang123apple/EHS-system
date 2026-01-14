@@ -5,7 +5,10 @@ import { X, Plus, Calendar, Settings, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import ArchiveFileCard from './ArchiveFileCard';
 import FileUploadModal from './FileUploadModal';
+import FileEditModal from './FileEditModal';
 import { apiFetch } from '@/lib/apiClient';
+import { useAuth } from '@/context/AuthContext';
+import { PermissionManager } from '@/lib/permissions';
 
 interface Equipment {
     id: string;
@@ -43,13 +46,21 @@ interface EquipmentDetailModalProps {
 }
 
 export default function EquipmentDetailModal({ isOpen, onClose, equipmentId, onUpdate }: EquipmentDetailModalProps) {
+    const { user } = useAuth();
     const [equipment, setEquipment] = React.useState<Equipment | null>(null);
     const [files, setFiles] = React.useState<ArchiveFile[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [showUploadModal, setShowUploadModal] = React.useState(false);
+    const [showEditModal, setShowEditModal] = React.useState(false);
+    const [editingFile, setEditingFile] = React.useState<ArchiveFile | null>(null);
     const [fileTypes, setFileTypes] = React.useState<string[]>([]);
     const [page, setPage] = React.useState(1);
     const [totalPages, setTotalPages] = React.useState(1);
+
+    // 权限检查
+    const canUpload = PermissionManager.hasPermission(user, 'archives', 'equipment_upload');
+    const canDelete = PermissionManager.hasPermission(user, 'archives', 'equipment_delete');
+    const canEdit = PermissionManager.hasPermission(user, 'archives', 'equipment_edit');
 
     React.useEffect(() => {
         if (isOpen && equipmentId) {
@@ -58,6 +69,13 @@ export default function EquipmentDetailModal({ isOpen, onClose, equipmentId, onU
             loadConfig();
         }
     }, [isOpen, equipmentId, page]);
+
+    // 当上传弹窗打开时，重新加载文件类型配置，确保获取最新的文件类型库
+    React.useEffect(() => {
+        if (showUploadModal) {
+            loadConfig();
+        }
+    }, [showUploadModal]);
 
     const loadConfig = async () => {
         try {
@@ -128,6 +146,17 @@ export default function EquipmentDetailModal({ isOpen, onClose, equipmentId, onU
             console.error('删除失败', e);
             alert('删除失败');
         }
+    };
+
+    const handleEdit = (file: ArchiveFile) => {
+        setEditingFile(file);
+        setShowEditModal(true);
+    };
+
+    const handleEditSuccess = async () => {
+        await loadFiles();
+        setShowEditModal(false);
+        setEditingFile(null);
     };
 
     if (!isOpen || !equipment) return null;
@@ -213,13 +242,15 @@ export default function EquipmentDetailModal({ isOpen, onClose, equipmentId, onU
                         {/* 档案文件 */}
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="font-semibold text-slate-900">档案文件 ({files.length})</h3>
-                            <button
-                                onClick={() => setShowUploadModal(true)}
-                                className="flex items-center gap-2 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
-                            >
-                                <Plus size={16} />
-                                <span>上传文件</span>
-                            </button>
+                            {canUpload && (
+                                <button
+                                    onClick={() => setShowUploadModal(true)}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
+                                >
+                                    <Plus size={16} />
+                                    <span>上传文件</span>
+                                </button>
+                            )}
                         </div>
 
                         {loading ? (
@@ -235,7 +266,8 @@ export default function EquipmentDetailModal({ isOpen, onClose, equipmentId, onU
                                     <ArchiveFileCard
                                         key={file.id}
                                         file={file}
-                                        onDelete={handleDelete}
+                                        onDelete={canDelete ? handleDelete : undefined}
+                                        onEdit={canEdit ? handleEdit : undefined}
                                     />
                                 ))}
                             </div>
@@ -271,6 +303,18 @@ export default function EquipmentDetailModal({ isOpen, onClose, equipmentId, onU
                 onUpload={handleUpload}
                 fileTypes={fileTypes}
                 title="上传设备档案文件"
+            />
+
+            <FileEditModal
+                isOpen={showEditModal}
+                onClose={() => {
+                    setShowEditModal(false);
+                    setEditingFile(null);
+                }}
+                file={editingFile}
+                fileTypes={fileTypes}
+                onSuccess={handleEditSuccess}
+                title="编辑设备档案文件"
             />
         </>
     );

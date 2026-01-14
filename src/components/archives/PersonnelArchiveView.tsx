@@ -3,7 +3,11 @@
 import React from 'react';
 import { User } from 'lucide-react';
 import PersonnelCard from './PersonnelCard';
+import Pagination from './Pagination';
 import { apiFetch } from '@/lib/apiClient';
+import { useAuth } from '@/context/AuthContext';
+import { PermissionManager } from '@/lib/permissions';
+import { PermissionDenied } from '@/components/common/PermissionDenied';
 
 interface Personnel {
     id: string;
@@ -13,15 +17,33 @@ interface Personnel {
     jobTitle?: string;
     department: string;
     fileCount: number;
+    isActive?: boolean; // 🟢 在职状态
 }
 
 export default function PersonnelArchiveView() {
+    const { user } = useAuth();
     const [personnelList, setPersonnelList] = React.useState<Personnel[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [page, setPage] = React.useState(1);
     const [totalPages, setTotalPages] = React.useState(1);
     const [total, setTotal] = React.useState(0);
     const [searchQuery, setSearchQuery] = React.useState('');
+
+    // 权限检查
+    const canView = PermissionManager.hasPermission(user, 'archives', 'personnel_view') || 
+                    PermissionManager.hasPermission(user, 'archives', 'access');
+
+    // 如果没有查看权限，显示权限不足提示
+    if (!canView) {
+        return (
+            <div className="p-6 h-full flex items-center justify-center">
+                <PermissionDenied 
+                    action="查看一人一档库"
+                    requiredPermission="archives.personnel_view"
+                />
+            </div>
+        );
+    }
 
     React.useEffect(() => {
         loadPersonnel();
@@ -91,29 +113,13 @@ export default function PersonnelArchiveView() {
                     </div>
 
                     {/* 分页 */}
-                    {totalPages > 1 && (
-                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-200">
-                            <div className="text-sm text-slate-500">
-                                共 {total} 个人员，第 {page} / {totalPages} 页
-                            </div>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setPage(Math.max(1, page - 1))}
-                                    disabled={page === 1}
-                                    className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    上一页
-                                </button>
-                                <button
-                                    onClick={() => setPage(Math.min(totalPages, page + 1))}
-                                    disabled={page === totalPages}
-                                    className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    下一页
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                    <Pagination
+                        currentPage={page}
+                        totalPages={totalPages}
+                        total={total}
+                        onPageChange={setPage}
+                        itemName="人员"
+                    />
                 </>
             )}
         </div>

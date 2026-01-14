@@ -12,6 +12,7 @@ interface Personnel {
     jobTitle?: string;
     department: string;
     fileCount: number;
+    isActive?: boolean; // 🟢 在职状态
 }
 
 interface PersonnelCardProps {
@@ -28,15 +29,30 @@ export default function PersonnelCard({ personnel }: PersonnelCardProps) {
                 className="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow cursor-pointer"
             >
                 <div className="flex items-start gap-3">
-                    <div className="p-2 bg-green-50 rounded-lg shrink-0">
+                    <div className={`p-2 rounded-lg shrink-0 ${
+                        personnel.isActive !== false 
+                            ? 'bg-green-50' 
+                            : 'bg-slate-100'
+                    }`}>
                         {personnel.avatar ? (
                             <img
                                 src={personnel.avatar}
                                 alt={personnel.name}
-                                className="w-10 h-10 rounded-full object-cover"
+                                className={`w-10 h-10 rounded-full object-cover ${
+                                    personnel.isActive === false 
+                                        ? 'grayscale opacity-60' 
+                                        : ''
+                                }`}
                             />
                         ) : (
-                            <UserIcon size={24} className="text-green-600" />
+                            <UserIcon 
+                                size={24} 
+                                className={
+                                    personnel.isActive !== false 
+                                        ? 'text-green-600' 
+                                        : 'text-slate-400'
+                                } 
+                            />
                         )}
                     </div>
                     <div className="flex-1 min-w-0">

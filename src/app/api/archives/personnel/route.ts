@@ -1,10 +1,13 @@
 // src/app/api/archives/personnel/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { withAuth } from '@/middleware/auth';
+import { requirePermission } from '@/middleware/auth';
 
 // GET: 获取人员列表（从用户表读取）
-export const GET = withAuth(async (req: NextRequest) => {
+export async function GET(req: NextRequest) {
+    const permResult = await requirePermission(req, 'archives', 'personnel_view');
+    if (permResult instanceof NextResponse) return permResult;
+    
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '12');
@@ -40,6 +43,7 @@ export const GET = withAuth(async (req: NextRequest) => {
                 name: true,
                 avatar: true,
                 jobTitle: true,
+                isActive: true, // 🟢 包含在职状态
                 department: {
                     select: { name: true }
                 }
@@ -71,4 +75,4 @@ export const GET = withAuth(async (req: NextRequest) => {
             totalPages: Math.ceil(total / limit)
         }
     });
-});
+}

@@ -18,6 +18,7 @@ export interface User {
   jobTitle?: string;
   directManagerId?: string;
   permissions: UserPermissions;
+  isActive?: boolean; // 在职状态：true=在职，false=离职，默认true
 }
 
 export interface DepartmentNode {

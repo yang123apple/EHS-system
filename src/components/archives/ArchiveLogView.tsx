@@ -101,6 +101,7 @@ export default function ArchiveLogView() {
       'archive_file': '档案文件',
       'equipment': '设备',
       'archive_config': '档案配置',
+      'config': '档案配置', // 兼容旧数据中的 'config' 值
     };
     return labelMap[type || ''] || type || '未知';
   };

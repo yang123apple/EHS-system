@@ -25,6 +25,12 @@ export async function POST(req: Request) {
 
     // 使用 bcrypt 验证密码哈希
     const isPasswordValid = user && user.password && await bcrypt.compare(password, user.password);
+    
+    // 🟢 检查用户是否在职（离职用户无法登录）
+    if (user && user.isActive === false) {
+      return NextResponse.json({ error: '该账号已离职，无法登录系统' }, { status: 403 });
+    }
+    
     if (isPasswordValid) {
         // 检测是否为首次登录：查询历史登录日志数量
         try {

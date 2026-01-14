@@ -4,7 +4,12 @@ import React from 'react';
 import { Plus } from 'lucide-react';
 import ArchiveFileCard from './ArchiveFileCard';
 import FileUploadModal from './FileUploadModal';
+import FileEditModal from './FileEditModal';
+import Pagination from './Pagination';
 import { apiFetch } from '@/lib/apiClient';
+import { useAuth } from '@/context/AuthContext';
+import { PermissionManager } from '@/lib/permissions';
+import { PermissionDenied } from '@/components/common/PermissionDenied';
 
 interface ArchiveFile {
     id: string;
@@ -21,18 +26,48 @@ interface ArchiveFile {
 }
 
 export default function EnterpriseArchiveView() {
+    const { user } = useAuth();
     const [files, setFiles] = React.useState<ArchiveFile[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [showUploadModal, setShowUploadModal] = React.useState(false);
+    const [showEditModal, setShowEditModal] = React.useState(false);
+    const [editingFile, setEditingFile] = React.useState<ArchiveFile | null>(null);
     const [fileTypes, setFileTypes] = React.useState<string[]>([]);
     const [page, setPage] = React.useState(1);
     const [totalPages, setTotalPages] = React.useState(1);
     const [total, setTotal] = React.useState(0);
+    const [searchQuery, setSearchQuery] = React.useState('');
+
+    // 权限检查
+    const canView = PermissionManager.hasPermission(user, 'archives', 'enterprise_view') || 
+                    PermissionManager.hasPermission(user, 'archives', 'access');
+    const canUpload = PermissionManager.hasPermission(user, 'archives', 'enterprise_upload');
+    const canDelete = PermissionManager.hasPermission(user, 'archives', 'enterprise_delete');
+    const canEdit = PermissionManager.hasPermission(user, 'archives', 'enterprise_edit');
+
+    // 如果没有查看权限，显示权限不足提示
+    if (!canView) {
+        return (
+            <div className="p-6 h-full flex items-center justify-center">
+                <PermissionDenied 
+                    action="查看一企一档库"
+                    requiredPermission="archives.enterprise_view"
+                />
+            </div>
+        );
+    }
 
     React.useEffect(() => {
         loadConfig();
         loadFiles();
-    }, [page]);
+    }, [page, searchQuery]);
+
+    // 当上传弹窗打开时，重新加载文件类型配置，确保获取最新的文件类型库
+    React.useEffect(() => {
+        if (showUploadModal) {
+            loadConfig();
+        }
+    }, [showUploadModal]);
 
     const loadConfig = async () => {
         try {
@@ -47,7 +82,14 @@ export default function EnterpriseArchiveView() {
     const loadFiles = async () => {
         try {
             setLoading(true);
-            const res = await apiFetch(`/api/archives/enterprise?page=${page}&limit=12`);
+            const params = new URLSearchParams({
+                page: page.toString(),
+                limit: '12'
+            });
+            if (searchQuery) {
+                params.append('q', searchQuery);
+            }
+            const res = await apiFetch(`/api/archives/enterprise?${params}`);
             const data = await res.json();
             setFiles(data.data || []);
             setTotalPages(data.meta?.totalPages || 1);
@@ -94,17 +136,42 @@ export default function EnterpriseArchiveView() {
         }
     };
 
+    const handleEdit = (file: ArchiveFile) => {
+        setEditingFile(file);
+        setShowEditModal(true);
+    };
+
+    const handleEditSuccess = async () => {
+        await loadFiles();
+        setShowEditModal(false);
+        setEditingFile(null);
+    };
+
     return (
         <div className="p-6 h-full flex flex-col">
             <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-semibold text-slate-900">一企一档</h2>
-                <button
-                    onClick={() => setShowUploadModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                    <Plus size={18} />
-                    <span>上传文件</span>
-                </button>
+                <div className="flex items-center gap-3">
+                    <input
+                        type="text"
+                        placeholder="搜索文件名称或描述..."
+                        value={searchQuery}
+                        onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            setPage(1);
+                        }}
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-64"
+                    />
+                    {canUpload && (
+                        <button
+                            onClick={() => setShowUploadModal(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                            <Plus size={18} />
+                            <span>上传文件</span>
+                        </button>
+                    )}
+                </div>
             </div>
 
             {loading ? (
@@ -127,36 +194,21 @@ export default function EnterpriseArchiveView() {
                                 <ArchiveFileCard
                                     key={file.id}
                                     file={file}
-                                    onDelete={handleDelete}
+                                    onDelete={canDelete ? handleDelete : undefined}
+                                    onEdit={canEdit ? handleEdit : undefined}
                                 />
                             ))}
                         </div>
                     </div>
 
                     {/* 分页 */}
-                    {totalPages > 1 && (
-                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-200">
-                            <div className="text-sm text-slate-500">
-                                共 {total} 个文件，第 {page} / {totalPages} 页
-                            </div>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setPage(Math.max(1, page - 1))}
-                                    disabled={page === 1}
-                                    className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    上一页
-                                </button>
-                                <button
-                                    onClick={() => setPage(Math.min(totalPages, page + 1))}
-                                    disabled={page === totalPages}
-                                    className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    下一页
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                    <Pagination
+                        currentPage={page}
+                        totalPages={totalPages}
+                        total={total}
+                        onPageChange={setPage}
+                        itemName="文件"
+                    />
                 </>
             )}
 
@@ -166,6 +218,18 @@ export default function EnterpriseArchiveView() {
                 onUpload={handleUpload}
                 fileTypes={fileTypes}
                 title="上传企业档案文件"
+            />
+
+            <FileEditModal
+                isOpen={showEditModal}
+                onClose={() => {
+                    setShowEditModal(false);
+                    setEditingFile(null);
+                }}
+                file={editingFile}
+                fileTypes={fileTypes}
+                onSuccess={handleEditSuccess}
+                title="编辑企业档案文件"
             />
         </div>
     );

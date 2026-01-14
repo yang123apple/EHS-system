@@ -13,7 +13,8 @@ interface UploadArchiveFileParams {
     fileType: string;
     isDynamic: boolean;
     description?: string;
-    category: 'enterprise' | 'equipment' | 'personnel';
+    name?: string; // 自定义文件名（不含扩展名），如果不提供则使用原始文件名
+    category: 'enterprise' | 'equipment' | 'personnel' | 'msds';
     uploaderId?: string;
     uploaderName?: string;
     equipmentId?: string;
@@ -28,6 +29,7 @@ export async function uploadArchiveFile(params: UploadArchiveFileParams) {
         fileType,
         isDynamic,
         description,
+        name,
         category,
         uploaderId,
         uploaderName,
@@ -54,7 +56,7 @@ export async function uploadArchiveFile(params: UploadArchiveFileParams) {
             // 保存到ArchiveFile表
             const archive = await tx.archiveFile.create({
                 data: {
-                    name: file.name.replace(/\.[^/.]+$/, ''), // 去除扩展名
+                    name: name || file.name.replace(/\.[^/.]+$/, ''), // 使用自定义名称或原始文件名（去除扩展名）
                     fileType,
                     isDynamic,
                     description,

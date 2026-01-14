@@ -1,14 +1,16 @@
 // src/app/api/archives/equipment/[id]/files/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { withAuth, logApiOperation } from '@/middleware/auth';
+import { withAuth, logApiOperation, requirePermission } from '@/middleware/auth';
 import { minioStorageService } from '@/services/storage/MinioStorageService';
 import { uploadArchiveFile } from '@/lib/archiveUploadHelper';
 
 const storage = minioStorageService;
 
 // GET: 获取设备档案文件列表
-export const GET = withAuth<{ params: Promise<{ id: string }> }>(async (req, context) => {
+export const GET = async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    const permResult = await requirePermission(req, 'archives', 'equipment_view');
+    if (permResult instanceof NextResponse) return permResult;
     const { id } = await context.params;
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1');
@@ -51,10 +53,13 @@ export const GET = withAuth<{ params: Promise<{ id: string }> }>(async (req, con
         data: filesWithUrls,
         meta: { total, page, limit, totalPages: Math.ceil(total / limit) }
     });
-});
+};
 
 // POST: 上传设备档案文件
-export const POST = withAuth<{ params: Promise<{ id: string }> }>(async (req, context, user) => {
+export const POST = async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    const permResult = await requirePermission(req, 'archives', 'equipment_upload');
+    if (permResult instanceof NextResponse) return permResult;
+    const { user } = permResult;
     const { id } = await context.params;
 
     // 检查设备是否存在
@@ -66,6 +71,7 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(async (req, co
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const fileType = formData.get('fileType') as string;
+    const name = formData.get('name') as string | null;
     const isDynamic = formData.get('isDynamic') === 'true';
     const description = formData.get('description') as string || '';
 
@@ -81,6 +87,7 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(async (req, co
             file,
             buffer,
             fileType,
+            name: name || undefined,
             isDynamic,
             description,
             category: 'equipment',
@@ -111,4 +118,4 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(async (req, co
             { status: 500 }
         );
     }
-});
+};

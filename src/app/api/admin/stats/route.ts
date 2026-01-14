@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withAuth } from '@/middleware/auth';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * GET /api/admin/stats - 获取管理员页面统计数据
@@ -19,8 +21,8 @@ export const GET = withAuth(async (request: NextRequest, context, user) => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    // 获取最近30天的开始时间
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    // 获取最近1小时的开始时间（用于统计在线用户）
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
     // 并行获取所有统计数据
     const [
@@ -32,10 +34,8 @@ export const GET = withAuth(async (request: NextRequest, context, user) => {
       todayOperations,
       recentLogs,
     ] = await Promise.all([
-      // 活跃用户数（排除 admin）
-      prisma.user.count({
-        where: { username: { not: 'admin' } }
-      }),
+      // 账户总数（包括 admin）
+      prisma.user.count(),
       // 部门总数
       prisma.department.count(),
       // 今日日志数
@@ -52,17 +52,17 @@ export const GET = withAuth(async (request: NextRequest, context, user) => {
           createdAt: { gte: today }
         }
       }),
-      // 今日操作数（系统日志）
+      // 今日操作数（系统日志，排除登录操作）
       prisma.systemLog.count({
         where: {
           createdAt: { gte: today },
           action: { not: 'LOGIN' } // 排除登录操作
         }
       }),
-      // 最近30天的日志（用于统计活跃用户）
+      // 最近1小时的日志（用于统计在线用户）
       prisma.systemLog.findMany({
         where: {
-          createdAt: { gte: thirtyDaysAgo },
+          createdAt: { gte: oneHourAgo },
           userId: { not: null }
         },
         select: {
@@ -71,34 +71,37 @@ export const GET = withAuth(async (request: NextRequest, context, user) => {
       }),
     ]);
 
-    // 计算活跃用户数（最近30天有操作的用户，排除 admin）
-    const activeUserIds = new Set(
+    // 计算在线用户数（最近1小时内有操作的用户）
+    const onlineUserIds = new Set(
       recentLogs
         .map(log => log.userId)
         .filter((id): id is string => Boolean(id))
     );
-    // 排除 admin 用户
-    const adminUser = await prisma.user.findUnique({
-      where: { username: 'admin' },
-      select: { id: true }
-    });
-    if (adminUser) {
-      activeUserIds.delete(adminUser.id);
-    }
-    const activeUsers = activeUserIds.size;
+    const onlineUsers = onlineUserIds.size;
 
-    // 获取数据库大小（从备份统计获取）
+    // 获取数据库大小（直接计算数据库文件大小）
     let databaseSize = '0 MB';
     try {
-      const backupStatsResponse = await fetch(`${request.nextUrl.origin}/api/backup/stats`);
-      if (backupStatsResponse.ok) {
-        const backupStats = await backupStatsResponse.json();
-        if (backupStats.success && backupStats.data?.database?.totalSize) {
-          const sizeMB = backupStats.data.database.totalSize / (1024 * 1024);
-          databaseSize = sizeMB >= 1024 
-            ? `${(sizeMB / 1024).toFixed(2)} GB` 
-            : `${sizeMB.toFixed(2)} MB`;
-        }
+      const dbPath = path.join(process.cwd(), 'prisma', 'dev.db');
+      const dbShmPath = path.join(process.cwd(), 'prisma', 'dev.db-shm');
+      const dbWalPath = path.join(process.cwd(), 'prisma', 'dev.db-wal');
+      
+      let totalSize = 0;
+      if (fs.existsSync(dbPath)) {
+        totalSize += fs.statSync(dbPath).size;
+      }
+      if (fs.existsSync(dbShmPath)) {
+        totalSize += fs.statSync(dbShmPath).size;
+      }
+      if (fs.existsSync(dbWalPath)) {
+        totalSize += fs.statSync(dbWalPath).size;
+      }
+      
+      if (totalSize > 0) {
+        const sizeMB = totalSize / (1024 * 1024);
+        databaseSize = sizeMB >= 1024 
+          ? `${(sizeMB / 1024).toFixed(2)} GB` 
+          : `${sizeMB.toFixed(2)} MB`;
       }
     } catch (error) {
       console.error('获取数据库大小失败:', error);
@@ -109,14 +112,14 @@ export const GET = withAuth(async (request: NextRequest, context, user) => {
       data: {
         // 快速统计
         quickStats: {
-          onlineUsers: activeUsers, // 使用活跃用户数作为在线用户数
+          onlineUsers: onlineUsers, // 最近1小时内有操作的用户数
           todayOperations: todayOperations,
           databaseSize: databaseSize,
         },
         // 模块统计
         moduleStats: {
           account: {
-            activeUsers: totalUsers,
+            activeUsers: totalUsers, // 系统中总账户数量（包括 admin）
           },
           org: {
             departmentCount: totalDepartments,

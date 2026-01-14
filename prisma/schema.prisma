@@ -109,6 +109,7 @@ model User {
   jobTitle            String?
   directManagerId     String?
   permissions         String?
+  isActive            Boolean                 @default(true) // 在职状态：true=在职，false=离职
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   reportedHazards     HazardRecord[]          @relation("Reporter")
@@ -715,8 +716,8 @@ model ArchiveFile {
   mimeType     String // MIME 类型
   fileSize     Int // 文件大小（字节）
 
-  // 关联分类（三选一）
-  category    String // 'enterprise' | 'equipment' | 'personnel'
+  // 关联分类（四选一）
+  category    String // 'enterprise' | 'equipment' | 'personnel' | 'msds'
   equipmentId String?
   equipment   Equipment? @relation("EquipmentFiles", fields: [equipmentId], references: [id], onDelete: Cascade)
   userId      String? // 关联 User.id（一人一档）

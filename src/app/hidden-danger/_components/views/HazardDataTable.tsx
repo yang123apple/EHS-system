@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
 import { canDeleteHazard } from '../../_utils/permissions';
+import { hazardService } from '@/services/hazard.service';
+import { VIEW_MODES } from '@/constants/hazard';
 
 interface Props {
   hazards: HazardRecord[];
@@ -37,13 +39,52 @@ export function HazardDataTable({
   user 
 }: Props) {
   
-  const handleExport = () => {
-    const ws = XLSX.utils.json_to_sheet(hazards.map(h => ({
-      '单号': h.id, '描述': h.desc, '状态': h.status, '责任人': h.responsibleName || '-'
-    })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "隐患列表");
-    XLSX.writeFile(wb, `隐患导出_${new Date().toISOString().slice(0,10)}.xlsx`);
+  // 导出所有隐患数据（而非仅当前页）
+  const handleExport = async () => {
+    try {
+      // 构建筛选条件，保留当前视图模式
+      const filters: any = {
+        viewMode: viewMode === VIEW_MODES.MY_TASKS ? 'my_tasks' : undefined,
+        userId: user?.id
+      };
+
+      // 获取所有数据（使用足够大的limit）
+      const response = await hazardService.getHazards(1, 9999, filters);
+      
+      let allHazards: HazardRecord[] = [];
+      if (response && typeof response === 'object') {
+        if (response.data && Array.isArray(response.data)) {
+          allHazards = response.data;
+        } else if (Array.isArray(response)) {
+          allHazards = response;
+        }
+      }
+
+      if (allHazards.length === 0) {
+        alert('没有可导出的隐患数据');
+        return;
+      }
+
+      // 导出数据
+      const ws = XLSX.utils.json_to_sheet(allHazards.map(h => ({
+        '单号': h.code || h.id,
+        '描述': h.desc,
+        '类型': h.type,
+        '位置': h.location,
+        '风险等级': h.riskLevel,
+        '状态': h.status,
+        '责任人': h.responsibleName || '-',
+        '截止日期': h.deadline ? h.deadline.split('T')[0] : '-',
+        '上报人': h.reporterName || '-',
+        '上报时间': h.reportTime ? h.reportTime.split('T')[0] : '-'
+      })));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "隐患列表");
+      XLSX.writeFile(wb, `隐患导出_${new Date().toISOString().slice(0,10)}.xlsx`);
+    } catch (error) {
+      console.error('导出Excel失败:', error);
+      alert('导出失败，请重试');
+    }
   };
 
   const totalPages = Math.ceil(total / pageSize);

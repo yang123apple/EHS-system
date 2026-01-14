@@ -67,5 +67,31 @@ export const SYSTEM_MODULES = [
       { key: 'manage_exam_all', name: '管理考试试卷（所有人创建的）' },
       { key: 'review_exam', name: '审核考试结果' },
     ]
+  },
+  {
+    key: 'archives',
+    name: '档案库系统',
+    basePermission: 'access', // 基础权限：能访问该系统
+    permissions: [
+      // 一企一档权限
+      { key: 'enterprise_view', name: '查看一企一档库' },
+      { key: 'enterprise_upload', name: '一企一档上传文件' },
+      { key: 'enterprise_delete', name: '一企一档删除文件' },
+      { key: 'enterprise_edit', name: '一企一档修改文件' },
+      // 一机一档权限
+      { key: 'equipment_view', name: '查看一机一档库' },
+      { key: 'equipment_create', name: '一机一档新建设备' },
+      { key: 'equipment_upload', name: '一机一档上传文件' },
+      { key: 'equipment_delete', name: '一机一档删除设备' },
+      { key: 'equipment_edit', name: '一机一档修改设备信息' },
+      // 一人一档权限
+      { key: 'personnel_view', name: '查看一人一档库' },
+      { key: 'personnel_upload', name: '一人一档上传文件' },
+      { key: 'personnel_delete', name: '一人一档删除文件' },
+      // MSDS库权限
+      { key: 'msds_view', name: '查看MSDS库' },
+      { key: 'msds_upload', name: 'MSDS上传文件' },
+      { key: 'msds_delete', name: 'MSDS删除文件' },
+    ]
   }
 ];

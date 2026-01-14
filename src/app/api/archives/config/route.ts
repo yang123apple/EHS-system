@@ -28,6 +28,13 @@ const DEFAULT_CONFIG = {
         '资质证书',
         '职业健康情况',
         '行为记录'
+    ],
+    msds_types: [
+        'MSDS文档',
+        '化学品安全技术说明书',
+        '危险化学品安全标签',
+        '化学品分类和标签',
+        '其他相关文档'
     ]
 };
 
@@ -57,7 +64,7 @@ export const PUT = withAdmin(async (req: NextRequest, context, user) => {
         return NextResponse.json({ error: '缺少 key 或 value' }, { status: 400 });
     }
 
-    const allowedKeys = ['watermark', 'enterprise_types', 'equipment_types', 'personnel_types'];
+    const allowedKeys = ['watermark', 'enterprise_types', 'equipment_types', 'personnel_types', 'msds_types'];
     if (!allowedKeys.includes(key)) {
         return NextResponse.json({ error: '无效的配置项' }, { status: 400 });
     }

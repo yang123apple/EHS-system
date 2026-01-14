@@ -22,6 +22,7 @@ const ALLOWED_MIME_TYPES = [
 
 export default function FileUploadModal({ isOpen, onClose, onUpload, fileTypes, title = '上传档案文件' }: FileUploadModalProps) {
     const [file, setFile] = React.useState<File | null>(null);
+    const [fileName, setFileName] = React.useState('');
     const [fileType, setFileType] = React.useState('');
     const [isDynamic, setIsDynamic] = React.useState(false);
     const [description, setDescription] = React.useState('');
@@ -33,6 +34,14 @@ export default function FileUploadModal({ isOpen, onClose, onUpload, fileTypes, 
         if (isOpen && fileTypes.length > 0) {
             setFileType(fileTypes[0]);
         }
+        // 重置表单
+        if (!isOpen) {
+            setFile(null);
+            setFileName('');
+            setFileType('');
+            setIsDynamic(false);
+            setDescription('');
+        }
     }, [isOpen, fileTypes]);
 
     const handleFileSelect = (selectedFile: File) => {
@@ -42,6 +51,11 @@ export default function FileUploadModal({ isOpen, onClose, onUpload, fileTypes, 
             return;
         }
         setFile(selectedFile);
+        // 只有当输入框为空时，才自动填充文件名（去除扩展名）
+        if (!fileName.trim()) {
+            const nameWithoutExt = selectedFile.name.replace(/\.[^/.]+$/, '');
+            setFileName(nameWithoutExt);
+        }
     };
 
     const handleDrop = (e: React.DragEvent) => {
@@ -56,11 +70,16 @@ export default function FileUploadModal({ isOpen, onClose, onUpload, fileTypes, 
             alert('请选择文件和文件类型');
             return;
         }
+        if (!fileName.trim()) {
+            alert('请输入文件名');
+            return;
+        }
 
         setUploading(true);
         try {
             const formData = new FormData();
             formData.append('file', file);
+            formData.append('name', fileName.trim());
             formData.append('fileType', fileType);
             formData.append('isDynamic', isDynamic.toString());
             formData.append('description', description);
@@ -69,6 +88,7 @@ export default function FileUploadModal({ isOpen, onClose, onUpload, fileTypes, 
 
             // 重置表单
             setFile(null);
+            setFileName('');
             setFileType(fileTypes[0] || '');
             setIsDynamic(false);
             setDescription('');
@@ -133,6 +153,23 @@ export default function FileUploadModal({ isOpen, onClose, onUpload, fileTypes, 
                             )}
                         </div>
                     </div>
+
+                    {/* 文件名编辑 */}
+                    {file && (
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                文件名 <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={fileName}
+                                onChange={(e) => setFileName(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                placeholder="输入文件名（不含扩展名）"
+                            />
+                            <p className="text-xs text-slate-400 mt-1">原始文件名：{file.name}</p>
+                        </div>
+                    )}
 
                     {/* 文件类型选择 */}
                     <div>

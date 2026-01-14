@@ -5,30 +5,38 @@ import { withAuth } from '@/middleware/auth';
 
 // GET: 获取档案统计数据
 export const GET = withAuth(async () => {
-    // 1. 三级培训统计
-    const totalUsers = await prisma.user.count({
-        where: { username: { not: 'admin' } }
+    // 🟢 获取所有在职用户的 ID 列表（排除 admin 和离职人员）
+    const activeUsers = await prisma.user.findMany({
+        where: {
+            username: { not: 'admin' },
+            isActive: true // 只统计在职人员
+        },
+        select: { id: true }
     });
+    const activeUserIds = activeUsers.map(u => u.id);
 
-    // 统计有"三级培训记录"文件的人数
+    // 1. 三级培训统计（只统计在职人员）
+    const totalUsers = activeUsers.length;
+
+    // 统计有"三级培训记录"文件的人数（只统计在职人员）
     const usersWithTraining = await prisma.archiveFile.groupBy({
         by: ['userId'],
         where: {
             category: 'personnel',
             fileType: '三级培训记录',
-            userId: { not: null }
+            userId: { in: activeUserIds } // 只统计在职人员的档案
         }
     });
 
     const trainedCount = usersWithTraining.length;
 
-    // 2. 资质证书统计
+    // 2. 资质证书统计（只统计在职人员）
     const usersWithCertificate = await prisma.archiveFile.groupBy({
         by: ['userId'],
         where: {
             category: 'personnel',
             fileType: '资质证书',
-            userId: { not: null }
+            userId: { in: activeUserIds } // 只统计在职人员的档案
         }
     });
 

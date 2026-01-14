@@ -21,7 +21,8 @@
     "backup:test-system": "node scripts/test-backup-system.js",
     "restore": "node scripts/restore-from-zip.js",
     "restore:database": "node scripts/restore-database-incremental.js",
-    "test:backup-api": "node scripts/test-backup-api.js"
+    "test:backup-api": "node scripts/test-backup-api.js",
+    "backup:core": "node scripts/backup-database-full.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

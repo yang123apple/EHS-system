@@ -97,7 +97,7 @@ export default function AdminPage() {
       features: ['用户管理', '角色权限', '账户审核', '密码重置'],
       status: 'active',
       stats: { 
-        label: '活跃用户', 
+        label: '账户数量', 
         value: loading ? '...' : formatNumber(stats?.moduleStats.account.activeUsers || 0)
       },
     },

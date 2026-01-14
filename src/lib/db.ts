@@ -24,6 +24,7 @@ function mapUser(pUser: PrismaUserWithDepartment): User {
     jobTitle: pUser.jobTitle ?? undefined,
     directManagerId: pUser.directManagerId ?? undefined,
     permissions: pUser.permissions ? JSON.parse(pUser.permissions) : {},
+    isActive: pUser.isActive ?? true, // 默认在职
   };
 }
 

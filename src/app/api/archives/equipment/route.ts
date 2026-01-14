@@ -1,15 +1,18 @@
 // src/app/api/archives/equipment/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { withAuth, withAdmin, logApiOperation } from '@/middleware/auth';
+import { withAuth, withAdmin, logApiOperation, requirePermission } from '@/middleware/auth';
 
-// GET: 获取设备列表（支持分页）
-export const GET = withAuth(async (req: NextRequest) => {
+// GET: 获取设备列表（支持分页和搜索）
+export const GET = async (req: NextRequest) => {
+    const permResult = await requirePermission(req, 'archives', 'equipment_view');
+    if (permResult instanceof NextResponse) return permResult;
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '12');
     const status = searchParams.get('status') || undefined;
     const isSpecial = searchParams.get('isSpecial');
+    const q = searchParams.get('q') || '';
 
     const skip = (page - 1) * limit;
 
@@ -21,6 +24,15 @@ export const GET = withAuth(async (req: NextRequest) => {
 
     if (isSpecial !== null && isSpecial !== undefined) {
         whereCondition.isSpecialEquip = isSpecial === 'true';
+    }
+
+    // 搜索功能：支持按名称、编号、描述搜索
+    if (q) {
+        whereCondition.OR = [
+            { name: { contains: q } },
+            { code: { contains: q } },
+            { description: { contains: q } }
+        ];
     }
 
     const [equipments, total] = await Promise.all([
@@ -47,10 +59,13 @@ export const GET = withAuth(async (req: NextRequest) => {
             totalPages: Math.ceil(total / limit)
         }
     });
-});
+};
 
 // POST: 创建新设备
-export const POST = withAdmin(async (req: NextRequest, context, user) => {
+export const POST = async (req: NextRequest) => {
+    const permResult = await requirePermission(req, 'archives', 'equipment_create');
+    if (permResult instanceof NextResponse) return permResult;
+    const { user } = permResult;
     const body = await req.json();
     const { name, code, description, startDate, expectedEndDate, isSpecialEquip, inspectionCycle } = body;
 
@@ -96,4 +111,4 @@ export const POST = withAdmin(async (req: NextRequest, context, user) => {
     });
 
     return NextResponse.json(equipment);
-});
+};

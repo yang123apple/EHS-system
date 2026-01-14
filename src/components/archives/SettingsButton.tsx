@@ -2,10 +2,17 @@
 
 import React from 'react';
 import { Settings } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import ArchiveSettingsModal from './ArchiveSettingsModal';
 
 export default function SettingsButton() {
+    const { user } = useAuth();
     const [showSettings, setShowSettings] = React.useState(false);
+
+    // 只有管理员可见
+    if (user?.role !== 'admin') {
+        return null;
+    }
 
     return (
         <>

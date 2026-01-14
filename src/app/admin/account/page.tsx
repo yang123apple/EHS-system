@@ -23,6 +23,7 @@ interface User {
   directManagerId?: string;
   avatar?: string;
   permissions?: Record<string, string[]>;
+  isActive?: boolean; // 在职状态：true=在职，false=离职
 }
 
 export default function AccountManagement() {
@@ -36,6 +37,7 @@ export default function AccountManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalUsers, setTotalUsers] = useState(0);
+  const [activeUsersCount, setActiveUsersCount] = useState(0); // 🟢 在职人数统计
   const limit = 20;
 
   // 🟢 新增：部门列表用于匹配 departmentId
@@ -43,13 +45,16 @@ export default function AccountManagement() {
   const [deptNameToId, setDeptNameToId] = useState<Map<string, string>>(new Map());
 
   // 新增用户状态
-  const [newUser, setNewUser] = useState({ username: '', name: '', department: '', jobTitle: '', password: '123' });
+  const [newUser, setNewUser] = useState({ username: '', name: '', department: '', departmentId: '', jobTitle: '', password: '123' });
 
   // 筛选状态
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
   const [allDepts, setAllDepts] = useState<string[]>([]);
   const [showDeptSelector, setShowDeptSelector] = useState(false);
+  
+  // 🟢 新增用户时的部门选择弹窗
+  const [showNewUserDeptSelector, setShowNewUserDeptSelector] = useState(false);
 
   // 编辑弹窗状态
   const [showEditModal, setShowEditModal] = useState(false);
@@ -74,6 +79,43 @@ export default function AccountManagement() {
     }
     loadUsers(currentPage);
   }, [currentUser, currentPage]);
+
+  // 🟢 获取在职人数统计（排除离职人员和admin）
+  const loadActiveUsersCount = async (filters: { term: string, dept: string } = { term: searchTerm, dept: deptFilter }) => {
+    try {
+      // 获取所有用户（不分页）用于统计
+      const queryParams = new URLSearchParams({
+        limit: '9999' // 获取所有用户
+      });
+      if (filters.term) {
+        queryParams.append('q', filters.term);
+      }
+      if (filters.dept) {
+        queryParams.append('dept', filters.dept);
+      }
+
+      const res = await apiFetch(`/api/users?${queryParams.toString()}`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      let allUsers = [];
+      
+      if (Array.isArray(data)) {
+        allUsers = data;
+      } else if (data && Array.isArray(data.data)) {
+        allUsers = data.data;
+      }
+
+      // 计算在职人数：排除admin和离职人员
+      const activeCount = allUsers.filter((u: any) => 
+        u.username !== 'admin' && (u.isActive !== false)
+      ).length;
+      
+      setActiveUsersCount(activeCount);
+    } catch (e) {
+      console.error('获取在职人数统计失败:', e);
+    }
+  };
 
   const loadUsers = async (page: number, filters: { term: string, dept: string } = { term: searchTerm, dept: deptFilter }) => {
     // 如果用户未登录，不执行请求
@@ -134,6 +176,9 @@ export default function AccountManagement() {
 
       setUsers(validUsers);
 
+      // 🟢 计算在职人数（排除离职人员和admin）
+      await loadActiveUsersCount(filters);
+
       // 🟢 加载部门列表
       if (!deptsRes.ok) {
         console.error('加载部门列表失败');
@@ -179,18 +224,10 @@ export default function AccountManagement() {
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 🟢 查找部门ID
-    const departmentId = deptNameToId.get(newUser.department);
-
-    // 🟢 部门不存在的警告
-    if (!departmentId) {
-      const confirmCreate = confirm(
-        `⚠️ 警告：部门 "${newUser.department}" 在组织架构中不存在！\n\n` +
-        `该用户将无法在组织架构图谱中显示。\n\n` +
-        `建议：先在“组织架构”页面创建该部门。\n\n` +
-        `是否仍然继续创建？`
-      );
-      if (!confirmCreate) return;
+    // 🟢 检查是否选择了部门
+    if (!newUser.departmentId || !newUser.department) {
+      alert('请选择部门');
+      return;
     }
 
     try {
@@ -198,14 +235,17 @@ export default function AccountManagement() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...newUser,
-          departmentId // 🟢 添加 departmentId
+          username: newUser.username,
+          name: newUser.name,
+          jobTitle: newUser.jobTitle,
+          password: newUser.password,
+          departmentId: newUser.departmentId // 🟢 直接使用选择的部门ID
         })
       });
 
       if (res.ok) {
         alert('用户创建成功');
-        setNewUser({ username: '', name: '', department: '', jobTitle: '', password: '123' });
+        setNewUser({ username: '', name: '', department: '', departmentId: '', jobTitle: '', password: '123' });
         loadUsers(currentPage);
       } else {
         const err = await res.json();
@@ -239,24 +279,70 @@ export default function AccountManagement() {
     alert(`检测到 ${files.length} 个文件，此处需对接实际上传接口。`);
   };
 
-  // 🟢 Excel导出功能（XLSX格式）
-  const handleExportExcel = () => {
-    const headers = ['登录账号', '姓名', '部门', '职务', '直属上级'];
-    const rows = filteredUsers.map(u => [
-      u.username,
-      u.name,
-      u.department,
-      u.jobTitle || '',
-      getUserName(u.directManagerId)
-    ]);
+  // 🟢 Excel导出功能（XLSX格式）- 导出所有用户
+  const handleExportExcel = async () => {
+    try {
+      // 获取所有用户数据（不使用分页）
+      const queryParams = new URLSearchParams({
+        limit: '9999', // 设置一个足够大的limit以获取所有用户
+        q: searchTerm, // 保留当前搜索条件
+        dept: deptFilter // 保留当前部门筛选条件
+      });
 
-    // 创建工作簿
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '用户列表');
+      const res = await apiFetch(`/api/users?${queryParams.toString()}`);
+      if (!res.ok) {
+        alert('获取用户数据失败，请重试');
+        return;
+      }
 
-    // 下载文件
-    XLSX.writeFile(wb, `用户列表_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
+      const data = await res.json();
+      let allUsers: User[] = [];
+      
+      if (Array.isArray(data)) {
+        allUsers = data.filter((u: any) => u.username !== 'admin');
+      } else if (data && Array.isArray(data.data)) {
+        allUsers = data.data.filter((u: any) => u.username !== 'admin');
+      }
+
+      if (allUsers.length === 0) {
+        alert('没有可导出的用户数据');
+        return;
+      }
+
+      // 创建用户ID到姓名的映射，用于查找直属上级姓名
+      const userIdToName = new Map<string, string>();
+      allUsers.forEach(u => {
+        userIdToName.set(u.id, u.name);
+      });
+
+      // 辅助函数：根据ID获取用户姓名（从所有用户中查找）
+      const getUserNameFromAll = (id?: string) => {
+        if (!id) return '-';
+        return userIdToName.get(id) || '未知ID';
+      };
+
+      const headers = ['ID', '登录账号', '姓名', '部门', '职务', '直属上级', '在职状态'];
+      const rows = allUsers.map(u => [
+        u.id,
+        u.username,
+        u.name,
+        u.department,
+        u.jobTitle || '',
+        getUserNameFromAll(u.directManagerId),
+        u.isActive !== false ? '在职' : '离职'
+      ]);
+
+      // 创建工作簿
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '用户列表');
+
+      // 下载文件
+      XLSX.writeFile(wb, `用户列表_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
+    } catch (error) {
+      console.error('导出Excel失败:', error);
+      alert('导出失败，请重试');
+    }
   };
 
   // 🟢 Excel导入功能
@@ -289,14 +375,24 @@ export default function AccountManagement() {
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
+        // 读取ID（如果存在，导入新用户时不会使用，但保留兼容性）
+        const userId = pick(row, ['ID', 'id', '用户ID', '人员ID']);
         const username = pick(row, ['登录账号', '账号', '用户名', '工号']);
         const name = pick(row, ['姓名', '名称', '员工姓名']);
         const department = pick(row, ['部门路径', '部门', '部门名称', '所属部门']);
         const jobTitle = pick(row, ['职务', '职位', '岗位', '岗位名称']);
+        const isActiveStr = pick(row, ['在职状态', '状态', '是否在职']);
 
         if (!username) { parseErrors.push(`第 ${i + 2} 行：缺少登录账号`); continue; }
         if (!name) { parseErrors.push(`第 ${i + 2} 行：缺少姓名`); continue; }
         if (!department) { parseErrors.push(`第 ${i + 2} 行：缺少部门`); continue; }
+        
+        // 🟢 解析在职状态：默认为在职（true）
+        let isActive = true;
+        if (isActiveStr) {
+          const lowerStr = String(isActiveStr).toLowerCase().trim();
+          isActive = !(lowerStr === '离职' || lowerStr === 'false' || lowerStr === '否' || lowerStr === '0');
+        }
 
         // 🟢 层级路径/名称匹配 + 模糊搜索
         const matched = matchDepartment(flat, department);
@@ -316,7 +412,8 @@ export default function AccountManagement() {
           department: matched.name || department,
           departmentId: departmentId || undefined, // 🟢 添加 departmentId
           jobTitle: jobTitle || '',
-          password: '123'
+          password: '123',
+          isActive: isActive // 🟢 添加在职状态
         });
       }
 
@@ -330,8 +427,25 @@ export default function AccountManagement() {
         return;
       }
 
-      // 🟢 检查已存在的登录账号并自动去重
-      const existingUsernames = new Set(users.map(u => u.username));
+      // 🟢 异步获取所有用户数据以检查重复（而非仅当前页）
+      let allExistingUsers: User[] = [];
+      try {
+        const allUsersRes = await apiFetch('/api/users?limit=9999');
+        if (allUsersRes.ok) {
+          const allUsersData = await allUsersRes.json();
+          if (Array.isArray(allUsersData)) {
+            allExistingUsers = allUsersData.filter((u: any) => u.username !== 'admin');
+          } else if (allUsersData && Array.isArray(allUsersData.data)) {
+            allExistingUsers = allUsersData.data.filter((u: any) => u.username !== 'admin');
+          }
+        }
+      } catch (error) {
+        console.error('获取所有用户数据失败:', error);
+        alert('⚠️ 无法检查已存在的用户，将跳过重复检测');
+      }
+
+      // 🟢 检查已存在的登录账号并自动去重（使用所有用户数据）
+      const existingUsernames = new Set(allExistingUsers.map(u => u.username));
       const newUsers = importedUsers.filter(u => !existingUsernames.has(u.username));
       const duplicateUsers = importedUsers.filter(u => existingUsernames.has(u.username));
       const duplicateCount = duplicateUsers.length;
@@ -419,7 +533,12 @@ export default function AccountManagement() {
     const payload: any = {};
     formData.forEach((value, key) => {
       if (key !== 'avatarFile') {
-        payload[key] = value;
+        // 🟢 处理 isActive 字段：将字符串转换为布尔值
+        if (key === 'isActive') {
+          payload[key] = value === 'true' || value === true;
+        } else {
+          payload[key] = value;
+        }
       }
     });
 
@@ -539,7 +658,26 @@ export default function AccountManagement() {
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase block mb-1">部门</label>
-                <input type="text" required value={newUser.department} onChange={e => setNewUser({ ...newUser, department: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" placeholder="所属部门" />
+                <button
+                  type="button"
+                  onClick={() => setShowNewUserDeptSelector(true)}
+                  className={`w-full px-3 py-2 border rounded-lg text-sm text-left outline-none focus:ring-2 focus:ring-hytzer-blue transition-colors ${
+                    newUser.department 
+                      ? 'bg-white border-slate-300 hover:border-hytzer-blue' 
+                      : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {newUser.department || '点击选择部门'}
+                </button>
+                {newUser.department && (
+                  <button
+                    type="button"
+                    onClick={() => setNewUser({ ...newUser, department: '', departmentId: '' })}
+                    className="mt-1 text-xs text-red-500 hover:text-red-700"
+                  >
+                    清除选择
+                  </button>
+                )}
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase block mb-1 flex items-center gap-1">
@@ -575,7 +713,8 @@ export default function AccountManagement() {
                 <Download size={16} /> 导出 Excel
               </button>
               <p className="text-xs text-slate-400 text-center leading-relaxed">
-                格式：登录账号,姓名,部门,职务
+                格式：ID,登录账号,姓名,部门,职务,在职状态<br />
+                在职状态：在职/离职（留空默认为在职）
               </p>
             </div>
           </div>
@@ -586,9 +725,16 @@ export default function AccountManagement() {
           {/* 搜索栏 */}
           <div className="p-3 md:p-4 border-b border-slate-100 bg-slate-50/50 space-y-2 md:space-y-3">
             <div className="flex justify-between items-center">
-              <h2 className="text-base md:text-lg font-bold text-slate-800">
-                用户列表 <span className="text-slate-400 text-xs md:text-sm font-normal">({totalUsers})</span>
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-base md:text-lg font-bold text-slate-800">
+                  用户列表
+                </h2>
+                <div className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg border border-blue-200 text-xs md:text-sm font-medium">
+                  {deptFilter 
+                    ? `该部门在职人数${activeUsersCount}人` 
+                    : `在职人数${activeUsersCount}人`}
+                </div>
+              </div>
               <button
                 onClick={loadAllUsersForBatch}
                 disabled={isLoadingAllUsers}
@@ -625,6 +771,7 @@ export default function AccountManagement() {
                 <tr>
                   <th className="px-3 md:px-6 py-2 md:py-4 font-semibold">基本信息</th>
                   <th className="px-3 md:px-6 py-2 md:py-4 font-semibold">职务 & 汇报线</th>
+                  <th className="px-3 md:px-6 py-2 md:py-4 font-semibold">在职状态</th>
                   <th className="px-3 md:px-6 py-2 md:py-4 font-semibold text-right">操作</th>
                 </tr>
               </thead>
@@ -665,6 +812,18 @@ export default function AccountManagement() {
                         )}
                       </div>
                     </td>
+                    <td className="px-6 py-4">
+                      {/* 🟢 在职状态显示 */}
+                      {u.isActive !== false ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                          <span className="w-2 h-2 rounded-full bg-green-500"></span> 在职
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+                          <span className="w-2 h-2 rounded-full bg-red-500"></span> 离职
+                        </span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
                         <Link href={`/admin/account/${u.id}`} className="p-2 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100 transition-colors" title="配置权限">
@@ -682,7 +841,7 @@ export default function AccountManagement() {
                 ))}
                 {filteredUsers.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="px-6 py-12 text-center text-slate-400">未找到匹配用户</td>
+                    <td colSpan={4} className="px-6 py-12 text-center text-slate-400">未找到匹配用户</td>
                   </tr>
                 )}
               </tbody>
@@ -762,6 +921,25 @@ export default function AccountManagement() {
                 </p>
               </div>
 
+              {/* 🟢 4. 在职状态选择 */}
+              <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-1">
+                  <UserIcon size={14} className="text-blue-600" /> 在职状态
+                </label>
+                <select
+                  name="isActive"
+                  defaultValue={editingUser.isActive !== false ? 'true' : 'false'}
+                  className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-hytzer-blue bg-white transition-all cursor-pointer"
+                >
+                  <option value="true">在职</option>
+                  <option value="false">离职</option>
+                </select>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                  <span className="text-orange-500 font-bold">注意：</span>
+                  离职状态的用户将无法登录系统。
+                </p>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">头像 (可选)</label>
                 <div className="flex items-center gap-4">
@@ -807,7 +985,7 @@ export default function AccountManagement() {
         }}
       />
 
-      {/* 部门选择弹窗 */}
+      {/* 部门选择弹窗（用于筛选） */}
       <PeopleSelector
         isOpen={showDeptSelector}
         onClose={() => setShowDeptSelector(false)}
@@ -820,6 +998,23 @@ export default function AccountManagement() {
             setDeptFilter('');
           }
           setShowDeptSelector(false);
+        }}
+        mode="dept"
+        multiSelect={false}
+        title="选择部门"
+      />
+
+      {/* 🟢 新增用户时的部门选择弹窗 */}
+      <PeopleSelector
+        isOpen={showNewUserDeptSelector}
+        onClose={() => setShowNewUserDeptSelector(false)}
+        onConfirm={(selection) => {
+          if (Array.isArray(selection) && selection.length > 0) {
+            // @ts-ignore
+            const dept = selection[0];
+            setNewUser({ ...newUser, department: dept.name, departmentId: dept.id });
+          }
+          setShowNewUserDeptSelector(false);
         }}
         mode="dept"
         multiSelect={false}

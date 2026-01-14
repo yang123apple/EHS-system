@@ -69,6 +69,11 @@ export const PUT = withAdmin<{ params: Promise<{ id: string }> }>(async (req, co
       if (formData.has('jobTitle')) updateData.jobTitle = formData.get('jobTitle');
       // 🟢 新增字段支持
       if (formData.has('directManagerId')) updateData.directManagerId = formData.get('directManagerId');
+      // 🟢 在职状态支持
+      if (formData.has('isActive')) {
+        const isActiveValue = formData.get('isActive');
+        updateData.isActive = isActiveValue === 'true' || isActiveValue === true;
+      }
 
       // 如果前端传了 permissions 字符串，尝试解析
       if (formData.has('permissions')) {

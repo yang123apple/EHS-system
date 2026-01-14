@@ -1,18 +1,22 @@
 // src/app/api/archives/enterprise/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { withAuth, logApiOperation } from '@/middleware/auth';
+import { withAuth, logApiOperation, requirePermission } from '@/middleware/auth';
 import { minioStorageService } from '@/services/storage/MinioStorageService';
 import { uploadArchiveFile } from '@/lib/archiveUploadHelper';
 
 const storage = minioStorageService;
 
-// GET: 获取企业档案文件列表（支持分页）
-export const GET = withAuth(async (req: NextRequest) => {
+// GET: 获取企业档案文件列表（支持分页和搜索）
+export const GET = async (req: NextRequest) => {
+    const permResult = await requirePermission(req, 'archives', 'enterprise_view');
+    if (permResult instanceof NextResponse) return permResult;
+    const { user } = permResult;
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '12');
     const fileType = searchParams.get('fileType') || undefined;
+    const q = searchParams.get('q') || '';
 
     const skip = (page - 1) * limit;
 
@@ -22,6 +26,15 @@ export const GET = withAuth(async (req: NextRequest) => {
 
     if (fileType) {
         whereCondition.fileType = fileType;
+    }
+
+    // 搜索功能：支持按名称、原始文件名、描述搜索
+    if (q) {
+        whereCondition.OR = [
+            { name: { contains: q } },
+            { originalName: { contains: q } },
+            { description: { contains: q } }
+        ];
     }
 
     const [files, total] = await Promise.all([
@@ -57,13 +70,17 @@ export const GET = withAuth(async (req: NextRequest) => {
             totalPages: Math.ceil(total / limit)
         }
     });
-});
+};
 
 // POST: 上传企业档案文件
-export const POST = withAuth(async (req: NextRequest, context, user) => {
+export const POST = async (req: NextRequest) => {
+    const permResult = await requirePermission(req, 'archives', 'enterprise_upload');
+    if (permResult instanceof NextResponse) return permResult;
+    const { user } = permResult;
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const fileType = formData.get('fileType') as string;
+    const name = formData.get('name') as string | null;
     const isDynamic = formData.get('isDynamic') === 'true';
     const description = formData.get('description') as string || '';
 
@@ -86,6 +103,7 @@ export const POST = withAuth(async (req: NextRequest, context, user) => {
             file,
             buffer,
             fileType,
+            name: name || undefined,
             isDynamic,
             description,
             category: 'enterprise',
@@ -113,4 +131,4 @@ export const POST = withAuth(async (req: NextRequest, context, user) => {
             { status: 500 }
         );
     }
-});
+};

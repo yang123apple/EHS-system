@@ -4,7 +4,11 @@ import React from 'react';
 import { Plus, Settings as SettingsIcon } from 'lucide-react';
 import EquipmentCard from './EquipmentCard';
 import EquipmentCreateModal from './EquipmentCreateModal';
+import Pagination from './Pagination';
 import { apiFetch } from '@/lib/apiClient';
+import { useAuth } from '@/context/AuthContext';
+import { PermissionManager } from '@/lib/permissions';
+import { PermissionDenied } from '@/components/common/PermissionDenied';
 
 interface Equipment {
     id: string;
@@ -22,21 +26,50 @@ interface Equipment {
 }
 
 export default function EquipmentArchiveView() {
+    const { user } = useAuth();
     const [equipments, setEquipments] = React.useState<Equipment[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [showCreateModal, setShowCreateModal] = React.useState(false);
     const [page, setPage] = React.useState(1);
     const [totalPages, setTotalPages] = React.useState(1);
     const [total, setTotal] = React.useState(0);
+    const [searchQuery, setSearchQuery] = React.useState('');
+
+    // 权限检查
+    const canView = PermissionManager.hasPermission(user, 'archives', 'equipment_view') || 
+                    PermissionManager.hasPermission(user, 'archives', 'access');
+    const canCreate = PermissionManager.hasPermission(user, 'archives', 'equipment_create');
+    const canUpload = PermissionManager.hasPermission(user, 'archives', 'equipment_upload');
+    const canDelete = PermissionManager.hasPermission(user, 'archives', 'equipment_delete');
+    const canEdit = PermissionManager.hasPermission(user, 'archives', 'equipment_edit');
+
+    // 如果没有查看权限，显示权限不足提示
+    if (!canView) {
+        return (
+            <div className="p-6 h-full flex items-center justify-center">
+                <PermissionDenied 
+                    action="查看一机一档库"
+                    requiredPermission="archives.equipment_view"
+                />
+            </div>
+        );
+    }
 
     React.useEffect(() => {
         loadEquipments();
-    }, [page]);
+    }, [page, searchQuery]);
 
     const loadEquipments = async () => {
         try {
             setLoading(true);
-            const res = await apiFetch(`/api/archives/equipment?page=${page}&limit=12`);
+            const params = new URLSearchParams({
+                page: page.toString(),
+                limit: '12'
+            });
+            if (searchQuery) {
+                params.append('q', searchQuery);
+            }
+            const res = await apiFetch(`/api/archives/equipment?${params}`);
             const data = await res.json();
             setEquipments(data.data || []);
             setTotalPages(data.meta?.totalPages || 1);
@@ -57,13 +90,27 @@ export default function EquipmentArchiveView() {
         <div className="p-6 h-full flex flex-col">
             <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-semibold text-slate-900">一机一档</h2>
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
-                >
-                    <Plus size={18} />
-                    <span>添加设备</span>
-                </button>
+                <div className="flex items-center gap-3">
+                    <input
+                        type="text"
+                        placeholder="搜索设备名称、编号或描述..."
+                        value={searchQuery}
+                        onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            setPage(1);
+                        }}
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-64"
+                    />
+                    {canCreate && (
+                        <button
+                            onClick={() => setShowCreateModal(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                        >
+                            <Plus size={18} />
+                            <span>添加设备</span>
+                        </button>
+                    )}
+                </div>
             </div>
 
             {loading ? (
@@ -93,29 +140,13 @@ export default function EquipmentArchiveView() {
                     </div>
 
                     {/* 分页 */}
-                    {totalPages > 1 && (
-                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-200">
-                            <div className="text-sm text-slate-500">
-                                共 {total} 个设备，第 {page} / {totalPages} 页
-                            </div>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setPage(Math.max(1, page - 1))}
-                                    disabled={page === 1}
-                                    className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    上一页
-                                </button>
-                                <button
-                                    onClick={() => setPage(Math.min(totalPages, page + 1))}
-                                    disabled={page === totalPages}
-                                    className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    下一页
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                    <Pagination
+                        currentPage={page}
+                        totalPages={totalPages}
+                        total={total}
+                        onPageChange={setPage}
+                        itemName="设备"
+                    />
                 </>
             )}
 

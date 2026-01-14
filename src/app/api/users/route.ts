@@ -68,7 +68,8 @@ export const GET = withAuth(async (req, context, user) => {
     avatar: u.avatar,
     jobTitle: u.jobTitle || '',
     permissions: u.permissions ? JSON.parse(u.permissions) : {},
-    directManagerId: u.directManagerId
+    directManagerId: u.directManagerId,
+    isActive: u.isActive ?? true // 🟢 添加在职状态，默认在职
   }));
 
   if (isPaginated) {
@@ -86,6 +87,32 @@ export const GET = withAuth(async (req, context, user) => {
   return NextResponse.json(finalUsers);
 });
 
+// 生成8位数字ID（确保唯一）
+async function generateUniqueUserId(): Promise<string> {
+  let attempts = 0;
+  const maxAttempts = 100; // 防止无限循环
+  
+  while (attempts < maxAttempts) {
+    // 生成8位数字ID（10000000-99999999）
+    const userId = Math.floor(10000000 + Math.random() * 90000000).toString();
+    
+    // 检查ID是否已存在
+    const existing = await prisma.user.findUnique({ 
+      where: { id: userId },
+      select: { id: true }
+    });
+    
+    if (!existing) {
+      return userId;
+    }
+    
+    attempts++;
+  }
+  
+  // 如果100次尝试都失败，抛出错误
+  throw new Error('无法生成唯一的8位数字ID，请稍后重试');
+}
+
 // POST: 创建新用户 (Admin)
 export const POST = withAdmin(async (req, context, user) => {
   try {
@@ -102,20 +129,32 @@ export const POST = withAdmin(async (req, context, user) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(plainPassword, salt);
 
+    // 生成8位数字ID
+    const userId = await generateUniqueUserId();
+
+    // 构建创建数据
+    const createData: any = {
+      id: userId, // 使用生成的8位数字ID
+      username: body.username,
+      name: body.name,
+      password: hashedPassword,
+      role: 'user',
+      avatar: '/image/default_avatar.jpg',
+      permissions: '{}', // 默认空权限
+      jobTitle: body.jobTitle,
+      isActive: body.isActive !== undefined ? body.isActive : true, // 🟢 默认在职
+    };
+
+    // 🟢 处理部门关联：如果提供了 departmentId，使用关系连接语法
+    if (body.departmentId) {
+      createData.department = {
+        connect: { id: body.departmentId }
+      };
+    }
+
     // 创建
     const newUser = await prisma.user.create({
-      data: {
-        username: body.username,
-        name: body.name,
-        password: hashedPassword,
-        role: 'user',
-        avatar: '/image/default_avatar.jpg',
-        permissions: '{}', // 默认空权限
-        departmentId: body.departmentId,
-        jobTitle: body.jobTitle,
-        // 如果前端传了 department (string名称)，我们这里可能没法存，因为 schema 里只有 departmentId
-        // 所以我们假设前端传了正确的 departmentId
-      }
+      data: createData
     });
 
     // 在用户创建成功后异步触发入职培训任务指派（非阻塞）

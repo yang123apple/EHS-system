@@ -134,24 +134,24 @@ class MinIOService {
     if (!privateExists) {
       await this.client.makeBucket(this.BUCKETS.PRIVATE, 'us-east-1');
       console.log(`✓ 创建 Bucket: ${this.BUCKETS.PRIVATE}`);
+      // 只在创建新 bucket 时设置策略
+      await this.setBucketPolicy(this.BUCKETS.PRIVATE, BucketPolicy.PRIVATE);
     }
-
-    // 设置私有 Bucket 策略（拒绝匿名访问）
-    await this.setBucketPolicy(this.BUCKETS.PRIVATE, BucketPolicy.PRIVATE);
 
     // 创建公开 Bucket
     const publicExists = await this.client.bucketExists(this.BUCKETS.PUBLIC);
     if (!publicExists) {
       await this.client.makeBucket(this.BUCKETS.PUBLIC, 'us-east-1');
       console.log(`✓ 创建 Bucket: ${this.BUCKETS.PUBLIC}`);
+      // 只在创建新 bucket 时设置策略
+      await this.setBucketPolicy(this.BUCKETS.PUBLIC, BucketPolicy.PUBLIC);
     }
-
-    // 设置公开 Bucket 策略（允许匿名读取）
-    await this.setBucketPolicy(this.BUCKETS.PUBLIC, BucketPolicy.PUBLIC);
+    // 如果 bucket 已存在，跳过策略设置（避免重复设置）
   }
 
   /**
    * 设置 Bucket 策略
+   * 只在创建新 bucket 时调用，避免重复设置
    */
   private async setBucketPolicy(bucketName: string, policy: BucketPolicy): Promise<void> {
     if (!this.client) {
@@ -331,6 +331,7 @@ class MinIOService {
 
   /**
    * 删除文件
+   * 添加超时处理，避免长时间等待
    */
   public async deleteFile(
     bucket: 'private' | 'public',
@@ -345,9 +346,23 @@ class MinIOService {
     const bucketName = bucket === 'private' ? this.BUCKETS.PRIVATE : this.BUCKETS.PUBLIC;
 
     try {
-      await this.client.removeObject(bucketName, objectName);
+      // 设置超时（10秒）
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('删除文件超时')), 10000);
+      });
+
+      await Promise.race([
+        this.client.removeObject(bucketName, objectName),
+        timeoutPromise
+      ]);
+      
       return true;
     } catch (error: any) {
+      // 如果是超时错误，记录但不抛出
+      if (error.message === '删除文件超时') {
+        console.warn('删除文件超时:', bucketName, objectName);
+        return false;
+      }
       console.error('删除文件失败:', error);
       return false;
     }
