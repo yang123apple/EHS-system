@@ -3,6 +3,7 @@
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
+import { apiFetch } from '@/lib/apiClient';
 import { 
   Users, 
   Network, 
@@ -46,15 +47,24 @@ export default function AdminPage() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch('/api/admin/stats');
+        const response = await apiFetch('/api/admin/stats');
+        console.log('[Admin Page] API 响应状态:', response.status);
         if (response.ok) {
           const result = await response.json();
+          console.log('[Admin Page] API 返回结果:', result);
           if (result.success) {
+            console.log('[Admin Page] 设置统计数据:', result.data);
+            console.log('[Admin Page] 通知模板数量:', result.data?.moduleStats?.notifications?.templateCount);
             setStats(result.data);
+          } else {
+            console.error('[Admin Page] API 返回失败:', result.message);
           }
+        } else {
+          const errorText = await response.text();
+          console.error('[Admin Page] API 响应错误:', response.status, errorText);
         }
       } catch (error) {
-        console.error('获取统计数据失败:', error);
+        console.error('[Admin Page] 获取统计数据失败:', error);
       } finally {
         setLoading(false);
       }

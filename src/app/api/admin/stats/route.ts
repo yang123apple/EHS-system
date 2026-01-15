@@ -24,16 +24,16 @@ export const GET = withAuth(async (request: NextRequest, context, user) => {
     // 获取最近1小时的开始时间（用于统计在线用户）
     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-    // 并行获取所有统计数据
+    // 并行获取所有统计数据，使用 Promise.allSettled 确保即使某个查询失败也能继续
     const [
-      totalUsers,
-      totalDepartments,
-      todayLogs,
-      totalTemplates,
-      todayAICalls,
-      todayOperations,
-      recentLogs,
-    ] = await Promise.all([
+      usersResult,
+      departmentsResult,
+      logsResult,
+      templatesResult,
+      aiCallsResult,
+      operationsResult,
+      recentLogsResult,
+    ] = await Promise.allSettled([
       // 账户总数（包括 admin）
       prisma.user.count(),
       // 部门总数
@@ -71,6 +71,26 @@ export const GET = withAuth(async (request: NextRequest, context, user) => {
       }),
     ]);
 
+    // 提取结果，如果失败则使用默认值
+    const totalUsers = usersResult.status === 'fulfilled' ? usersResult.value : 0;
+    const totalDepartments = departmentsResult.status === 'fulfilled' ? departmentsResult.value : 0;
+    const todayLogs = logsResult.status === 'fulfilled' ? logsResult.value : 0;
+    const totalTemplates = templatesResult.status === 'fulfilled' ? templatesResult.value : 0;
+    const todayAICalls = aiCallsResult.status === 'fulfilled' ? aiCallsResult.value : 0;
+    const todayOperations = operationsResult.status === 'fulfilled' ? operationsResult.value : 0;
+    const recentLogs = recentLogsResult.status === 'fulfilled' ? recentLogsResult.value : [];
+
+    // 记录任何失败的查询
+    if (templatesResult.status === 'rejected') {
+      console.error('[Admin Stats API] 获取通知模板数量失败:', templatesResult.reason);
+    }
+    if (usersResult.status === 'rejected') {
+      console.error('[Admin Stats API] 获取用户数量失败:', usersResult.reason);
+    }
+    if (departmentsResult.status === 'rejected') {
+      console.error('[Admin Stats API] 获取部门数量失败:', departmentsResult.reason);
+    }
+
     // 计算在线用户数（最近1小时内有操作的用户）
     const onlineUserIds = new Set(
       recentLogs
@@ -78,6 +98,22 @@ export const GET = withAuth(async (request: NextRequest, context, user) => {
         .filter((id): id is string => Boolean(id))
     );
     const onlineUsers = onlineUserIds.size;
+
+    // 调试日志：输出所有统计数据
+    console.log('[Admin Stats API] 统计数据:', {
+      totalUsers,
+      totalDepartments,
+      todayLogs,
+      totalTemplates,
+      todayAICalls,
+      todayOperations,
+      onlineUsers,
+    });
+    console.log('[Admin Stats API] 通知模板查询结果:', {
+      status: templatesResult.status,
+      value: totalTemplates,
+      error: templatesResult.status === 'rejected' ? templatesResult.reason : null,
+    });
 
     // 获取数据库大小（直接计算数据库文件大小）
     let databaseSize = '0 MB';

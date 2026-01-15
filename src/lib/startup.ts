@@ -6,6 +6,7 @@
 import { BackupSchedulerService } from '@/services/backup/backupScheduler.service';
 import { DatabaseBackupService } from '@/services/backup/databaseBackup.service';
 import { FileBackupService } from '@/services/backup/fileBackup.service';
+import { CoreDataRestoreService } from '@/services/coreDataRestore.service';
 
 let isInitialized = false;
 let backupScheduler: BackupSchedulerService | null = null;
@@ -21,39 +22,150 @@ async function initializeMinIO(): Promise<boolean> {
     // 动态导入 MinIO 服务（避免循环依赖）
     const { minioService } = await import('@/lib/minio');
     
-    // 检查 MinIO 配置是否存在
-    const hasConfig = 
-      process.env.MINIO_ENDPOINT || 
-      process.env.MINIO_ACCESS_KEY || 
-      process.env.MINIO_SECRET_KEY;
-    
-    if (!hasConfig) {
-      console.log('⚠️  MinIO 配置未找到，跳过初始化');
-      console.log('   提示: 如需使用 MinIO，请配置环境变量 MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY');
+    /**
+     * 兼容性说明：
+     * - `npm run dev` 的 predev 会在独立进程中启动 MinIO，但它设置的 env 不会传递给后续的 next dev 进程。
+     * - `src/lib/minio.ts` 已内置默认值（localhost:9000 + admin/change-me-now），因此开发环境应直接尝试初始化。
+     * - 生产环境为了安全起见：若没有显式配置，则跳过初始化。
+     */
+    const isProd = process.env.NODE_ENV === 'production';
+    const hasExplicitConfig = Boolean(
+      process.env.MINIO_ENDPOINT ||
+        process.env.MINIO_PORT ||
+        process.env.MINIO_USE_SSL ||
+        process.env.MINIO_ACCESS_KEY ||
+        process.env.MINIO_SECRET_KEY ||
+        process.env.MINIO_ROOT_USER ||
+        process.env.MINIO_ROOT_PASSWORD
+    );
+
+    if (isProd && !hasExplicitConfig) {
+      console.log('⚠️  生产环境未检测到 MinIO 显式配置，跳过初始化');
+      console.log('   提示: 请配置环境变量 MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY（或 MINIO_ROOT_USER/MINIO_ROOT_PASSWORD）');
       return false;
     }
     
-    // 初始化 MinIO
-    await minioService.initialize();
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    // 初始化 MinIO（开发环境增加重试，避免 predev 刚启动服务尚未就绪）
+    const maxAttempts = isProd ? 1 : 3;
+    let lastError: any = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        if (attempt > 1) {
+          console.log(`⏳ MinIO 初始化重试 (${attempt}/${maxAttempts})...`);
+        }
+
+        await minioService.initialize();
+
+        // 验证连接
+        const client = minioService.getClient();
+        const buckets = await client.listBuckets();
     
-    // 验证连接
-    const client = minioService.getClient();
-    const buckets = await client.listBuckets();
-    
-    minioInitialized = true;
-    console.log('✅ MinIO 初始化成功');
-    console.log(`   • 端点: ${process.env.MINIO_ENDPOINT || 'localhost'}:${process.env.MINIO_PORT || '9000'}`);
-    console.log(`   • Buckets: ${buckets.map(b => b.name).join(', ')}`);
-    console.log(`   • 私有存储: ehs-private`);
-    console.log(`   • 公开存储: ehs-public`);
-    
-    return true;
+        minioInitialized = true;
+        console.log('✅ MinIO 初始化成功');
+        console.log(`   • 端点: ${process.env.MINIO_ENDPOINT || 'localhost'}:${process.env.MINIO_PORT || '9000'}`);
+        console.log(`   • Buckets: ${buckets.map(b => b.name).join(', ')}`);
+        console.log(`   • 私有存储: ehs-private`);
+        console.log(`   • 公开存储: ehs-public`);
+
+        return true;
+      } catch (err: any) {
+        lastError = err;
+        minioInitialized = false;
+
+        // 生产环境不重试；开发环境稍等再试
+        if (attempt < maxAttempts) {
+          await sleep(1000);
+          continue;
+        }
+      }
+    }
+
+    // 所有尝试失败
+    throw lastError ?? new Error('MinIO 初始化失败');
   } catch (error: any) {
     console.error('❌ MinIO 初始化失败:', error.message);
     console.error('   提示: 请检查 MinIO 服务是否运行，或配置是否正确');
     console.error('   启动命令: docker-compose -f docker-compose.minio.yml up -d');
     minioInitialized = false;
     return false;
+  }
+}
+
+/**
+ * 检查并恢复核心数据
+ * 如果数据库中没有 admin 用户，自动从 core_data 文件夹恢复所有 JSON 数据
+ */
+async function checkAndRestoreCoreData(): Promise<void> {
+  try {
+    console.log('🔍 检查核心数据状态...');
+    
+    // 先检查数据库表是否存在，如果不存在需要先运行迁移
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const testPrisma = new PrismaClient();
+      await testPrisma.$queryRaw`SELECT 1 FROM User LIMIT 1`;
+      await testPrisma.$disconnect();
+    } catch (error: any) {
+      if (error.code === 'P2021' || error.message?.includes('does not exist')) {
+        console.log('⚠️  数据库表不存在，需要先运行 Prisma 迁移');
+        console.log('   提示: 请运行 npx prisma migrate deploy 或 npx prisma db push');
+        console.log('   或者运行 npm run postinstall 来初始化数据库');
+        console.log('');
+        return; // 表不存在时，无法恢复数据，直接返回
+      }
+      throw error;
+    }
+    
+    // 检查是否存在 admin 用户
+    const hasAdmin = await CoreDataRestoreService.hasAdminUser();
+    
+    if (hasAdmin) {
+      console.log('✅ 检测到 admin 用户，核心数据完整，跳过恢复');
+      console.log('');
+      return;
+    }
+    
+    console.log('⚠️  未检测到 admin 用户，开始自动恢复核心数据...');
+    console.log('📦 从 data/core_data 文件夹恢复 JSON 数据...');
+    console.log('');
+    
+    // 执行恢复
+    const result = await CoreDataRestoreService.restoreAll();
+    
+    if (result.success) {
+      console.log('✅ 核心数据恢复成功');
+      console.log(`   • 已恢复文件: ${result.restoredFiles.join(', ')}`);
+      console.log(`   • ${result.message}`);
+      
+      // 再次检查 admin 用户
+      const adminAfterRestore = await CoreDataRestoreService.hasAdminUser();
+      if (adminAfterRestore) {
+        console.log('✅ Admin 用户已恢复');
+      } else {
+        console.warn('⚠️  警告: 恢复后仍未找到 admin 用户，请检查 user.json 文件');
+      }
+    } else {
+      console.error('❌ 核心数据恢复失败');
+      console.error(`   • 错误: ${result.message}`);
+      if (result.errors.length > 0) {
+        console.error(`   • 详细错误: ${result.errors.join('; ')}`);
+      }
+      console.error('   提示: 应用将继续启动，但建议手动检查并恢复数据');
+    }
+    
+    console.log('');
+    
+    // 清理资源
+    await CoreDataRestoreService.cleanup();
+  } catch (error: any) {
+    console.error('❌ 检查核心数据失败:', error.message);
+    console.error('   提示: 应用将继续启动，但建议手动检查数据状态');
+    console.error('   恢复命令: 请检查 data/core_data 文件夹中的 JSON 文件');
+    console.log('');
+    // 不抛出错误，允许应用继续启动
   }
 }
 
@@ -172,10 +284,13 @@ export async function initializeApp() {
   };
 
   try {
-    // 0. 检查并执行初始全量备份（如果不存在）
+    // 0. 检查并恢复核心数据（如果 admin 用户不存在）
+    await checkAndRestoreCoreData();
+    
+    // 1. 检查并执行初始全量备份（如果不存在）
     await checkAndPerformInitialBackup();
     
-    // 1. 启动备份调度服务（存算分离架构）
+    // 2. 启动备份调度服务（存算分离架构）
     console.log('⏰ 启动备份调度服务（存算分离架构）...');
     try {
       backupScheduler = new BackupSchedulerService();
@@ -187,7 +302,7 @@ export async function initializeApp() {
       // 备份服务失败不影响应用启动
     }
 
-    // 2. 初始化 MinIO 对象存储服务
+    // 3. 初始化 MinIO 对象存储服务
     initResults.minio = await initializeMinIO();
 
     isInitialized = true;
