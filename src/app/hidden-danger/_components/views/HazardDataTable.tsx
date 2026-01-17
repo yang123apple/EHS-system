@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { canDeleteHazard } from '../../_utils/permissions';
 import { hazardService } from '@/services/hazard.service';
 import { VIEW_MODES } from '@/constants/hazard';
+import { BATCH_LIMITS } from '@/lib/business-constants';
 
 interface Props {
   hazards: HazardRecord[];
@@ -48,8 +49,11 @@ export function HazardDataTable({
         userId: user?.id
       };
 
-      // 获取所有数据（使用足够大的limit）
-      const response = await hazardService.getHazards(1, 9999, filters);
+      // 🔒 资源控制：限制单次导出最大条数
+      const maxExportLimit = BATCH_LIMITS.EXPORT_MAX;
+      
+      // 获取数据（使用配置的最大限制）
+      const response = await hazardService.getHazards(1, maxExportLimit, filters);
       
       let allHazards: HazardRecord[] = [];
       if (response && typeof response === 'object') {
@@ -62,6 +66,12 @@ export function HazardDataTable({
 
       if (allHazards.length === 0) {
         alert('没有可导出的隐患数据');
+        return;
+      }
+
+      // 🔒 二次检查：确保不超过限制
+      if (allHazards.length > maxExportLimit) {
+        alert(`导出数据量超过限制（${maxExportLimit} 条），请缩小筛选范围或分批导出`);
         return;
       }
 

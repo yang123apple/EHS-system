@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { PermissionManager, PermissionError, User } from '@/lib/permissions';
 import { SystemLogService } from '@/services/systemLog.service';
+import { logError, extractErrorContext } from '@/utils/errorLogger';
 
 /**
  * 从请求中提取用户信息
@@ -424,7 +425,18 @@ export function withErrorHandling<T extends { params: Promise<any> } = { params:
     try {
       return await handler(req, context);
     } catch (error) {
-      // 详细的错误日志
+      // ✅ 修复问题10：使用统一的错误日志记录
+      try {
+        // 尝试从请求中提取用户信息（如果可用）
+        const user = await getUserFromRequest(req).catch(() => null);
+        const errorContext = await extractErrorContext(req, user || undefined);
+        await logError(error, errorContext);
+      } catch (logErr) {
+        // 如果日志记录失败，至少输出到控制台
+        console.error('[ErrorHandler] 记录错误日志失败:', logErr);
+      }
+      
+      // 详细的错误日志（保留原有逻辑用于调试）
       console.error('[API Error] 请求失败:', {
         url: req.url,
         method: req.method,

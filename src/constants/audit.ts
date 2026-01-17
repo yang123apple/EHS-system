@@ -51,6 +51,15 @@ export const SENSITIVE_FIELDS = [
   'refreshToken',
   'privateKey',
   'credential',
+  // 个人信息敏感字段
+  'idCard',
+  'idcard',
+  'id_card',
+  'phone',
+  'phoneNumber',
+  'mobile',
+  'email',
+  'emailAddress',
 ];
 
 // ============ 忽略字段列表（不计入差异比对） ============

@@ -51,6 +51,13 @@ export interface DispatchResult {
   };
   log: HazardLog;
   notifications: NotificationData[]; // 需要创建的通知数据
+  // 🟢 新增：候选处理人信息（用于创建关联表记录）
+  candidateHandlers?: Array<{
+    userId: string;
+    userName: string;
+    stepIndex: number;
+    stepId: string;
+  }>;
   error?: string;
 }
 
@@ -92,6 +99,12 @@ export class HazardDispatchEngine {
         totalSteps: workflowSteps.length,
         hazardId: hazard.id
       });
+
+      // 0. 状态流转前校验必要字段
+      const validationError = await this.validateBeforeTransition(hazard, action, operator, stepIndex);
+      if (validationError) {
+        throw new Error(validationError);
+      }
 
       // 1. 根据动作和当前步骤索引确定下一步骤
       const transition = this.getTransition(stepIndex, action, workflowSteps, hazard.status);
@@ -187,7 +200,16 @@ export class HazardDispatchEngine {
         },
         ccUsers: ccResult,
         log,
-        notifications
+        notifications,
+        // 🟢 新增：候选处理人信息（用于创建关联表记录）
+        candidateHandlers: handlerResult.success && handlerResult.userIds.length > 0
+          ? handlerResult.userIds.map((userId, idx) => ({
+              userId,
+              userName: handlerResult.userNames[idx] || '',
+              stepIndex: transition.nextStepIndex,
+              stepId: transition.nextStepId
+            }))
+          : []
       };
     } catch (error) {
       console.error('[派发引擎] 派发失败:', error);
@@ -201,6 +223,7 @@ export class HazardDispatchEngine {
         ccUsers: { userIds: [], userNames: [], details: [] },
         log: this.createLog(operator, action, hazard.status, comment),
         notifications: [],
+        candidateHandlers: [],
         error: error instanceof Error ? error.message : '未知错误'
       };
     }
@@ -225,6 +248,29 @@ export class HazardDispatchEngine {
     nextStepIndex: number;
     error?: string;
   } {
+    // 🔒 严格边界检查：确保当前步骤索引有效
+    if (currentStepIndex < 0 || currentStepIndex >= workflowSteps.length) {
+      return {
+        success: false,
+        newStatus: currentStatus,
+        nextStepId: '',
+        nextStepIndex: currentStepIndex,
+        error: `无效的步骤索引: ${currentStepIndex}，有效范围: 0-${workflowSteps.length - 1}`
+      };
+    }
+
+    // 验证当前步骤是否存在
+    const currentStep = workflowSteps[currentStepIndex];
+    if (!currentStep) {
+      return {
+        success: false,
+        newStatus: currentStatus,
+        nextStepId: '',
+        nextStepIndex: currentStepIndex,
+        error: `未找到步骤配置: 索引=${currentStepIndex}`
+      };
+    }
+
     // 驳回操作：特殊处理
     if (action === DispatchAction.REJECT) {
       // 根据当前步骤决定驳回到哪一步
@@ -268,16 +314,36 @@ export class HazardDispatchEngine {
     const nextStepIndex = currentStepIndex + 1;
     
     if (nextStepIndex >= workflowSteps.length) {
-      // 已经是最后一步，流程结束
+      // 已经是最后一步，流程结束（但这种情况应该在前面的边界检查中已经处理）
+      // 这里作为双重保险，如果 currentStepIndex 已经是最后一个有效索引，则闭环
+      if (currentStepIndex === workflowSteps.length - 1) {
+        return {
+          success: true,
+          newStatus: 'closed',
+          nextStepId: 'verify', // 最后停留在验收步骤
+          nextStepIndex: workflowSteps.length - 1
+        };
+      }
+      // 如果索引超出范围，应该返回错误（不应该到达这里，因为前面已经检查过）
       return {
-        success: true,
-        newStatus: 'closed',
-        nextStepId: 'verify', // 最后停留在验收步骤
-        nextStepIndex: workflowSteps.length - 1
+        success: false,
+        newStatus: currentStatus,
+        nextStepId: '',
+        nextStepIndex: currentStepIndex,
+        error: `步骤索引超出范围: ${nextStepIndex}，最大有效索引: ${workflowSteps.length - 1}`
       };
     }
 
     const nextStep = workflowSteps[nextStepIndex];
+    if (!nextStep) {
+      return {
+        success: false,
+        newStatus: currentStatus,
+        nextStepId: '',
+        nextStepIndex: currentStepIndex,
+        error: `未找到下一步骤配置: 索引=${nextStepIndex}`
+      };
+    }
     const newStatus = this.getStatusByStepId(nextStep.id);
 
     console.log('🔄 [派发引擎] 动态流转:', {
@@ -408,9 +474,9 @@ export class HazardDispatchEngine {
 
     return {
       operatorName: operator.name,
-      action: displayActionName,  // 使用实际显示的名称
+      action: action,  // 使用英文枚举值（如 "submit"），满足测试和API契约要求
       time: new Date().toISOString(),
-      changes,
+      changes,  // changes 字段包含中文显示名称
       ccUsers: ccUserNames && ccUserNames.length > 0 ? ccUserNames.map(name => name) : undefined,
       ccUserNames
     };
@@ -421,7 +487,7 @@ export class HazardDispatchEngine {
    */
   private static generateNotifications(params: {
     hazard: HazardRecord;
-    action: string;
+    action: string; // 可能是英文枚举值（如 "submit"）或中文（如 "提交上报"）
     operator: { id: string; name: string };
     handlers: { userIds: string[]; userNames: string[] };
     ccUsers: { userIds: string[]; userNames: string[] };
@@ -430,16 +496,30 @@ export class HazardDispatchEngine {
     const { hazard, action, operator, handlers, ccUsers, newStatus } = params;
     const allNotifications: NotificationData[] = [];
 
+    // 将英文枚举值转换为中文（用于通知服务）
+    const actionNames: Record<string, string> = {
+      [DispatchAction.SUBMIT]: '提交上报',
+      [DispatchAction.ASSIGN]: '指派整改',
+      [DispatchAction.RECTIFY]: '提交整改',
+      [DispatchAction.VERIFY]: '验收闭环',
+      [DispatchAction.REJECT]: '驳回',
+      [DispatchAction.EXTEND_DEADLINE]: '延期申请'
+    };
+    const actionForNotification = actionNames[action] || action; // 如果是英文枚举值则转换，否则直接使用
+
     // 1. 生成处理人通知数据
     if (handlers.userIds.length > 0) {
       const handlerNotifications = HazardNotificationService.generateHandlerNotifications({
         hazard,
         handlerIds: handlers.userIds,
         handlerNames: handlers.userNames,
-        action,
+        action: actionForNotification, // 使用转换后的中文 action
         operatorName: operator.name
       });
-      allNotifications.push(...handlerNotifications);
+      // 防御性检查：确保返回的是数组
+      if (Array.isArray(handlerNotifications) && handlerNotifications.length > 0) {
+        allNotifications.push(...handlerNotifications);
+      }
     }
 
     // 2. 生成抄送人通知数据
@@ -448,10 +528,13 @@ export class HazardDispatchEngine {
         hazard,
         ccUserIds: ccUsers.userIds,
         ccUserNames: ccUsers.userNames,
-        action,
+        action: actionForNotification, // 使用转换后的中文 action
         operatorName: operator.name
       });
-      allNotifications.push(...ccNotifications);
+      // 防御性检查：确保返回的是数组
+      if (Array.isArray(ccNotifications) && ccNotifications.length > 0) {
+        allNotifications.push(...ccNotifications);
+      }
     }
 
     // 3. 如果隐患闭环，生成上报人通知数据
@@ -462,7 +545,10 @@ export class HazardDispatchEngine {
         reporterName: hazard.reporterName,
         operatorName: operator.name
       });
-      allNotifications.push(...closedNotifications);
+      // 防御性检查：确保返回的是数组
+      if (Array.isArray(closedNotifications) && closedNotifications.length > 0) {
+        allNotifications.push(...closedNotifications);
+      }
     }
 
     console.log(`📋 [通知系统] 生成通知数据: 处理人${handlers.userNames.length}人, 抄送${ccUsers.userNames.length}人, 共${allNotifications.length}条`);
@@ -483,6 +569,108 @@ export class HazardDispatchEngine {
     }
     
     return results;
+  }
+
+  /**
+   * 状态流转前校验必要字段
+   * 确保当前执行人、整改提交时间等关键字段符合流转条件
+   */
+  private static async validateBeforeTransition(
+    hazard: HazardRecord,
+    action: DispatchAction,
+    operator: { id: string; name: string },
+    currentStepIndex: number
+  ): Promise<string | null> {
+    // 1. 校验当前执行人（dopersonal_ID）
+    if (action === DispatchAction.RECTIFY) {
+      // 提交整改时，必须验证当前执行人是否匹配
+      if (!hazard.dopersonal_ID) {
+        return '当前步骤执行人未设置，无法提交整改';
+      }
+      // 检查操作人是否为当前执行人（或签/会签模式下允许候选处理人操作）
+      const isCurrentHandler = hazard.dopersonal_ID === operator.id;
+      const isCandidateHandler = hazard.candidateHandlers?.some(
+        candidate => candidate.userId === operator.id && !candidate.hasOperated
+      );
+      
+      if (!isCurrentHandler && !isCandidateHandler) {
+        return `当前操作人（${operator.name}）不是当前步骤的执行人，无法提交整改`;
+      }
+    }
+
+    // 2. 校验整改提交时间（提交整改时必须有整改描述）
+    if (action === DispatchAction.RECTIFY) {
+      // 注意：这里不直接检查 rectifyTime，因为这是本次操作要设置的
+      // 但可以检查是否已有整改描述（如果之前已提交过）
+      // 实际校验会在API层进行
+    }
+
+    // 3. 校验验收操作（验收时必须已有整改提交）
+    if (action === DispatchAction.VERIFY && hazard.status === 'rectifying') {
+      if (!hazard.rectifyTime) {
+        return '整改尚未提交，无法进行验收';
+      }
+      if (!hazard.rectifyDesc) {
+        return '整改描述为空，无法进行验收';
+      }
+    }
+
+    // 4. 校验当前步骤索引一致性
+    const expectedStepIndex = hazard.currentStepIndex ?? 0;
+    if (currentStepIndex !== expectedStepIndex) {
+      console.warn(`[派发引擎] 步骤索引不一致: 传入=${currentStepIndex}, 数据库=${expectedStepIndex}`);
+      // 不直接抛出错误，因为可能是前端缓存问题，但记录警告
+    }
+
+      // 5. 校验会签/或签模式下的操作权限
+      // 优先使用传入的 candidateHandlers 数据（如果已从关联表加载）
+      if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) {
+        const approvalMode = hazard.approvalMode;
+        
+        // 🔒 安全校验：首先检查当前用户是否在候选处理人列表中
+        const isCandidate = hazard.candidateHandlers.some(h => String(h.userId) === String(operator.id));
+        if (!isCandidate) {
+          return `您不是当前步骤的候选处理人，无法执行此操作`;
+        }
+        
+        if (approvalMode === 'AND') {
+          // 会签模式下，已操作过的用户不能重复操作
+          const currentUserHandler = hazard.candidateHandlers.find(h => String(h.userId) === String(operator.id));
+          if (currentUserHandler && currentUserHandler.hasOperated) {
+            return '您已完成本次会签，无法重复操作';
+          }
+        } else if (approvalMode === 'OR') {
+          // 或签模式下，已有人操作后，其他人不能再操作
+          const someoneOperated = hazard.candidateHandlers.some(h => h.hasOperated);
+          if (someoneOperated) {
+            return '或签已完成，无法重复操作';
+          }
+        }
+      } else if (hazard.approvalMode && (hazard.approvalMode === 'OR' || hazard.approvalMode === 'AND')) {
+        // 如果 candidateHandlers 未加载，尝试从关联表查询（异步）
+        const { hasUserOperated, isUserCandidate } = await import('./hazardCandidateHandler.service');
+        const stepIndex = currentStepIndex ?? hazard.currentStepIndex ?? 0;
+        
+        // 🔒 安全校验：首先检查当前用户是否在候选处理人列表中
+        const isCandidate = await isUserCandidate(hazard.id, operator.id, stepIndex);
+        if (!isCandidate) {
+          return `您不是当前步骤的候选处理人，无法执行此操作`;
+        }
+        
+        const hasOperated = await hasUserOperated(hazard.id, operator.id, stepIndex);
+        
+        if (hazard.approvalMode === 'AND' && hasOperated) {
+          // 会签模式下，已操作过的用户不能重复操作
+          return '您已完成本次会签，无法重复操作';
+        }
+        
+        if (hazard.approvalMode === 'OR' && hasOperated) {
+          // 或签模式下，已有人操作后，其他人不能再操作
+          return '或签已完成，无法重复操作';
+        }
+      }
+
+    return null; // 校验通过
   }
 
   /**

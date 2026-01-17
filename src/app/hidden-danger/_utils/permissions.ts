@@ -1,5 +1,6 @@
 // src/app/hidden-danger/_utils/permissions.ts
 import { HazardRecord } from '@/types/hidden-danger';
+import { HAZARD_STATUS, APPROVAL_MODE } from '@/lib/business-constants';
 
 /**
  * 检查用户是否可以查看隐患详情
@@ -48,6 +49,7 @@ export function canAssignHazard(hazard: HazardRecord, user: any): boolean {
 
 /**
  * 检查用户是否可以开始/提交整改
+ * 注意：此函数是同步的，用于前端快速检查。实际权限验证应在后端API中进行。
  */
 export function canRectifyHazard(hazard: HazardRecord, user: any): boolean {
   if (!user) return false;
@@ -56,13 +58,13 @@ export function canRectifyHazard(hazard: HazardRecord, user: any): boolean {
   if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) {
     const approvalMode = hazard.approvalMode;
     
-    if (approvalMode === 'OR') {
+    if (approvalMode === APPROVAL_MODE.OR) {
       // OR模式（或签）：任何一人操作后，其他人不能再操作
       const someoneOperated = hazard.candidateHandlers.some(h => h.hasOperated);
       if (someoneOperated) {
         return false;
       }
-    } else if (approvalMode === 'AND') {
+    } else if (approvalMode === APPROVAL_MODE.AND) {
       // AND模式（会签）：每个人都可以操作，但只能操作一次
       const currentUserHandler = hazard.candidateHandlers.find(h => h.userId === user.id);
       if (currentUserHandler && currentUserHandler.hasOperated) {
@@ -86,6 +88,7 @@ export function canRectifyHazard(hazard: HazardRecord, user: any): boolean {
 
 /**
  * 检查用户是否可以验收隐患
+ * 注意：此函数是同步的，用于前端快速检查。实际权限验证应在后端API中进行。
  */
 export function canVerifyHazard(hazard: HazardRecord, user: any): boolean {
   if (!user) return false;
@@ -94,13 +97,13 @@ export function canVerifyHazard(hazard: HazardRecord, user: any): boolean {
   if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) {
     const approvalMode = hazard.approvalMode;
     
-    if (approvalMode === 'OR') {
+    if (approvalMode === APPROVAL_MODE.OR) {
       // OR模式（或签）：任何一人操作后，其他人不能再操作
       const someoneOperated = hazard.candidateHandlers.some(h => h.hasOperated);
       if (someoneOperated) {
         return false;
       }
-    } else if (approvalMode === 'AND') {
+    } else if (approvalMode === APPROVAL_MODE.AND) {
       // AND模式（会签）：每个人都可以操作，但只能操作一次
       const currentUserHandler = hazard.candidateHandlers.find(h => h.userId === user.id);
       if (currentUserHandler && currentUserHandler.hasOperated) {
@@ -164,12 +167,13 @@ export function canApproveExtension(hazard: HazardRecord, user: any): boolean {
 
 /**
  * 检查用户是否可以驳回整改（责任人驳回）
+ * 注意：此函数是同步的，用于前端快速检查。实际权限验证应在后端API中进行。
  */
 export function canRejectRectify(hazard: HazardRecord, user: any): boolean {
   if (!user) return false;
   
-  // 只有在整改中状态才能驳回
-  if (hazard.status !== 'rectifying') return false;
+  // 只有在整改中状态才能驳回（使用常量，避免硬编码）
+  if (hazard.status !== HAZARD_STATUS.RECTIFYING) return false;
   
   // 🟢 或签模式：检查是否在候选处理人列表中
   if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0) {

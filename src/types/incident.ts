@@ -1,23 +1,39 @@
 /**
  * 事故事件管理类型定义
+ * 
+ * ⚠️ 类型一致性说明：
+ * - 所有日期字段统一使用 ISO 8601 字符串格式（而非 Date 对象）
+ * - 这与后端 Prisma 模型和 Zod Schema 保持一致
+ * - 存储时使用 UTC，展示时转换为本地时间
  */
 
-export type IncidentType = 'injury' | 'near_miss' | 'property_damage' | 'environmental';
-export type IncidentSeverity = 'minor' | 'moderate' | 'serious' | 'critical';
-export type IncidentStatus = 'reported' | 'investigating' | 'reviewed' | 'closed' | 'rejected';
+// 使用常量定义，避免硬编码
+import type { 
+  IncidentType as IncidentTypeConst,
+  IncidentSeverity as IncidentSeverityConst,
+  IncidentStatus as IncidentStatusConst
+} from '@/lib/business-constants';
 
+export type IncidentType = IncidentTypeConst;
+export type IncidentSeverity = IncidentSeverityConst;
+export type IncidentStatus = IncidentStatusConst;
+
+/**
+ * Incident 接口定义
+ * 注意：所有日期字段统一使用 ISO 8601 字符串格式（如：'2024-01-15T10:30:00.000Z'）
+ */
 export interface Incident {
   id: string;
   code: string | null;
   type: IncidentType;
   severity: IncidentSeverity;
-  occurredAt: Date;
+  occurredAt: string; // ISO 8601 日期字符串（原为 Date）
   location: string;
   description: string;
   reporterId: string;
   reporterName: string;
   reporterDept: string | null;
-  reportTime: Date;
+  reportTime: string; // ISO 8601 日期字符串（原为 Date）
   departmentId: string | null;
   departmentName: string | null;
   
@@ -30,7 +46,7 @@ export interface Incident {
   // 整改措施
   correctiveActions: string | null; // JSON字符串
   preventiveActions: string | null; // JSON字符串
-  actionDeadline: Date | null;
+  actionDeadline: string | null; // ISO 8601 日期字符串（原为 Date）
   actionResponsibleId: string | null;
   actionResponsibleName: string | null;
   
@@ -49,33 +65,41 @@ export interface Incident {
   // 审批与结案
   reviewerId: string | null;
   reviewerName: string | null;
-  reviewTime: Date | null;
+  reviewTime: string | null; // ISO 8601 日期字符串（原为 Date）
   reviewComment: string | null;
   closerId: string | null;
   closerName: string | null;
-  closeTime: Date | null;
+  closeTime: string | null; // ISO 8601 日期字符串（原为 Date）
   closeReason: string | null;
   
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string; // ISO 8601 日期字符串（原为 Date）
+  updatedAt: string; // ISO 8601 日期字符串（原为 Date）
 }
 
+/**
+ * 整改措施接口
+ * 注意：日期字段统一使用 ISO 8601 字符串格式
+ */
 export interface CorrectiveAction {
   action: string;
-  deadline?: Date;
-  responsibleId?: string;
-  responsibleName?: string;
+  deadline?: string | null; // ISO 8601 日期字符串（原为 Date）
+  responsibleId?: string | null;
+  responsibleName?: string | null;
   completed?: boolean;
-  completedAt?: Date;
+  completedAt?: string | null; // ISO 8601 日期字符串（原为 Date）
 }
 
+/**
+ * 预防措施接口
+ * 注意：日期字段统一使用 ISO 8601 字符串格式
+ */
 export interface PreventiveAction {
   action: string;
-  deadline?: Date;
-  responsibleId?: string;
-  responsibleName?: string;
+  deadline?: string | null; // ISO 8601 日期字符串（原为 Date）
+  responsibleId?: string | null;
+  responsibleName?: string | null;
   completed?: boolean;
-  completedAt?: Date;
+  completedAt?: string | null; // ISO 8601 日期字符串（原为 Date）
 }
 
 /**

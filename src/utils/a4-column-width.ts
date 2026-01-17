@@ -284,7 +284,11 @@ export function calculateA4ColumnWidths(data: any[][]): number[] {
     const scaleFactor = TARGET_USABLE_WIDTH / currentTotal;
     
     for (let i = 0; i < numColumns; i++) {
-      columnWidths[i] = Math.round(columnWidths[i] * scaleFactor);
+      const scaledWidth = columnWidths[i] * scaleFactor;
+      // 重新应用约束，确保不违反最大/最小宽度限制
+      columnWidths[i] = Math.round(
+        Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, scaledWidth))
+      );
     }
   }
 

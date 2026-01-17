@@ -155,16 +155,11 @@ export default function HiddenDangerPage({
   // 处理上报
   const handleReport = async (formData: any) => {
     try {
-      // 生成隐患编号：Hazard+日期+序号
-      const today = todayString().replace(/-/g, '');
-      // TODO: 应该从数据库获取今日已有记录数来计算序号
-      const sequence = String(filteredHazards.length + 1).padStart(3, '0');
-      const hazardCode = `Hazard${today}${sequence}`;
-
+      // 🔒 编号由后端自动生成，确保唯一性（不再在前端生成）
       // 1. 保存隐患基础数据（状态为 reported）
       const newHazard = await hazardService.createHazard({
         ...formData,
-        code: hazardCode,
+        // 不传入 code，由后端自动生成
         reporterId: user?.id,
         reporterName: user?.name,
         reportTime: new Date().toISOString(),
@@ -188,7 +183,6 @@ export default function HiddenDangerPage({
   // 处理批量上传
   const handleBatchUpload = async (data: any[]) => {
     try {
-      const today = todayString().replace(/-/g, '');
       let successCount = 0;
       let failCount = 0;
 
@@ -196,20 +190,18 @@ export default function HiddenDangerPage({
       for (let i = 0; i < data.length; i++) {
         try {
           const item = data[i];
-          const sequence = String(filteredHazards.length + successCount + 1).padStart(3, '0');
-          const hazardCode = `Hazard${today}${sequence}`;
 
           // 计算截止日期（设置为当天的结束时间 23:59:59.999）
           const deadline = addDays(new Date(), item.deadlineDays || 7, true);
 
-          // 创建隐患记录
+          // 🔒 创建隐患记录（编号由后端自动生成，确保唯一性）
           const newHazard = await hazardService.createHazard({
             type: item.type,
             location: item.location,
             desc: item.desc,
             riskLevel: item.riskLevel,
             responsibleDeptName: item.responsibleDeptName,
-            code: hazardCode,
+            // 不传入 code，由后端自动生成
             reporterId: user?.id,
             reporterName: user?.name,
             reportTime: new Date().toISOString(),

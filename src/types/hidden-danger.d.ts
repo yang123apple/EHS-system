@@ -1,7 +1,21 @@
 // src/types/hidden-danger.d.ts
+/**
+ * 隐患管理模块类型定义
+ * 
+ * ⚠️ 类型一致性说明：
+ * - 所有日期字段统一使用 ISO 8601 字符串格式（而非 Date 对象）
+ * - 状态、风险等级等枚举值使用统一的常量定义（避免硬编码）
+ */
 
-export type HazardStatus = 'reported' | 'assigned' | 'rectifying' | 'verified' | 'closed';
-export type RiskLevel = 'low' | 'medium' | 'high' | 'major';
+// 从常量文件导入类型，确保类型一致
+import type {
+  HazardStatus as HazardStatusConst,
+  HazardRiskLevel as RiskLevelConst,
+  ApprovalMode as ApprovalModeConst,
+} from '@/lib/business-constants';
+
+export type HazardStatus = HazardStatusConst;
+export type RiskLevel = RiskLevelConst;
 
 export interface HazardLog {
   operatorName: string;
@@ -37,7 +51,7 @@ export interface HazardRecord {
     userName: string;
     hasOperated?: boolean; // 是否已操作（用于记录实际操作人）
   }>;
-  approvalMode?: 'OR' | 'AND' | 'CONDITIONAL'; // 当前步骤的审批模式（OR=或签，AND=会签）
+  approvalMode?: ApprovalModeConst; // 当前步骤的审批模式（OR=或签，AND=会签）
   old_personal_ID?: string[]; // 历史经手人 ID 数组（包括所有处理人和抄送人，永久保留查看权限）
   currentStepIndex?: number; // 当前步骤索引（用于追踪工作流位置，支持动态步骤）
   currentStepId?: string; // 当前步骤ID（用于追踪工作流位置）

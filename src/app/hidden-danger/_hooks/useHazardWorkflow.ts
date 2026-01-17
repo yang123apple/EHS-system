@@ -363,8 +363,14 @@ export function useHazardWorkflow(onSuccess: () => void) {
         }
       });
 
-      // 更新隐患状态
-      await hazardService.updateHazard({ id: hazard.id, ...updates });
+      // 🔒 将通知数据一起发送到更新API，确保在同一事务中创建
+      const updatePayload: any = { id: hazard.id, ...updates };
+      if (result.notifications && result.notifications.length > 0) {
+        updatePayload.notifications = result.notifications;
+      }
+
+      // 更新隐患状态（包含通知创建，在同一事务中）
+      await hazardService.updateHazard(updatePayload);
 
       // 记录系统操作日志（包含引擎派发快照）
       try {
@@ -422,18 +428,9 @@ export function useHazardWorkflow(onSuccess: () => void) {
         console.error('❌ 记录系统日志失败（不影响主流程）:', logError);
       }
 
-      // 创建通知（通过 API）
+      // 🔒 通知已在更新API的事务中创建，无需单独调用
       if (result.notifications && result.notifications.length > 0) {
-        try {
-          await apiFetch('/api/notifications', {
-            method: 'POST',
-            body: { notifications: result.notifications },
-          });
-          console.log(`✅ 已创建 ${result.notifications.length} 条通知`);
-        } catch (notifyError) {
-          console.error('❌ 创建通知失败（不影响主流程）:', notifyError);
-          // 通知创建失败不应阻断主流程
-        }
+        console.log(`✅ 已通过事务创建 ${result.notifications.length} 条通知`);
       }
 
       onSuccess(); // 成功后刷新数据并关闭弹窗

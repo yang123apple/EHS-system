@@ -22,7 +22,12 @@
     "restore": "node scripts/restore-from-zip.js",
     "restore:database": "node scripts/restore-database-incremental.js",
     "test:backup-api": "node scripts/test-backup-api.js",
-    "backup:core": "node scripts/backup-database-full.js"
+    "backup:core": "node scripts/backup-database-full.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:unit": "jest --testPathPattern=unit",
+    "test:integration": "jest --testPathPattern=integration"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -61,16 +66,22 @@
     "@tailwindcss/postcss": "^4.1.17",
     "@types/archiver": "^7.0.0",
     "@types/bcryptjs": "^2.4.6",
+    "@types/jest": "^29.5.12",
     "@types/node": "^20",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/supertest": "^6.0.2",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9.39.2",
     "eslint-config-next": "16.0.8",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
     "postcss": "^8.5.6",
     "prisma": "^5.22.0",
+    "supertest": "^6.3.4",
     "tailwindcss": "^4.1.17",
+    "ts-jest": "^29.1.2",
     "typescript": "^5"
   }
 }

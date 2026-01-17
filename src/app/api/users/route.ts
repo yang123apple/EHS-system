@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { assignOnboardingPlanToUser } from '@/services/onboardingService';
 import { withAuth, withAdmin } from '@/middleware/auth';
 import bcrypt from 'bcryptjs';
+import { maskUserSensitiveFields } from '@/utils/dataMasking';
+import { safeJsonParse } from '@/utils/jsonUtils';
 
 // GET: 获取所有用户 (Support Pagination)
 export const GET = withAuth(async (req, context, user) => {
@@ -58,19 +60,29 @@ export const GET = withAuth(async (req, context, user) => {
       prisma.user.count({ where: whereCondition })
   ]);
 
-  const finalUsers = rawUsers.map((u: any) => ({
-    id: u.id,
-    username: u.username,
-    name: u.name,
-    department: u.department?.name || '',
-    departmentId: u.departmentId,
-    role: u.role,
-    avatar: u.avatar,
-    jobTitle: u.jobTitle || '',
-    permissions: u.permissions ? JSON.parse(u.permissions) : {},
-    directManagerId: u.directManagerId,
-    isActive: u.isActive ?? true // 🟢 添加在职状态，默认在职
-  }));
+  // ✅ 修复问题8：按角色分级返回敏感信息
+  const finalUsers = rawUsers.map((u: any) => {
+    const userData = {
+      id: u.id,
+      username: u.username,
+      name: u.name,
+      department: u.department?.name || '',
+      departmentId: u.departmentId,
+      role: u.role,
+      avatar: u.avatar,
+      jobTitle: u.jobTitle || '',
+      permissions: safeJsonParse(u.permissions, {}), // ✅ 修复问题9：使用 safeJsonParse
+      directManagerId: u.directManagerId,
+      isActive: u.isActive ?? true, // 🟢 添加在职状态，默认在职
+      // 注意：如果用户表中有 phone、idCard、email 等字段，需要在这里包含
+      phone: (u as any).phone,
+      idCard: (u as any).idCard,
+      email: (u as any).email,
+    };
+    
+    // 对敏感字段进行脱敏处理
+    return maskUserSensitiveFields(userData, user.role);
+  });
 
   if (isPaginated) {
       return NextResponse.json({

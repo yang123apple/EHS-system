@@ -250,12 +250,66 @@ export const db = {
   },
 
   createHazard: async (data: Partial<HazardRecord> & { type: string; location: string; desc: string; reporterId: string; reporterName: string }) => {
-    // 1. 生成 code (YYYYMMDDNNN)
-    const todayStr = todayString().replace(/-/g, '');
-    const count = await prisma.hazardRecord.count({
-      where: { code: { startsWith: todayStr } }
-    });
-    const code = `${todayStr}${(count + 1).toString().padStart(3, '0')}`;
+    // 🔒 生成隐患编号（与API路由保持一致）
+    // 格式：Hazard + YYYYMMDD + 序号（3位）
+    let code = data.code;
+    if (!code || code.trim() === '') {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const dateStr = `${year}${month}${day}`;
+      const prefix = `Hazard${dateStr}`;
+
+      // 查询当天已存在的最大编号
+      const todayStart = new Date(year, now.getMonth(), now.getDate());
+      const todayEnd = new Date(todayStart);
+      todayEnd.setDate(todayEnd.getDate() + 1);
+
+      const existingRecords = await prisma.hazardRecord.findMany({
+        where: {
+          code: { startsWith: prefix },
+          createdAt: { gte: todayStart, lt: todayEnd }
+        },
+        select: { code: true },
+        orderBy: { code: 'desc' }
+      });
+
+      let maxSeq = 0;
+      for (const record of existingRecords) {
+        if (record.code) {
+          const seqStr = record.code.slice(-3);
+          const seq = parseInt(seqStr, 10);
+          if (!isNaN(seq) && seq > maxSeq) {
+            maxSeq = seq;
+          }
+        }
+      }
+
+      const newSeq = String(maxSeq + 1).padStart(3, '0');
+      code = `${prefix}${newSeq}`;
+
+      // 双重检查：确保编号唯一
+      const existing = await prisma.hazardRecord.findUnique({
+        where: { code }
+      });
+
+      if (existing) {
+        // 如果编号已存在，继续递增查找可用编号
+        let seq = maxSeq + 1;
+        while (seq < 999) {
+          seq++;
+          const testCode = `${prefix}${String(seq).padStart(3, '0')}`;
+          const testExisting = await prisma.hazardRecord.findUnique({
+            where: { code: testCode }
+          });
+          if (!testExisting) {
+            code = testCode;
+            break;
+          }
+        }
+      }
+    }
 
     const {
       id, photos, logs, ccDepts, ccUsers, old_personal_ID,

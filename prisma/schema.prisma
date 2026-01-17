@@ -184,6 +184,8 @@ model HazardRecord {
   // 关联关系
   signatures SignatureRecord[]
   extensions HazardExtension[]
+  candidateHandlersRel HazardCandidateHandler[] // 🟢 或签/会签候选处理人关联表
+  ccUsersRel HazardCC[] // 🟢 抄送用户关联表
 }
 
 // 隐患整改延期历史记录
@@ -205,6 +207,47 @@ model HazardExtension {
   @@index([approverId])
   @@index([status])
   @@index([createdAt])
+}
+
+// 🟢 隐患候选处理人关联表（用于或签/会签模式，持久化操作状态）
+model HazardCandidateHandler {
+  id          String       @id @default(cuid())
+  hazardId    String
+  hazard      HazardRecord @relation(fields: [hazardId], references: [id], onDelete: Cascade)
+  userId      String // 候选处理人ID
+  userName    String // 候选处理人姓名（快照）
+  stepIndex   Int // 步骤索引（用于区分不同步骤的候选处理人）
+  stepId      String? // 步骤ID
+  hasOperated Boolean      @default(false) // 是否已操作
+  operatedAt  DateTime? // 操作时间
+  opinion     String? // 操作意见（如：同意、驳回等）
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // 索引
+  @@unique([hazardId, userId, stepIndex]) // 确保同一隐患、同一用户、同一步骤只有一条记录
+  @@index([hazardId])
+  @@index([userId])
+  @@index([stepIndex])
+  @@index([hasOperated])
+  @@index([hazardId, stepIndex]) // 复合索引：查询某隐患某步骤的所有候选处理人
+  @@index([userId, hasOperated]) // 复合索引：查询某用户待处理的任务
+}
+
+// 🟢 隐患抄送用户关联表（规范化抄送关系，提升查询性能）
+model HazardCC {
+  id        String       @id @default(cuid())
+  hazardId  String
+  hazard    HazardRecord @relation(fields: [hazardId], references: [id], onDelete: Cascade)
+  userId    String // 抄送用户ID
+  userName  String? // 抄送用户姓名（快照，可选）
+  createdAt DateTime     @default(now())
+
+  // 索引
+  @@unique([hazardId, userId]) // 确保同一隐患、同一用户只有一条记录
+  @@index([hazardId])
+  @@index([userId])
+  @@index([hazardId, userId]) // 复合索引：查询某隐患的抄送用户
 }
 
 model HazardConfig {

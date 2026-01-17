@@ -39,20 +39,49 @@ ehs-system1.0/
 │   │   │   ├── badge.tsx              # 徽章组件
 │   │   │   └── scroll-area.tsx        # 滚动区域组件
 │   │   │
-│   │   └── work-permit/              # 作业许可模块组件
-│   │       └── moduls/               # 弹窗组件目录
-│   │           ├── AddPermitModal.tsx        # 新建作业许可弹窗
-│   │           ├── EditTemplateModal.tsx     # 编辑模板弹窗
-│   │           ├── RecordDetailModal.tsx     # 记录详情弹窗
-│   │           ├── WorkflowEditorModal.tsx   # 工作流编辑器弹窗
-│   │           ├── TemplateManageModal.tsx   # 模板管理弹窗
-│   │           ├── ProjectDetailModal.tsx    # 项目详情弹窗
-│   │           ├── NewProjectModal.tsx       # 新建项目弹窗
-│   │           ├── TemplateBindingModal.tsx  # 模板绑定弹窗
-│   │           ├── SectionFormModal.tsx      # 分段表单弹窗
-│   │           ├── AttachmentViewModal.tsx   # 附件查看弹窗
-│   │           ├── ApprovalModal.tsx         # 审批弹窗
-│   │           └── AdjustDateModal.tsx        # 调整日期弹窗
+│   │   ├── work-permit/              # 作业许可模块组件
+│   │   │   └── moduls/               # 弹窗组件目录
+│   │   │       ├── AddPermitModal.tsx        # 新建作业许可弹窗
+│   │   │       ├── EditTemplateModal.tsx     # 编辑模板弹窗
+│   │   │       ├── RecordDetailModal.tsx     # 记录详情弹窗
+│   │   │       ├── WorkflowEditorModal.tsx   # 工作流编辑器弹窗
+│   │   │       ├── TemplateManageModal.tsx   # 模板管理弹窗
+│   │   │       ├── ProjectDetailModal.tsx    # 项目详情弹窗
+│   │   │       ├── NewProjectModal.tsx        # 新建项目弹窗
+│   │   │       ├── TemplateBindingModal.tsx  # 模板绑定弹窗
+│   │   │       ├── SectionFormModal.tsx      # 分段表单弹窗
+│   │   │       ├── AttachmentViewModal.tsx   # 附件查看弹窗
+│   │   │       ├── ApprovalModal.tsx         # 审批弹窗
+│   │   │       └── AdjustDateModal.tsx        # 调整日期弹窗
+│   │   │
+│   │   ├── archives/                  # 档案库模块组件
+│   │   │   ├── ArchiveExplorer.tsx    # 档案浏览器
+│   │   │   ├── ArchiveFileCard.tsx   # 档案文件卡片
+│   │   │   ├── ArchiveLogButton.tsx  # 档案日志按钮
+│   │   │   ├── ArchiveLogView.tsx    # 档案日志查看
+│   │   │   ├── ArchiveSettingsModal.tsx # 档案设置弹窗
+│   │   │   ├── ArchiveStatsView.tsx  # 档案统计视图
+│   │   │   ├── EnterpriseArchiveView.tsx # 企业档案视图
+│   │   │   ├── EquipmentArchiveView.tsx # 设备档案视图
+│   │   │   ├── EquipmentCard.tsx     # 设备卡片
+│   │   │   ├── EquipmentCreateModal.tsx # 创建设备弹窗
+│   │   │   ├── EquipmentDetailModal.tsx # 设备详情弹窗
+│   │   │   ├── FileEditModal.tsx      # 文件编辑弹窗
+│   │   │   ├── FileUploadModal.tsx    # 文件上传弹窗
+│   │   │   ├── MSDSArchiveView.tsx   # MSDS档案视图
+│   │   │   ├── PersonnelArchiveView.tsx # 人员档案视图
+│   │   │   ├── PersonnelCard.tsx     # 人员卡片
+│   │   │   ├── PersonnelDetailModal.tsx # 人员详情弹窗
+│   │   │   ├── SettingsButton.tsx     # 设置按钮
+│   │   │   └── Pagination.tsx         # 分页组件
+│   │   │
+│   │   ├── incident/                  # 事故事件模块组件
+│   │   │   ├── IncidentReportModal.tsx # 事故上报弹窗
+│   │   │   └── IncidentDetailModal.tsx # 事故详情弹窗
+│   │   │
+│   │   └── storage/                   # 存储模块组件
+│   │       ├── FileUploader.tsx      # 文件上传组件
+│   │       └── PresignedUploader.tsx  # 预签名上传组件
 │   │
 │   ├── lib/                           # 核心工具库
 │   │   ├── apiClient.ts              # API 客户端封装
@@ -111,8 +140,14 @@ ehs-system1.0/
 │           │   ├── route.ts                  # GET/POST /api/permits
 │           │   ├── [id]/
 │           │   │   └── route.ts              # GET/PUT/DELETE /api/permits/[id]
-│           │   └── approve/
-│           │       └── route.ts              # POST /api/permits/approve
+│           │   ├── approve/
+│           │   │   └── route.ts              # POST /api/permits/approve
+│           │   └── sections/
+│           │       └── append/
+│           │           └── route.ts          # POST /api/permits/sections/append
+│           │
+│           ├── sub-permits/
+│           │   └── route.ts                  # GET/POST /api/sub-permits
 │           │
 │           ├── projects/
 │           │   └── route.ts                  # GET/POST /api/projects
@@ -219,8 +254,34 @@ ehs-system1.0/
 │           │       └── route.ts            # GET /api/files/check
 │           │
 │           ├── storage/
-│           │   └── presigned-url/
-│           │       └── route.ts            # POST /api/storage/presigned-url
+│           │   ├── presigned-url/
+│           │   │   └── route.ts            # POST /api/storage/presigned-url
+│           │   └── status/
+│           │       └── route.ts            # GET /api/storage/status
+│           │
+│           ├── archives/
+│           │   ├── config/
+│           │   │   └── route.ts            # GET/PUT /api/archives/config
+│           │   ├── enterprise/
+│           │   │   └── route.ts            # GET/POST /api/archives/enterprise
+│           │   ├── equipment/
+│           │   │   ├── route.ts            # GET/POST /api/archives/equipment
+│           │   │   ├── [id]/
+│           │   │   │   └── route.ts         # GET/PUT/DELETE /api/archives/equipment/[id]
+│           │   │   └── inspection-reminder/
+│           │   │       └── route.ts         # GET /api/archives/equipment/inspection-reminder
+│           │   ├── personnel/
+│           │   │   ├── route.ts            # GET /api/archives/personnel
+│           │   │   └── [id]/
+│           │   │       └── files/
+│           │   │           └── route.ts     # GET/POST /api/archives/personnel/[id]/files
+│           │   ├── msds/
+│           │   │   └── route.ts            # GET/POST /api/archives/msds
+│           │   ├── files/
+│           │   │   └── [id]/
+│           │   │       └── route.ts         # GET/PUT/DELETE /api/archives/files/[id]
+│           │   └── stats/
+│           │       └── route.ts            # GET /api/archives/stats
 │           │
 │           ├── init/
 │           │   └── route.ts                 # GET/POST /api/init
@@ -233,9 +294,9 @@ ehs-system1.0/
 
 ### 📊 文件统计
 
-- **公共组件**: 10 个通用组件 + 3 个认证组件 + 3 个审计组件 + 5 个基础UI组件 + 12 个作业许可弹窗组件 = **33+ 个组件**
+- **公共组件**: 10 个通用组件 + 3 个认证组件 + 3 个审计组件 + 5 个基础UI组件 + 12 个作业许可弹窗组件 + 17 个档案库组件 + 2 个事故事件组件 + 2 个存储组件 = **54+ 个组件**
 - **工具函数**: 10+ 个核心工具库 + 5 个工具函数文件 = **15+ 个工具模块**
-- **API 路由**: 20+ 个主要模块，**70+ 个 API 端点**
+- **API 路由**: 25+ 个主要模块，**90+ 个 API 端点**
 
 ### 🗂️ 目录说明
 
@@ -564,6 +625,124 @@ import { ChangePasswordForm } from '@/components/auth/change-password-form';
 **路径**: `src/components/work-permit/moduls/AdjustDateModal.tsx`
 
 **功能**: 调整项目日期
+
+---
+
+### 6. 档案库模块组件 (`src/components/archives/`)
+
+#### 6.1 ArchiveExplorer - 档案浏览器
+**路径**: `src/components/archives/ArchiveExplorer.tsx`
+
+**功能**: 档案文件浏览和管理
+
+---
+
+#### 6.2 EnterpriseArchiveView - 企业档案视图
+**路径**: `src/components/archives/EnterpriseArchiveView.tsx`
+
+**功能**: 企业档案列表和分类管理
+
+---
+
+#### 6.3 EquipmentArchiveView - 设备档案视图
+**路径**: `src/components/archives/EquipmentArchiveView.tsx`
+
+**功能**: 设备档案管理，支持定检提醒
+
+---
+
+#### 6.4 PersonnelArchiveView - 人员档案视图
+**路径**: `src/components/archives/PersonnelArchiveView.tsx`
+
+**功能**: 一人一档人员档案管理
+
+---
+
+#### 6.5 MSDSArchiveView - MSDS档案视图
+**路径**: `src/components/archives/MSDSArchiveView.tsx`
+
+**功能**: MSDS（化学品安全技术说明书）档案管理
+
+---
+
+#### 6.6 EquipmentDetailModal - 设备详情弹窗
+**路径**: `src/components/archives/EquipmentDetailModal.tsx`
+
+**功能**: 查看和编辑设备详细信息
+
+---
+
+#### 6.7 PersonnelDetailModal - 人员详情弹窗
+**路径**: `src/components/archives/PersonnelDetailModal.tsx`
+
+**功能**: 查看人员档案详情
+
+---
+
+#### 6.8 FileUploadModal - 文件上传弹窗
+**路径**: `src/components/archives/FileUploadModal.tsx`
+
+**功能**: 档案文件上传（支持MinIO）
+
+---
+
+#### 6.9 FileEditModal - 文件编辑弹窗
+**路径**: `src/components/archives/FileEditModal.tsx`
+
+**功能**: 编辑档案文件信息
+
+---
+
+#### 6.10 ArchiveSettingsModal - 档案设置弹窗
+**路径**: `src/components/archives/ArchiveSettingsModal.tsx`
+
+**功能**: 配置档案库设置（文件类型、水印等）
+
+---
+
+#### 6.11 ArchiveStatsView - 档案统计视图
+**路径**: `src/components/archives/ArchiveStatsView.tsx`
+
+**功能**: 显示档案统计数据
+
+---
+
+#### 6.12 ArchiveLogView - 档案日志查看
+**路径**: `src/components/archives/ArchiveLogView.tsx`
+
+**功能**: 查看档案操作日志
+
+---
+
+### 7. 事故事件模块组件 (`src/components/incident/`)
+
+#### 7.1 IncidentReportModal - 事故上报弹窗
+**路径**: `src/components/incident/IncidentReportModal.tsx`
+
+**功能**: 上报事故事件
+
+---
+
+#### 7.2 IncidentDetailModal - 事故详情弹窗
+**路径**: `src/components/incident/IncidentDetailModal.tsx`
+
+**功能**: 查看事故详情、提交调查报告、审批结案
+
+---
+
+### 8. 存储模块组件 (`src/components/storage/`)
+
+#### 8.1 FileUploader - 文件上传组件
+**路径**: `src/components/storage/FileUploader.tsx`
+
+**功能**: 通用文件上传组件，支持MinIO
+
+---
+
+#### 8.2 PresignedUploader - 预签名上传组件
+**路径**: `src/components/storage/PresignedUploader.tsx`
+
+**功能**: 使用预签名URL上传文件
 
 ---
 
@@ -1614,6 +1793,151 @@ const pdfPath = await convertToPdf(inputPath, originalFilename);
 
 ---
 
+### 25. 子表单管理 (`/api/sub-permits/`)
+
+#### 25.1 GET `/api/sub-permits`
+**功能**: 获取子表单列表
+
+**查询参数**:
+- `parentPermitId`: 父表单ID
+
+---
+
+#### 25.2 POST `/api/sub-permits`
+**功能**: 创建子表单
+
+---
+
+### 26. 分段表单 (`/api/permits/sections/`)
+
+#### 26.1 POST `/api/permits/sections/append`
+**功能**: 追加分段表单记录（动态记录型模板）
+
+---
+
+### 27. 档案库系统 (`/api/archives/`)
+
+#### 27.1 配置管理 (`/api/archives/config/`)
+
+##### GET `/api/archives/config`
+**功能**: 获取档案库配置（文件类型、水印等）
+
+---
+
+##### PUT `/api/archives/config`
+**功能**: 更新档案库配置
+
+---
+
+#### 27.2 企业档案 (`/api/archives/enterprise/`)
+
+##### GET `/api/archives/enterprise`
+**功能**: 获取企业档案文件列表（支持分页、搜索、类型筛选）
+
+---
+
+##### POST `/api/archives/enterprise`
+**功能**: 上传企业档案文件
+
+---
+
+#### 27.3 设备档案 (`/api/archives/equipment/`)
+
+##### GET `/api/archives/equipment`
+**功能**: 获取设备列表（支持分页、搜索）
+
+---
+
+##### POST `/api/archives/equipment`
+**功能**: 创建设备档案
+
+---
+
+##### GET `/api/archives/equipment/[id]`
+**功能**: 获取设备详情
+
+---
+
+##### PUT `/api/archives/equipment/[id]`
+**功能**: 更新设备信息
+
+---
+
+##### DELETE `/api/archives/equipment/[id]`
+**功能**: 删除设备
+
+---
+
+##### GET `/api/archives/equipment/inspection-reminder`
+**功能**: 获取定检提醒列表
+
+---
+
+#### 27.4 人员档案 (`/api/archives/personnel/`)
+
+##### GET `/api/archives/personnel`
+**功能**: 获取人员档案列表（一人一档）
+
+---
+
+##### GET `/api/archives/personnel/[id]/files`
+**功能**: 获取指定人员的档案文件列表
+
+---
+
+##### POST `/api/archives/personnel/[id]/files`
+**功能**: 上传人员档案文件
+
+---
+
+#### 27.5 MSDS档案 (`/api/archives/msds/`)
+
+##### GET `/api/archives/msds`
+**功能**: 获取MSDS文件列表（支持分页、搜索、类型筛选）
+
+---
+
+##### POST `/api/archives/msds`
+**功能**: 上传MSDS文件
+
+---
+
+#### 27.6 档案文件 (`/api/archives/files/`)
+
+##### GET `/api/archives/files/[id]`
+**功能**: 获取档案文件详情
+
+---
+
+##### PUT `/api/archives/files/[id]`
+**功能**: 更新档案文件信息
+
+---
+
+##### DELETE `/api/archives/files/[id]`
+**功能**: 删除档案文件
+
+---
+
+#### 27.7 档案统计 (`/api/archives/stats/`)
+
+##### GET `/api/archives/stats`
+**功能**: 获取档案统计数据（三级培训、资质证书、设备、定检预警等）
+
+---
+
+### 28. 对象存储 (`/api/storage/`)
+
+#### 28.1 POST `/api/storage/presigned-url`
+**功能**: 获取预签名URL（用于文件上传）
+
+---
+
+#### 28.2 GET `/api/storage/status`
+**功能**: 获取存储服务状态
+
+---
+
 ## 四、API 通用特性
 
 ### 1. 认证中间件
@@ -1706,6 +2030,38 @@ const pdfPath = await convertToPdf(inputPath, originalFilename);
 - **API**: `/api/auto-assign-rules` - 自动派发规则管理
 - **服务**: `src/services/autoAssign.service.ts`
 - **特性**: 事件触发、条件规则、培训任务自动分配
+
+### 7. 事故事件管理
+- **API**: `/api/incident/*` - 事故上报、调查、审批、结案
+- **服务**: `src/services/incident.service.ts`
+- **组件**: `src/components/incident/` - 事故上报、详情查看
+- **特性**: 5Why分析法、CAPA整改措施、工作流集成、电子签名
+
+### 8. EHS档案库系统
+- **API**: `/api/archives/*` - 企业/设备/人员/MSDS档案管理
+- **服务**: `src/services/archive-service.ts`
+- **组件**: `src/components/archives/` - 档案管理组件
+- **特性**: 分类管理、定检提醒、一人一档、档案日志
+
+### 9. 子表单系统
+- **API**: `/api/sub-permits/*` - 子表单管理
+- **服务**: `src/services/subPermitService.ts`
+- **特性**: 动态记录型模板、追加记录、独立审批流程
+
+### 10. MinIO对象存储
+- **API**: `/api/storage/*` - 预签名URL、存储状态
+- **服务**: `src/services/storage/MinioStorageService.ts`
+- **组件**: `src/components/storage/` - 文件上传组件
+- **特性**: 私有/公有存储桶、预签名上传、文件管理
+
+### 11. 电子签名系统
+- **服务**: `src/services/signatureService.ts`
+- **模型**: `SignatureRecord` - 电子签名记录表
+- **特性**: 防篡改、数据快照、审计追踪
+
+### 12. 核心数据恢复
+- **服务**: `src/services/coreDataRestore.service.ts`
+- **特性**: 从JSON文件恢复核心数据（部门、用户、文件元数据等）
 
 ---
 
