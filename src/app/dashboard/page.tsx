@@ -166,44 +166,53 @@ export default function Dashboard() {
             <Link
               key={item.key}
               href={item.href}
-              className="group block"
+              className="group block h-full"
             >
-              <Card className={cn(
-                "h-[170px] transition-all duration-200 bg-white border",
-                item.borderColor,
-                item.hoverBorder,
-                item.hoverBg,
-                "hover:shadow-md hover:-translate-y-0.5"
-              )}>
-                <CardContent className="p-4 h-full flex flex-col">
+              <Card 
+                variant="clay"
+                className={cn(
+                  "h-full min-h-[190px] relative overflow-hidden flex flex-col",
+                  "group-hover:shadow-[0_16px_48px_rgba(0,0,0,0.12),inset_0_1px_0_rgba(255,255,255,0.95)]"
+                )}
+              >
+                {/* 背景渐变装饰 */}
+                <div className={cn(
+                  "absolute -right-12 -top-12 w-32 h-32 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-3xl",
+                  item.iconBg.replace("bg-", "bg-").replace("-50", "-200/30")
+                )} />
+                
+                <CardContent className="p-5 h-full flex flex-col relative z-10 min-h-0">
                   {/* Header - 图标和状态 */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div className={cn("p-2 rounded-lg", item.iconBg)}>
-                      <IconComponent className={cn("w-4 h-4", item.iconColor)} />
+                  <div className="flex items-start justify-between mb-4 flex-shrink-0">
+                    <div className={cn(
+                      "p-3 rounded-2xl shadow-[0_4px_12px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.8)] transition-transform duration-300 group-hover:scale-110 group-hover:shadow-[0_6px_20px_rgba(0,0,0,0.1)]",
+                      item.iconBg
+                    )}>
+                      <IconComponent className={cn("w-5 h-5", item.iconColor)} />
                     </div>
                     <Badge
                       variant={item.statusColor}
-                      className="text-[10px] px-1.5 py-0.5 h-5 font-medium"
+                      className="text-[10px] px-2 py-1 h-5 font-semibold rounded-full shadow-sm backdrop-blur-sm flex-shrink-0"
                     >
                       {item.status}
                     </Badge>
                   </div>
 
                   {/* Content */}
-                  <div className="flex-1 flex flex-col justify-between">
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-900 mb-1.5 group-hover:text-blue-600 transition-colors leading-tight">
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <div className="space-y-2 flex-1 min-h-0">
+                      <h3 className="text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors leading-tight tracking-tight line-clamp-2">
                         {item.title}
                       </h3>
-                      <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+                      <p className="text-xs text-slate-600 leading-relaxed line-clamp-2 font-medium">
                         {item.description}
                       </p>
                     </div>
 
                     {/* Footer */}
-                    <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-400 group-hover:text-slate-600">
-                      <span>进入模块</span>
-                      <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                    <div className="mt-3 pt-3 border-t border-slate-200/60 flex items-center justify-between text-[11px] font-semibold text-slate-500 group-hover:text-slate-700 transition-colors flex-shrink-0 gap-2">
+                      <span className="truncate">进入模块</span>
+                      <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform duration-300 flex-shrink-0" />
                     </div>
                   </div>
                 </CardContent>
@@ -213,42 +222,50 @@ export default function Dashboard() {
         })}
 
         {visibleModules.length === 0 && user?.role !== 'admin' && (
-          <div className="col-span-full py-12 text-center bg-slate-50 rounded-lg border border-dashed border-slate-300 text-slate-400">
-            <ShieldCheck size={40} className="mx-auto mb-3 text-slate-300" />
-            <p className="text-sm">暂无任何系统访问权限，请联系管理员分配。</p>
-          </div>
+          <Card variant="clay" className="col-span-full py-16 text-center border-dashed border-slate-300/60 bg-gradient-to-br from-slate-50/80 via-white/60 to-slate-100/40">
+            <div className="flex flex-col items-center justify-center">
+              <div className="bg-white/80 backdrop-blur-sm p-4 rounded-3xl shadow-[0_8px_24px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.9)] mb-4">
+                <ShieldCheck size={40} className="text-slate-400" />
+              </div>
+              <p className="text-sm font-semibold text-slate-600">暂无任何系统访问权限，请联系管理员分配。</p>
+            </div>
+          </Card>
         )}
 
         {/* Admin Card */}
         {user?.role === 'admin' && (
-          <Link href="/admin/account" className="group block">
-            <Card className="h-[170px] bg-gradient-to-br from-slate-900 to-slate-800 border-slate-700 hover:border-blue-600/50 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 relative overflow-hidden">
+          <Link href="/admin/account" className="group block h-full">
+            <Card 
+              variant="clay"
+              className="h-full min-h-[190px] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden group-hover:shadow-[0_16px_48px_rgba(59,130,246,0.2),inset_0_1px_0_rgba(255,255,255,0.1)] flex flex-col"
+            >
               {/* Background Glow */}
-              <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+              <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              <div className="absolute bottom-6 left-6 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none"></div>
 
-              <CardContent className="p-4 h-full flex flex-col relative z-10">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="bg-slate-800/50 p-2 rounded-lg border border-slate-700 text-blue-400">
-                    <Settings className="w-4 h-4" />
+              <CardContent className="p-5 h-full flex flex-col relative z-10 min-h-0">
+                <div className="flex items-start justify-between mb-4 flex-shrink-0">
+                  <div className="bg-slate-800/60 backdrop-blur-xl p-3 rounded-2xl border border-slate-700/50 text-blue-400 shadow-[0_4px_12px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)] group-hover:scale-110 transition-transform duration-300">
+                    <Settings className="w-5 h-5" />
                   </div>
-                  <Badge className="bg-blue-900/50 text-blue-400 border-blue-800 text-[10px] px-1.5 py-0.5 h-5 font-medium">
+                  <Badge className="bg-blue-900/40 backdrop-blur-sm text-blue-300 border border-blue-800/50 text-[10px] px-2 py-1 h-5 font-bold rounded-full shadow-sm flex-shrink-0">
                     ADMIN
                   </Badge>
                 </div>
 
-                <div className="flex-1 flex flex-col justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold text-white mb-1.5 group-hover:text-blue-400 transition-colors leading-tight">
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="space-y-2 flex-1 min-h-0">
+                    <h3 className="text-base font-bold text-white group-hover:text-blue-300 transition-colors leading-tight tracking-tight line-clamp-2">
                       账户管理系统
                     </h3>
-                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">
+                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-2 font-medium">
                       仅管理员可见：管理员工账号、部门架构及权限配置。
                     </p>
                   </div>
 
-                  <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-[10px] font-medium text-slate-500 group-hover:text-slate-300">
-                    <span>管理设置</span>
-                    <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                  <div className="mt-3 pt-3 border-t border-slate-700/60 flex items-center justify-between text-[11px] font-semibold text-slate-500 group-hover:text-slate-300 transition-colors flex-shrink-0 gap-2">
+                    <span className="truncate">管理设置</span>
+                    <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform duration-300 flex-shrink-0" />
                   </div>
                 </div>
               </CardContent>
@@ -307,28 +324,36 @@ interface StatCardProps {
 
 function StatCard({ label, value, unit, color = "text-slate-900", icon, trend, trendType = "up" }: StatCardProps) {
   return (
-    <Card className="border border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm transition-all duration-200">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-medium text-slate-500">{label}</span>
-          <div className="opacity-70">{icon}</div>
+    <Card 
+      variant="clay"
+      className="relative overflow-hidden group"
+    >
+      {/* 背景装饰渐变 */}
+      <div className="absolute -right-8 -top-8 w-24 h-24 rounded-full bg-gradient-to-br from-blue-100/40 to-purple-100/40 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+      
+      <CardContent className="p-6 relative z-10 min-h-0">
+        <div className="flex items-center justify-between mb-4 flex-shrink-0">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider truncate flex-1 mr-2">{label}</span>
+          <div className="opacity-80 group-hover:opacity-100 transition-opacity p-2 rounded-xl bg-white/60 backdrop-blur-sm shadow-sm flex-shrink-0">
+            {icon}
+          </div>
         </div>
-        <div className="flex items-baseline gap-2">
-          <div className={cn("text-2xl font-bold tracking-tight", color)}>
+        <div className="flex items-baseline gap-2 flex-wrap min-h-0">
+          <div className={cn("text-3xl font-bold tracking-tight leading-none truncate", color)}>
             {value}
           </div>
-          <span className="text-xs text-slate-400 font-medium">{unit}</span>
+          <span className="text-sm text-slate-500 font-semibold flex-shrink-0">{unit}</span>
           {trend && (
             <div className={cn(
-              "ml-auto flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded",
+              "ml-auto flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm backdrop-blur-sm flex-shrink-0",
               trendType === "up"
-                ? "text-green-600 bg-green-50"
-                : "text-red-600 bg-red-50"
+                ? "text-green-700 bg-green-50/80 border border-green-200/50"
+                : "text-red-700 bg-red-50/80 border border-red-200/50"
             )}>
               {trendType === "up" ? (
-                <TrendingUp className="w-3 h-3" />
+                <TrendingUp className="w-3.5 h-3.5" />
               ) : (
-                <TrendingDown className="w-3 h-3" />
+                <TrendingDown className="w-3.5 h-3.5" />
               )}
               <span>{trend}</span>
             </div>

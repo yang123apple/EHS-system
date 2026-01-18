@@ -211,9 +211,43 @@ export function mapJsonToColumns(
 
 /**
  * 解析日期字符串
+ * 🟢 修复：支持标准 JSON 格式中的 Date 对象和时间戳
  */
-function parseDate(dateStr: string): Date | null {
+function parseDate(dateStr: any): Date | null {
   try {
+    // 🟢 修复1：如果已经是 Date 对象，直接返回
+    if (dateStr instanceof Date) {
+      return !isNaN(dateStr.getTime()) ? dateStr : null;
+    }
+    
+    // 🟢 修复2：如果是时间戳（数字），转换为 Date 对象
+    if (typeof dateStr === 'number') {
+      const date = new Date(dateStr);
+      return !isNaN(date.getTime()) ? date : null;
+    }
+    
+    // 🟢 修复3：如果是对象且包含 _isAMomentObject 或 isLuxonDateTime 等，尝试提取时间戳
+    if (typeof dateStr === 'object' && dateStr !== null) {
+      // 处理时间戳字段（常见格式）
+      if (typeof dateStr.value === 'number') {
+        const date = new Date(dateStr.value);
+        if (!isNaN(date.getTime())) return date;
+      }
+      if (typeof dateStr.timestamp === 'number') {
+        const date = new Date(dateStr.timestamp);
+        if (!isNaN(date.getTime())) return date;
+      }
+      // ISO 8601 字符串字段
+      if (typeof dateStr.iso === 'string') {
+        const date = new Date(dateStr.iso);
+        if (!isNaN(date.getTime())) return date;
+      }
+    }
+    
+    // 转换为字符串进行处理
+    const str = String(dateStr).trim();
+    if (!str) return null;
+    
     // 尝试多种日期格式
     const formats = [
       /^(\d{4})-(\d{2})-(\d{2})/, // YYYY-MM-DD
@@ -222,7 +256,7 @@ function parseDate(dateStr: string): Date | null {
     ];
     
     for (const format of formats) {
-      const match = dateStr.match(format);
+      const match = str.match(format);
       if (match) {
         const year = parseInt(match[1], 10);
         const month = parseInt(match[2], 10) - 1;
@@ -231,8 +265,8 @@ function parseDate(dateStr: string): Date | null {
       }
     }
     
-    // 尝试直接解析
-    const date = new Date(dateStr);
+    // 尝试直接解析（ISO 8601 等标准格式）
+    const date = new Date(str);
     if (!isNaN(date.getTime())) {
       return date;
     }
@@ -245,18 +279,53 @@ function parseDate(dateStr: string): Date | null {
 
 /**
  * 解析日期时间字符串
+ * 🟢 修复：支持标准 JSON 格式中的 Date 对象和时间戳
  */
-function parseDateTime(dateTimeStr: string): Date | null {
+function parseDateTime(dateTimeStr: any): Date | null {
   try {
+    // 🟢 修复1：如果已经是 Date 对象，直接返回
+    if (dateTimeStr instanceof Date) {
+      return !isNaN(dateTimeStr.getTime()) ? dateTimeStr : null;
+    }
+    
+    // 🟢 修复2：如果是时间戳（数字），转换为 Date 对象
+    if (typeof dateTimeStr === 'number') {
+      const date = new Date(dateTimeStr);
+      return !isNaN(date.getTime()) ? date : null;
+    }
+    
+    // 🟢 修复3：如果是对象且包含时间戳或 ISO 字符串字段，尝试提取
+    if (typeof dateTimeStr === 'object' && dateTimeStr !== null) {
+      // 处理时间戳字段（常见格式）
+      if (typeof dateTimeStr.value === 'number') {
+        const date = new Date(dateTimeStr.value);
+        if (!isNaN(date.getTime())) return date;
+      }
+      if (typeof dateTimeStr.timestamp === 'number') {
+        const date = new Date(dateTimeStr.timestamp);
+        if (!isNaN(date.getTime())) return date;
+      }
+      // ISO 8601 字符串字段
+      if (typeof dateTimeStr.iso === 'string') {
+        const date = new Date(dateTimeStr.iso);
+        if (!isNaN(date.getTime())) return date;
+      }
+    }
+    
+    // 转换为字符串进行处理
+    const str = String(dateTimeStr).trim();
+    if (!str) return null;
+    
     // 尝试多种日期时间格式
     const formats = [
       /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/, // YYYY-MM-DD HH:mm:ss
       /^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/, // YYYY/MM/DD HH:mm:ss
       /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/, // ISO 8601
+      /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.\d{3}Z/, // ISO 8601 with milliseconds
     ];
     
     for (const format of formats) {
-      const match = dateTimeStr.match(format);
+      const match = str.match(format);
       if (match) {
         const year = parseInt(match[1], 10);
         const month = parseInt(match[2], 10) - 1;
@@ -268,8 +337,8 @@ function parseDateTime(dateTimeStr: string): Date | null {
       }
     }
     
-    // 尝试直接解析
-    const date = new Date(dateTimeStr);
+    // 尝试直接解析（ISO 8601 等标准格式）
+    const date = new Date(str);
     if (!isNaN(date.getTime())) {
       return date;
     }

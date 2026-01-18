@@ -834,7 +834,7 @@ export const PATCH = withErrorHandling(
       // 🟢 4. 在同一事务中更新候选处理人关联表（如果提供了派发结果）
       if (body.dispatchResult?.candidateHandlers && Array.isArray(body.dispatchResult.candidateHandlers)) {
         const stepIndex = finalUpdates.currentStepIndex ?? oldRecord.currentStepIndex ?? 0;
-        const stepId = finalUpdates.currentStepId ?? oldRecord.currentStepId || undefined;
+        const stepId = finalUpdates.currentStepId ?? oldRecord.currentStepId ?? undefined;
         
         // 删除该步骤的旧记录
         await tx.hazardCandidateHandler.deleteMany({

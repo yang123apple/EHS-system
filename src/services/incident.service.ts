@@ -398,7 +398,7 @@ export class IncidentService {
       });
 
       // 发送通知（通过工作流引擎生成的通知数据）
-      if (dispatchResult.notifications.length > 0) {
+      if (dispatchResult.notifications?.length > 0) {
         await prisma.notification.createMany({
           data: dispatchResult.notifications
         });

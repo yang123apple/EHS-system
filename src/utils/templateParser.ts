@@ -232,10 +232,10 @@ const FIELD_TYPE_KEYWORDS: Record<string, string[]> = {
   department: ['部门', '需求部门', '申请部门'],              // 部门字段
   personnel: ['人员', '姓名', '名字', '操作人员', '人'],            // 人员字段
   location: ['地点', '位置', '场所'],                      // 地点字段
-  // ⚠️ 避免“日期/结束/时间”触发日期类型，仅保留更明确的开始类关键词
-  date: ['年', '月', '日', '时'],                            // 日期时间字段（严格匹配）
+  // 🟢 修复：添加"日期"、"时间"、"分"关键词，支持识别包含"时/分"的日期字段
+  date: ['日期', '时间', 'Date', 'Time', '年', '月', '日', '时', '分'],                     // 日期时间字段（严格匹配）
   option: [],                                              // 选项字段（通过符号检测）
-  // ✅ 增加“电话/联系方式/身份证号”等识别为 number 类型
+  // ✅ 增加"电话/联系方式/身份证号"等识别为 number 类型
   number: ['数量', '数字', '个数', '电话', '联系方式', '联系电话', '身份证号', '证件号', '身份证'],
   text: []                                                 // 文本字段（默认）
 };
@@ -441,14 +441,29 @@ export function parseTemplateFields(
         // 🟢 跳过已处理的单元格（避免重复处理被聚合的option单元格）
         if (processedCells.has(cellKey)) continue;
         
-        // 检测是否为选项字段（包含£符号）
+        // 🟢 修复：优先检查是否为"£其他"，如果是则跳过选项字段检测，留到空白单元格处理
+        const isOtherField = /[£￡]其他/.test(cellStr) || cellStr === '其他';
+        if (isOtherField) {
+          // "£其他"字段应在空白单元格处理中被识别为text类型
+          continue;
+        }
+        
+        // 检测是否为选项字段（包含£符号，但排除"£其他"）
         const isOptionField = hasOptionMarker(cellStr);
         
-        // 严格检测是否为时间/日期字段：仅当内容像"日期/时间格式"时识别
-        // 例：年 月 日；年 月 日 时 分；月 日；月 日 时；YYYY-MM-DD 等占位符格式
-        const chinesePlaceholder = /^[\s]*年[\s]*月[\s]*日(\s*时\s*分)?[\s]*$|^[\s]*月[\s]*日(\s*时)?[\s]*$|^[\s]*月[\s]*日[\s]*时[\s]*$/; // 年月日占位
-        const numericPlaceholder = /(yyyy[-\/]mm[-\/]dd|YYYY[-\/]MM[-\/]DD|hh:mm|HH:MM|H:MM)/i; // 英文数字占位
-        const isDateField = chinesePlaceholder.test(cellStr) || numericPlaceholder.test(cellStr);
+        // 🟢 修复：增强日期字段识别 - 不仅检查占位符格式，还要检查是否包含日期关键词
+        // 1. 占位符格式：年 月 日；年 月 日 时 分；月 日；月 日 时；YYYY-MM-DD 等
+        const chinesePlaceholder = /^[\s]*年[\s]*月[\s]*日(\s*时\s*分)?[\s]*$|^[\s]*月[\s]*日(\s*时)?[\s]*$|^[\s]*月[\s]*日[\s]*时[\s]*$/;
+        const numericPlaceholder = /(yyyy[-\/]mm[-\/]dd|YYYY[-\/]MM[-\/]DD|hh:mm|HH:MM|H:MM)/i;
+        const isPlaceholderFormat = chinesePlaceholder.test(cellStr) || numericPlaceholder.test(cellStr);
+        
+        // 2. 包含日期关键词的单元格（日期|时间|Date|Time|年|月|日|时|分）
+        // 🟢 修复：使用正则匹配所有日期关键词，包括中文"日期"、"时间"和英文"Date"、"Time"，以及单位词"年"、"月"、"日"、"时"、"分"
+        const dateKeywordPattern = /日期|时间|Date|Time|年|月|日|时|分/i;
+        const hasDateKeywords = dateKeywordPattern.test(cellStr);
+        
+        // 综合判断：占位符格式 或 包含日期关键词
+        const isDateField = isPlaceholderFormat || hasDateKeywords;
         
         if (isDateField || isOptionField) {
           // 日期：优先用智能左查找的标签
@@ -457,6 +472,24 @@ export function parseTemplateFields(
             if (leftLabel) {
               fields.push(createField(cellKey, leftLabel, r, c, 'date'));
               processedCells.add(cellKey);
+            } else {
+              // 🟢 修复：如果找不到左侧标签，但当前单元格包含日期关键词，则使用当前单元格作为标签
+              // 这种情况通常发生在标签单元格本身包含日期关键词时（如"作业日期"、"开始时间"）
+              // 需要检查右侧单元格是否有值，如果有值且不是日期占位符，说明当前单元格是标签，应该创建字段
+              // 如果右侧单元格为空，应该在STEP 2（空白单元格解析）中处理，而不是在STEP 1处理
+              const rightCell = row[c + 1];
+              const rightCellStr = rightCell ? String(rightCell).trim() : '';
+              
+              // 如果右侧单元格有值，检查是否是日期占位符格式
+              if (rightCellStr) {
+                const rightCellIsPlaceholder = /^[\s]*年[\s]*月[\s]*日|^[\s]*月[\s]*日|yyyy[-\/]mm[-\/]dd|YYYY[-\/]MM[-\/]DD/i.test(rightCellStr);
+                // 如果右侧单元格有值但不是日期占位符（如"2025-01-12"），说明当前单元格是标签，应该创建字段
+                if (!rightCellIsPlaceholder) {
+                  fields.push(createField(cellKey, cellStr, r, c, 'date'));
+                  processedCells.add(cellKey);
+                }
+              }
+              // 如果右侧单元格为空，不在这里创建字段，留给STEP 2（空白单元格解析）处理
             }
             continue;
           }
@@ -1068,6 +1101,10 @@ function inferFieldName(label: string): string {
  */
 function inferFieldType(label: string): ParsedField['fieldType'] {
   const str = label.trim().toLowerCase();
+
+  // 🟢 修复：优先检查是否为"£其他"，应识别为text而非option
+  const isOtherField = /[£￡]其他/.test(label) || label.trim() === '其他';
+  if (isOtherField) return 'text';
 
   // ✅ 优先：若标签中包含选项标记符，则直接判定为 option
   if (hasOptionMarker(label)) return 'option';
