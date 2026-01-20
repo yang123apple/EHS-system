@@ -6,10 +6,17 @@
  * ⚠️ 兼容层：保留旧 API，底层统一调用新的 AuditService
  */
 
-import { SystemLogService, SystemLogData, FieldChange } from '@/services/systemLog.service';
 import AuditService from '@/services/audit.service';
 import { LogModule, LogAction } from '@/types/audit';
 import { NextRequest } from 'next/server';
+
+// 兼容旧类型定义
+export interface FieldChange {
+  field: string;
+  label?: string;
+  oldValue: any;
+  newValue: any;
+}
 
 /**
  * 从请求中提取用户信息

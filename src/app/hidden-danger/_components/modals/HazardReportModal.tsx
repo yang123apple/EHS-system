@@ -1,10 +1,9 @@
 // src/app/hidden-danger/_components/modals/HazardReportModal.tsx
-import { useState, useEffect } from 'react';
-import { X, Camera, ChevronRight, User, GitBranch, Mail, CheckCircle, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Camera, ChevronRight, User, GitBranch, Mail, CheckCircle, ChevronDown, Upload } from 'lucide-react';
 import { HazardConfig, RiskLevel } from '@/types/hidden-danger';
 import { RISK_LEVEL_MAP, STRATEGY_NAME_MAP } from '@/constants/hazard';
 import PeopleSelector from '@/components/common/PeopleSelector';
-import { UserSelectModal } from '../workflow/UserSelectModal';
 import { matchHandler } from '../../_utils/handler-matcher';
 import { matchAllCCRules } from '../../_utils/cc-matcher';
 import { useAuth } from '@/context/AuthContext';
@@ -40,6 +39,8 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
   const [showWorkflowPreview, setShowWorkflowPreview] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<any>(null);
   const [isMobileWorkflowExpanded, setIsMobileWorkflowExpanded] = useState(false); // 移动端流程预览折叠状态
+  const [isDragging, setIsDragging] = useState(false); // 拖拽状态
+  const dragCounterRef = useRef(0); // 用于跟踪拖拽进入/离开次数
 
   // 获取部门列表（如果没有从 props 传入）
   useEffect(() => {
@@ -105,6 +106,86 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
     reader.onload = (evt) => setPhotos([...photos, evt.target?.result as string]);
     reader.readAsDataURL(file);
   };
+
+  // 处理文件列表上传（支持批量）
+  const handleFiles = (files: FileList | File[]) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+    const allowedExtensions = ['jpg', 'jpeg', 'png'];
+    
+    Array.from(files).forEach((file) => {
+      const fileExtension = file.name.toLowerCase().split('.').pop();
+      
+      // 验证文件格式
+      if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension || '')) {
+        alert(`文件 ${file.name} 格式不支持，仅支持 JPG、PNG、JPEG 格式`);
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        setPhotos(prev => [...prev, evt.target?.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // 拖拽事件处理
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    
+    // 检查是否包含文件
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      const hasFiles = Array.from(e.dataTransfer.items).some(
+        item => item.kind === 'file'
+      );
+      if (hasFiles) {
+        setIsDragging(true);
+      }
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounterRef.current = 0;
+    
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleFiles(files);
+    }
+  };
+
+  // 检测是否为桌面端（屏幕宽度 >= 1024px）
+  const [isDesktop, setIsDesktop] = useState(false);
+  
+  useEffect(() => {
+    const checkIsDesktop = () => {
+      setIsDesktop(window.innerWidth >= 1024);
+    };
+    
+    checkIsDesktop();
+    window.addEventListener('resize', checkIsDesktop);
+    
+    return () => window.removeEventListener('resize', checkIsDesktop);
+  }, []);
 
   const handleDeptSelect = (deptId: string, deptName: string) => {
     setFormData(prev => ({
@@ -339,7 +420,24 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 lg:p-4 backdrop-blur-sm">
+    <div 
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 lg:p-4 backdrop-blur-sm"
+      onDragEnter={isDesktop ? handleDragEnter : undefined}
+      onDragLeave={isDesktop ? handleDragLeave : undefined}
+      onDragOver={isDesktop ? handleDragOver : undefined}
+      onDrop={isDesktop ? handleDrop : undefined}
+    >
+      {/* 桌面端拖拽提示 overlay */}
+      {isDesktop && isDragging && (
+        <div className="absolute inset-0 z-[60] bg-blue-600/90 backdrop-blur-md flex items-center justify-center pointer-events-none">
+          <div className="text-center">
+            <Upload size={64} className="text-white mx-auto mb-4 animate-bounce" />
+            <h3 className="text-2xl font-bold text-white mb-2">松开鼠标上传图片</h3>
+            <p className="text-blue-100">支持 JPG、PNG、JPEG 格式</p>
+          </div>
+        </div>
+      )}
+      
       <div className="bg-white w-full max-w-6xl rounded-xl shadow-2xl flex flex-col lg:flex-row overflow-hidden" style={{ maxHeight: '90vh' }}>
         {/* 移动端：顶部折叠的流程预览卡片 */}
         <div className="lg:hidden border-b bg-gradient-to-r from-blue-50 to-purple-50">
@@ -700,14 +798,25 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
         title="选择责任部门"
       />
 
-      <UserSelectModal
+      <PeopleSelector
         isOpen={showUserModal}
         onClose={() => setShowUserModal(false)}
-        onSelect={handleUserSelect}
-        allUsers={allUsers?.filter(u => u.departmentId === formData.responsibleDeptId) || []}
-        departments={departments}
-        selectedUserIds={formData.responsibleId ? [formData.responsibleId] : []}
-        singleSelect={true}
+        mode="user"
+        viewMode="grid"
+        showDeptTree={false}
+        multiSelect={false}
+        activeUsersOnly={true}
+        initialDeptId={formData.responsibleDeptId}
+        onConfirm={(selection) => {
+          if (Array.isArray(selection) && selection.length > 0) {
+            const user = selection[0] as any;
+            handleUserSelect([{ 
+              userId: user.id, 
+              userName: user.name 
+            }]);
+          }
+        }}
+        title="选择责任人"
       />
     </div>
   );

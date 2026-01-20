@@ -4,7 +4,8 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import { SystemLogService } from '@/services/systemLog.service';
+import AuditService from '@/services/audit.service';
+import { LogModule, LogAction } from '@/types/audit';
 import { setEndOfDay, extractDatePart } from '@/utils/dateUtils';
 
 export interface RequestExtensionInput {
@@ -96,22 +97,21 @@ export async function requestExtension(input: RequestExtensionInput) {
     });
 
     // 记录系统日志
-    await SystemLogService.createLog({
-      userId: input.applicantId,
-      userName: input.applicantName || '未知用户',
-      action: 'CREATE',
-      actionLabel: '申请延期',
-      module: 'HAZARD',
-      targetId: hazard.code || input.hazardId,
+    await AuditService.logCreate({
+      module: LogModule.HAZARD,
+      businessId: hazard.code || input.hazardId,
       targetType: 'hazard',
-      targetLabel: hazard.desc.substring(0, 50),
-      details: `申请延期：从 ${oldDeadline.toLocaleDateString()} 延期至 ${newDeadline.toLocaleDateString()}，原因：${input.reason}`,
-      afterData: {
+      operator: {
+        id: input.applicantId,
+        name: input.applicantName || '未知用户',
+        role: '申请人'
+      },
+      description: `申请延期：从 ${oldDeadline.toLocaleDateString()} 延期至 ${newDeadline.toLocaleDateString()}，原因：${input.reason}`,
+      newData: {
         extensionId: extension.id,
         newDeadline: extension.newDeadline.toISOString(),
         reason: input.reason
-      },
-      userRoleInAction: '申请人'
+      }
     });
 
     console.log(`✅ [隐患延期] 已创建延期申请，隐患ID: ${input.hazardId}, 申请ID: ${extension.id}`);
@@ -202,7 +202,6 @@ export async function approveExtension(input: ApproveExtensionInput) {
 
     // 记录系统日志
     const actionLabel = input.approved ? '批准延期' : '拒绝延期';
-    const action = input.approved ? 'APPROVE' : 'REJECT';
     
     // 获取更新后的隐患记录（用于日志记录）
     const updatedHazard = input.approved 
@@ -212,27 +211,46 @@ export async function approveExtension(input: ApproveExtensionInput) {
         })
       : extension.hazard;
     
-    await SystemLogService.createLog({
-      userId: input.approverId,
-      userName: input.approverName || '未知用户',
-      action,
-      actionLabel,
-      module: 'HAZARD',
-      targetId: extension.hazard.code || extension.hazardId,
-      targetType: 'hazard',
-      targetLabel: extension.hazard.desc.substring(0, 50),
-      details: `${actionLabel}：原截止日期 ${extension.oldDeadline.toLocaleDateString()}，新截止日期 ${extension.newDeadline.toLocaleDateString()}，原因：${extension.reason}，审批时间：${approvalTime.toLocaleString()}`,
-      beforeData: {
-        deadline: extension.hazard.deadline?.toISOString(),
-        extensionStatus: 'pending'
-      },
-      afterData: {
-        deadline: input.approved ? extension.newDeadline.toISOString() : extension.hazard.deadline?.toISOString(),
-        extensionStatus: input.approved ? 'approved' : 'rejected',
-        approvalTime: approvalTime.toISOString()
-      },
-      userRoleInAction: '审批人'
-    });
+    if (input.approved) {
+      await AuditService.logUpdate({
+        module: LogModule.HAZARD,
+        businessId: extension.hazard.code || extension.hazardId,
+        targetType: 'hazard',
+        operator: {
+          id: input.approverId,
+          name: input.approverName || '未知用户',
+          role: '审批人'
+        },
+        description: `${actionLabel}：原截止日期 ${extension.oldDeadline.toLocaleDateString()}，新截止日期 ${extension.newDeadline.toLocaleDateString()}，原因：${extension.reason}，审批时间：${approvalTime.toLocaleString()}`,
+        oldData: {
+          deadline: extension.hazard.deadline?.toISOString(),
+          extensionStatus: 'pending'
+        },
+        newData: {
+          deadline: extension.newDeadline.toISOString(),
+          extensionStatus: 'approved',
+          approvalTime: approvalTime.toISOString()
+        }
+      });
+    } else {
+      await AuditService.recordLog({
+        module: LogModule.HAZARD,
+        action: LogAction.REJECT,
+        businessId: extension.hazard.code || extension.hazardId,
+        targetType: 'hazard',
+        operator: {
+          id: input.approverId,
+          name: input.approverName || '未知用户',
+          role: '审批人'
+        },
+        description: `${actionLabel}：原截止日期 ${extension.oldDeadline.toLocaleDateString()}，新截止日期 ${extension.newDeadline.toLocaleDateString()}，原因：${extension.reason}，审批时间：${approvalTime.toLocaleString()}`,
+        newData: {
+          deadline: extension.hazard.deadline?.toISOString(),
+          extensionStatus: 'rejected',
+          approvalTime: approvalTime.toISOString()
+        }
+      });
+    }
 
     console.log(`✅ [隐患延期] ${actionLabel}，延期申请ID: ${input.extensionId}, 隐患ID: ${extension.hazardId}, 审批时间: ${approvalTime.toLocaleString()}`);
 
@@ -270,4 +288,3 @@ export async function getHazardExtensions(hazardId: string) {
     throw error;
   }
 }
-

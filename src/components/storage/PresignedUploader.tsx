@@ -1,6 +1,7 @@
 /**
  * Presigned URL 文件上传组件
  * 用于大文件直传 MinIO，避免流经 Node.js 服务器
+ * 重构版本：使用 useMinioUpload Hook
  * 
  * 使用场景：
  * - 视频文件（>10MB）
@@ -11,6 +12,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import { useMinioUpload } from '@/hooks/useMinioUpload';
 
 interface PresignedUploaderProps {
   onUploadSuccess?: (result: {
@@ -26,12 +28,6 @@ interface PresignedUploaderProps {
   disabled?: boolean;
 }
 
-interface UploadProgress {
-  stage: 'idle' | 'requesting' | 'uploading' | 'success' | 'error';
-  progress: number; // 0-100
-  message?: string;
-}
-
 export function PresignedUploader({
   onUploadSuccess,
   onUploadError,
@@ -41,102 +37,29 @@ export function PresignedUploader({
   maxSize = 5 * 1024 * 1024 * 1024, // 默认 5GB
   disabled = false,
 }: PresignedUploaderProps) {
-  const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
-    stage: 'idle',
-    progress: 0,
-  });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  /**
-   * 步骤 1: 请求 Presigned URL
-   */
-  const requestPresignedUrl = async (file: File): Promise<{
-    uploadUrl: string;
-    objectName: string;
-    dbRecord: string;
-  }> => {
-    setUploadProgress({ stage: 'requesting', progress: 0, message: '请求上传地址...' });
-
-    const response = await fetch('/api/storage/presigned-url', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        filename: file.name,
-        contentType: file.type || 'application/octet-stream',
-        size: file.size,
-        bucket,
-        category,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || '获取上传地址失败');
-    }
-
-    const { data } = await response.json();
-    return {
-      uploadUrl: data.uploadUrl,
-      objectName: data.objectName,
-      dbRecord: data.dbRecord,
-    };
-  };
-
-  /**
-   * 步骤 2: 直接上传文件到 MinIO
-   */
-  const uploadToMinIO = async (
-    file: File,
-    uploadUrl: string
-  ): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      setUploadProgress({ stage: 'uploading', progress: 0, message: '上传中...' });
-
-      const xhr = new XMLHttpRequest();
-
-      // 监听上传进度
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-          const progress = Math.round((e.loaded / e.total) * 100);
-          setUploadProgress({
-            stage: 'uploading',
-            progress,
-            message: `上传中... ${progress}%`,
-          });
-        }
+  // 使用统一的上传 Hook
+  const { upload, state, isUploading } = useMinioUpload({
+    bucket,
+    category,
+    maxSize,
+    onSuccess: (result) => {
+      // 兼容旧的接口格式
+      onUploadSuccess?.({
+        objectName: result.objectName,
+        dbRecord: result.dbRecord || result.url || '',
+        url: result.url || result.dbRecord || '',
       });
-
-      // 监听完成
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          setUploadProgress({
-            stage: 'success',
-            progress: 100,
-            message: '上传成功',
-          });
-          resolve();
-        } else {
-          reject(new Error(`上传失败: HTTP ${xhr.status}`));
-        }
-      });
-
-      // 监听错误
-      xhr.addEventListener('error', () => {
-        reject(new Error('上传过程中发生网络错误'));
-      });
-
-      // 监听中断
-      xhr.addEventListener('abort', () => {
-        reject(new Error('上传已取消'));
-      });
-
-      // 开始上传
-      xhr.open('PUT', uploadUrl);
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-      xhr.send(file);
-    });
-  };
+      // 上传成功后重置文件选择
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    },
+    onError: onUploadError,
+  });
 
   /**
    * 处理文件选择
@@ -145,40 +68,28 @@ export function PresignedUploader({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // 检查文件大小
-    if (file.size > maxSize) {
-      const maxSizeMB = (maxSize / 1024 / 1024).toFixed(0);
-      const error = `文件大小超过限制（最大 ${maxSizeMB}MB）`;
-      setUploadProgress({ stage: 'error', progress: 0, message: error });
-      onUploadError?.(error);
-      return;
-    }
-
     setSelectedFile(file);
 
     try {
-      // 步骤 1: 获取 Presigned URL
-      const { uploadUrl, objectName, dbRecord } = await requestPresignedUrl(file);
+      await upload(file);
+    } catch (error) {
+      // 错误已在 Hook 中处理
+    }
+  };
 
-      // 步骤 2: 直接上传到 MinIO
-      await uploadToMinIO(file, uploadUrl);
-
-      // 步骤 3: 通知父组件
-      onUploadSuccess?.({
-        objectName,
-        dbRecord,
-        url: dbRecord, // 使用 dbRecord 作为 URL
-      });
-
-      // 重置
-      setSelectedFile(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    } catch (error: any) {
-      const errorMessage = error.message || '上传失败';
-      setUploadProgress({ stage: 'error', progress: 0, message: errorMessage });
-      onUploadError?.(errorMessage);
+  // 格式化状态消息
+  const getStatusMessage = () => {
+    switch (state.status) {
+      case 'requesting':
+        return '请求上传地址...';
+      case 'uploading':
+        return `上传中... ${state.progress}%`;
+      case 'success':
+        return '上传成功';
+      case 'error':
+        return state.error || '上传失败';
+      default:
+        return '';
     }
   };
 
@@ -189,7 +100,7 @@ export function PresignedUploader({
         type="file"
         accept={accept}
         onChange={handleFileSelect}
-        disabled={disabled || uploadProgress.stage === 'uploading'}
+        disabled={disabled || isUploading}
         className="block w-full text-sm text-gray-500
           file:mr-4 file:py-2 file:px-4
           file:rounded-full file:border-0
@@ -200,27 +111,27 @@ export function PresignedUploader({
       />
 
       {/* 上传进度 */}
-      {uploadProgress.stage !== 'idle' && (
+      {state.status !== 'idle' && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600">{uploadProgress.message}</span>
-            {uploadProgress.stage === 'uploading' && (
-              <span className="text-gray-500">{uploadProgress.progress}%</span>
+            <span className="text-gray-600">{getStatusMessage()}</span>
+            {state.status === 'uploading' && (
+              <span className="text-gray-500">{state.progress}%</span>
             )}
           </div>
-          {uploadProgress.stage === 'uploading' && (
+          {state.status === 'uploading' && (
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div
                 className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${uploadProgress.progress}%` }}
+                style={{ width: `${state.progress}%` }}
               />
             </div>
           )}
-          {uploadProgress.stage === 'success' && (
+          {state.status === 'success' && (
             <div className="text-green-600 text-sm">✓ 上传成功</div>
           )}
-          {uploadProgress.stage === 'error' && (
-            <div className="text-red-600 text-sm">✗ {uploadProgress.message}</div>
+          {state.status === 'error' && (
+            <div className="text-red-600 text-sm">✗ {state.error}</div>
           )}
         </div>
       )}
@@ -234,4 +145,3 @@ export function PresignedUploader({
     </div>
   );
 }
-

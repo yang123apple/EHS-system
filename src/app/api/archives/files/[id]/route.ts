@@ -75,7 +75,7 @@ export const PUT = async (req: NextRequest, context: { params: Promise<{ id: str
         console.error('更新文件失败:', e);
         return NextResponse.json({ error: '更新失败' }, { status: 500 });
     }
-});
+};
 
 // DELETE: 删除档案文件
 export const DELETE = async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
@@ -170,5 +170,4 @@ export const DELETE = async (req: NextRequest, context: { params: Promise<{ id: 
             error: e instanceof Error ? e.message : '删除失败' 
         }, { status: 500 });
     }
-});
-
+};

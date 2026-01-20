@@ -8,14 +8,20 @@ const createJestConfig = nextJest({
 // 添加任何自定义 Jest 配置
 const customJestConfig = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  
+  // 根据测试类型使用不同的测试环境
   testEnvironment: 'jest-environment-jsdom',
+  
+  // 路径别名映射
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
+  
   testMatch: [
     '**/__tests__/**/*.[jt]s?(x)',
     '**/?(*.)+(spec|test).[jt]s?(x)',
   ],
+  
   testPathIgnorePatterns: [
     '<rootDir>/.next/',
     '<rootDir>/node_modules/',
@@ -23,6 +29,7 @@ const customJestConfig = {
     '<rootDir>/data/',
     '<rootDir>/src/__tests__/__mocks__/',
   ],
+  
   collectCoverageFrom: [
     'src/**/*.{js,jsx,ts,tsx}',
     '!src/**/*.d.ts',
@@ -30,9 +37,84 @@ const customJestConfig = {
     '!src/**/__tests__/**',
     '!src/**/__mocks__/**',
   ],
+  
+  // 确保不忽略需要转换的文件
   transformIgnorePatterns: [
-    '/node_modules/',
-    '^.+\\.module\\.(css|sass|scss)$',
+    'node_modules/(?!(.*\\.mjs$))',
+  ],
+  
+  // 项目配置：支持不同类型的测试
+  projects: [
+    {
+      displayName: 'unit',
+      testMatch: ['<rootDir>/src/__tests__/unit/**/*.test.[jt]s?(x)'],
+      testEnvironment: 'jest-environment-jsdom',
+      setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+      },
+      transform: {
+        '^.+\\.(t|j)sx?$': ['@swc/jest', {
+          jsc: {
+            parser: {
+              syntax: 'typescript',
+              tsx: true,
+              decorators: true,
+            },
+            transform: {
+              react: {
+                runtime: 'automatic',
+              },
+            },
+          },
+        }],
+      },
+    },
+    {
+      displayName: 'integration',
+      testMatch: ['<rootDir>/src/__tests__/integration/**/*.test.[jt]s?(x)'],
+      testEnvironment: 'node',
+      setupFilesAfterEnv: ['<rootDir>/jest.setup.integration.js'],
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+      },
+      transform: {
+        '^.+\\.(t|j)sx?$': ['@swc/jest', {
+          jsc: {
+            parser: {
+              syntax: 'typescript',
+              tsx: true,
+              decorators: true,
+            },
+          },
+        }],
+      },
+    },
+    {
+      displayName: 'components',
+      testMatch: ['<rootDir>/src/components/**/*.test.[jt]s?(x)'],
+      testEnvironment: 'jest-environment-jsdom',
+      setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+      },
+      transform: {
+        '^.+\\.(t|j)sx?$': ['@swc/jest', {
+          jsc: {
+            parser: {
+              syntax: 'typescript',
+              tsx: true,
+              decorators: true,
+            },
+            transform: {
+              react: {
+                runtime: 'automatic',
+              },
+            },
+          },
+        }],
+      },
+    },
   ],
 }
 

@@ -2,8 +2,8 @@
 
 import { useState, useCallback } from 'react';
 import { X } from 'lucide-react';
-import HandwrittenSignature from '../work-permit/HandwrittenSignature';
-import MultiSignatureDisplay from '../work-permit/MultiSignatureDisplay';
+import { HandwrittenSignature } from './signature/HandwrittenSignature';
+import { MultiSignatureDisplay } from './signature/MultiSignatureDisplay';
 
 /**
  * 签名数据类型
@@ -175,8 +175,3 @@ export default function SignatureManager({
     </>
   );
 }
-
-
-
-
-

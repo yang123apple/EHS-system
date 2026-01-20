@@ -17,6 +17,8 @@ export const ModuleLabels: Record<LogModule, string> = {
   [LogModule.SYSTEM]: '系统设置',
   [LogModule.NOTIFICATION]: '通知中心',
   [LogModule.AUTH]: '认证',
+  [LogModule.ARCHIVE]: '档案管理',
+  [LogModule.INCIDENT]: '事故事件',
 };
 
 // ============ 操作类型中文映射 ============
@@ -38,6 +40,10 @@ export const ActionLabels: Record<LogAction, string> = {
   [LogAction.CONFIG]: '配置',
   [LogAction.ARCHIVE]: '归档',
   [LogAction.RESTORE]: '恢复',
+  [LogAction.CLOSE]: '关闭',
+  [LogAction.BACKUP_FAILED]: '备份失败',
+  [LogAction.BACKUP_ERROR]: '备份错误',
+  [LogAction.BACKUP_TIMEOUT]: '备份超时',
 };
 
 // ============ 敏感字段列表（不记录到快照中） ============
@@ -175,6 +181,10 @@ export const ActionColorScheme: Record<LogAction, string> = {
   [LogAction.CONFIG]: 'text-amber-600 bg-amber-50',
   [LogAction.ARCHIVE]: 'text-stone-600 bg-stone-50',
   [LogAction.RESTORE]: 'text-lime-600 bg-lime-50',
+  [LogAction.CLOSE]: 'text-gray-600 bg-gray-50',
+  [LogAction.BACKUP_FAILED]: 'text-red-600 bg-red-50',
+  [LogAction.BACKUP_ERROR]: 'text-red-600 bg-red-50',
+  [LogAction.BACKUP_TIMEOUT]: 'text-orange-600 bg-orange-50',
 };
 
 /**
@@ -198,4 +208,8 @@ export const ActionIcons: Record<LogAction, string> = {
   [LogAction.CONFIG]: 'Settings',
   [LogAction.ARCHIVE]: 'Archive',
   [LogAction.RESTORE]: 'RotateCcw',
+  [LogAction.CLOSE]: 'XSquare',
+  [LogAction.BACKUP_FAILED]: 'AlertCircle',
+  [LogAction.BACKUP_ERROR]: 'AlertTriangle',
+  [LogAction.BACKUP_TIMEOUT]: 'Clock',
 };

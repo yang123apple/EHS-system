@@ -785,3 +785,7 @@ model ArchiveConfig {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// ============ 注意事项 ============
+// SQLite 不支持原生枚举类型，因此 module 和 action 字段使用 String 类型
+// 类型安全由 TypeScript 枚举（src/types/audit.ts）在应用层保证

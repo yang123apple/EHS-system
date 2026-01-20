@@ -85,7 +85,7 @@ export function useApiError() {
       return await response.json();
     } catch (error) {
       // 如果错误还没有被处理，则处理它
-      if (error && typeof error === 'object' && !error.isNetworkError) {
+      if (error && typeof error === 'object' && !(error as any).isNetworkError) {
         handleError(error, context);
       }
       throw error;

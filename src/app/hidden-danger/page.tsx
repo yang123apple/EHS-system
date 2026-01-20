@@ -70,7 +70,8 @@ export default function HiddenDangerPage({
   const fetchUsers = async () => {
     if (!user) return; // 用户未登录时不请求
     try {
-      const res = await apiFetch('/api/users');
+      // 🟢 新增：只获取在职用户
+      const res = await apiFetch('/api/users?activeOnly=true');
       const data = await res.json();
       setAllUsers(data);
     } catch (error) {

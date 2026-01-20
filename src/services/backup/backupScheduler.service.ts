@@ -12,7 +12,8 @@
 import { DatabaseBackupService } from './databaseBackup.service';
 import { FileBackupService } from './fileBackup.service';
 import { LogArchiveService } from './logArchive.service';
-import { SystemLogService } from '@/services/systemLog.service';
+import AuditService from '@/services/audit.service';
+import { LogModule, LogAction } from '@/types/audit';
 
 interface BackupSchedule {
   name: string;
@@ -294,22 +295,21 @@ export class BackupSchedulerService {
           
           // 写入系统日志
           try {
-            await SystemLogService.createLog({
-              userId: 'system',
-              userName: 'System',
-              action: 'BACKUP_FAILED',
-              actionLabel: 'MinIO 同步备份失败',
-              module: 'BACKUP',
-              targetType: 'config',
+            await AuditService.recordLog({
+              module: LogModule.SYSTEM,
+              action: LogAction.BACKUP_FAILED,
+              targetType: 'backup',
               targetLabel: `MinIO ${mode} 同步备份`,
-              details: JSON.stringify({
+              operator: { id: 'system', name: 'System', role: 'system' },
+              description: 'MinIO 同步备份失败',
+              oldData: {
                 mode,
                 exitCode: code,
-                error: errorDetails.substring(0, 1000), // 限制长度
+                error: errorDetails.substring(0, 1000),
                 timestamp: new Date().toISOString(),
-              }),
+              },
             });
-          } catch (logError) {
+          } catch (logError: any) {
             console.error('❌ 写入系统日志失败:', logError);
           }
           
@@ -324,22 +324,21 @@ export class BackupSchedulerService {
         
         // 写入系统日志
         try {
-          await SystemLogService.createLog({
-            userId: 'system',
-            userName: 'System',
-            action: 'BACKUP_ERROR',
-            actionLabel: 'MinIO 同步备份进程启动失败',
-            module: 'BACKUP',
-            targetType: 'config',
+          await AuditService.recordLog({
+            module: LogModule.SYSTEM,
+            action: LogAction.BACKUP_ERROR,
+            targetType: 'backup',
             targetLabel: `MinIO ${mode} 同步备份`,
-            details: JSON.stringify({
+            operator: { id: 'system', name: 'System', role: 'system' },
+            description: 'MinIO 同步备份进程启动失败',
+            oldData: {
               mode,
               error: error.message,
               stack: error.stack?.substring(0, 1000),
               timestamp: new Date().toISOString(),
-            }),
+            },
           });
-        } catch (logError) {
+        } catch (logError: any) {
           console.error('❌ 写入系统日志失败:', logError);
         }
         
@@ -352,20 +351,19 @@ export class BackupSchedulerService {
         const timeoutError = new Error('MinIO 同步备份超时（2小时）');
         
         // 写入系统日志
-        SystemLogService.createLog({
-          userId: 'system',
-          userName: 'System',
-          action: 'BACKUP_TIMEOUT',
-          actionLabel: 'MinIO 同步备份超时',
-          module: 'BACKUP',
-          targetType: 'config',
+        AuditService.recordLog({
+          module: LogModule.SYSTEM,
+          action: LogAction.BACKUP_TIMEOUT,
+          targetType: 'backup',
           targetLabel: `MinIO ${mode} 同步备份`,
-          details: JSON.stringify({
+          operator: { id: 'system', name: 'System', role: 'system' },
+          description: 'MinIO 同步备份超时',
+          oldData: {
             mode,
             timeout: '2小时',
             timestamp: new Date().toISOString(),
-          }),
-        }).catch((logError) => {
+          },
+        }).catch((logError: any) => {
           console.error('❌ 写入系统日志失败:', logError);
         });
         
@@ -477,4 +475,3 @@ export class BackupSchedulerService {
     ]);
   }
 }
-

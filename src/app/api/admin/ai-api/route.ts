@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { SystemLogService } from '@/services/systemLog.service';
+import AuditService from '@/services/audit.service';
+import { LogModule, LogAction } from '@/types/audit';
 import { getUserFromRequest } from '@/middleware/auth';
 
 // 获取AI API配置列表
@@ -291,18 +292,21 @@ export async function POST(request: NextRequest) {
           include: { department: true },
         });
         if (userWithDept) {
-          await SystemLogService.createLog({
-            userId: userWithDept.id,
-            userName: userWithDept.name,
-            userRole: userWithDept.role,
-            userDepartment: userWithDept.department?.name || undefined,
-            userDepartmentId: userWithDept.departmentId || undefined,
-            action: 'CREATE',
-            actionLabel: '创建AI API限流策略',
-            module: 'SYSTEM',
+          await AuditService.logCreate({
+            module: LogModule.SYSTEM,
+            businessId: rateLimit.id,
             targetType: 'ai_api_rate_limit',
-            targetId: rateLimit.id,
-            details: `创建了${userId ? '用户' : departmentId ? '部门' : '全局'}限流策略，每日限制${dailyLimit}次`,
+            newData: rateLimit,
+            operator: {
+              id: userWithDept.id,
+              name: userWithDept.name,
+              role: userWithDept.role,
+              departmentId: userWithDept.departmentId || undefined,
+              departmentName: userWithDept.department?.name,
+              jobTitle: userWithDept.jobTitle || undefined,
+            },
+            description: `创建了${userId ? '用户' : departmentId ? '部门' : '全局'}限流策略，每日限制${dailyLimit}次`,
+            request: request as any,
           });
         }
       }
@@ -370,19 +374,21 @@ export async function POST(request: NextRequest) {
         include: { department: true },
       });
       if (userWithDept) {
-        await SystemLogService.createLog({
-          userId: userWithDept.id,
-          userName: userWithDept.name,
-          userRole: userWithDept.role,
-          userDepartment: userWithDept.department?.name || undefined,
-          userDepartmentId: userWithDept.departmentId || undefined,
-          action: 'CREATE',
-          actionLabel: '创建AI API配置',
-          module: 'SYSTEM',
+        await AuditService.logCreate({
+          module: LogModule.SYSTEM,
+          businessId: config.id,
           targetType: 'ai_api_config',
-          targetId: config.id,
-          targetLabel: config.name,
-          details: `创建了AI API配置：${config.name} (${config.provider})`,
+          newData: { ...config, apiKey: '***' + config.apiKey.slice(-4) },
+          operator: {
+            id: userWithDept.id,
+            name: userWithDept.name,
+            role: userWithDept.role,
+            departmentId: userWithDept.departmentId || undefined,
+            departmentName: userWithDept.department?.name,
+            jobTitle: userWithDept.jobTitle || undefined,
+          },
+          description: `创建了AI API配置：${config.name} (${config.provider})`,
+          request: request as any,
         });
       }
     }
@@ -447,20 +453,22 @@ export async function PUT(request: NextRequest) {
           include: { department: true },
         });
         if (userWithDept) {
-          await SystemLogService.createLog({
-            userId: userWithDept.id,
-            userName: userWithDept.name,
-            userRole: userWithDept.role,
-            userDepartment: userWithDept.department?.name || undefined,
-            userDepartmentId: userWithDept.departmentId || undefined,
-            action: 'UPDATE',
-            actionLabel: '更新AI API限流策略',
-            module: 'SYSTEM',
+          await AuditService.logUpdate({
+            module: LogModule.SYSTEM,
+            businessId: rateLimit.id,
             targetType: 'ai_api_rate_limit',
-            targetId: rateLimit.id,
-            details: `更新了限流策略，每日限制从${oldLimit.dailyLimit}次改为${rateLimit.dailyLimit}次`,
-            beforeData: oldLimit,
-            afterData: rateLimit,
+            oldData: oldLimit,
+            newData: rateLimit,
+            operator: {
+              id: userWithDept.id,
+              name: userWithDept.name,
+              role: userWithDept.role,
+              departmentId: userWithDept.departmentId || undefined,
+              departmentName: userWithDept.department?.name,
+              jobTitle: userWithDept.jobTitle || undefined,
+            },
+            description: `更新了限流策略，每日限制从${oldLimit.dailyLimit}次改为${rateLimit.dailyLimit}次`,
+            request: request as any,
           });
         }
       }
@@ -512,21 +520,22 @@ export async function PUT(request: NextRequest) {
         include: { department: true },
       });
       if (userWithDept) {
-        await SystemLogService.createLog({
-          userId: userWithDept.id,
-          userName: userWithDept.name,
-          userRole: userWithDept.role,
-          userDepartment: userWithDept.department?.name || undefined,
-          userDepartmentId: userWithDept.departmentId || undefined,
-          action: 'UPDATE',
-          actionLabel: '更新AI API配置',
-          module: 'SYSTEM',
+        await AuditService.logUpdate({
+          module: LogModule.SYSTEM,
+          businessId: config.id,
           targetType: 'ai_api_config',
-          targetId: config.id,
-          targetLabel: config.name,
-          details: `更新了AI API配置：${config.name}`,
-          beforeData: { ...oldConfig, apiKey: '***' },
-          afterData: { ...config, apiKey: '***' },
+          oldData: { ...oldConfig, apiKey: '***' + oldConfig.apiKey.slice(-4) },
+          newData: { ...config, apiKey: '***' + config.apiKey.slice(-4) },
+          operator: {
+            id: userWithDept.id,
+            name: userWithDept.name,
+            role: userWithDept.role,
+            departmentId: userWithDept.departmentId || undefined,
+            departmentName: userWithDept.department?.name,
+            jobTitle: userWithDept.jobTitle || undefined,
+          },
+          description: `更新了AI API配置：${config.name}`,
+          request: request as any,
         });
       }
     }
@@ -589,19 +598,21 @@ export async function DELETE(request: NextRequest) {
           include: { department: true },
         });
         if (userWithDept) {
-          await SystemLogService.createLog({
-            userId: userWithDept.id,
-            userName: userWithDept.name,
-            userRole: userWithDept.role,
-            userDepartment: userWithDept.department?.name || undefined,
-            userDepartmentId: userWithDept.departmentId || undefined,
-            action: 'DELETE',
-            actionLabel: '删除AI API限流策略',
-            module: 'SYSTEM',
+          await AuditService.logDelete({
+            module: LogModule.SYSTEM,
+            businessId: id,
             targetType: 'ai_api_rate_limit',
-            targetId: id,
-            details: `删除了限流策略（每日限制${oldLimit.dailyLimit}次）`,
-            beforeData: oldLimit,
+            oldData: oldLimit,
+            operator: {
+              id: userWithDept.id,
+              name: userWithDept.name,
+              role: userWithDept.role,
+              departmentId: userWithDept.departmentId || undefined,
+              departmentName: userWithDept.department?.name,
+              jobTitle: userWithDept.jobTitle || undefined,
+            },
+            description: `删除了限流策略（每日限制${oldLimit.dailyLimit}次）`,
+            request: request as any,
           });
         }
       }
@@ -636,20 +647,21 @@ export async function DELETE(request: NextRequest) {
         include: { department: true },
       });
       if (userWithDept) {
-        await SystemLogService.createLog({
-          userId: userWithDept.id,
-          userName: userWithDept.name,
-          userRole: userWithDept.role,
-          userDepartment: userWithDept.department?.name || undefined,
-          userDepartmentId: userWithDept.departmentId || undefined,
-          action: 'DELETE',
-          actionLabel: '删除AI API配置',
-          module: 'SYSTEM',
+        await AuditService.logDelete({
+          module: LogModule.SYSTEM,
+          businessId: id,
           targetType: 'ai_api_config',
-          targetId: id,
-          targetLabel: oldConfig.name,
-          details: `删除了AI API配置：${oldConfig.name}`,
-          beforeData: { ...oldConfig, apiKey: '***' },
+          oldData: { ...oldConfig, apiKey: '***' + oldConfig.apiKey.slice(-4) },
+          operator: {
+            id: userWithDept.id,
+            name: userWithDept.name,
+            role: userWithDept.role,
+            departmentId: userWithDept.departmentId || undefined,
+            departmentName: userWithDept.department?.name,
+            jobTitle: userWithDept.jobTitle || undefined,
+          },
+          description: `删除了AI API配置：${oldConfig.name}`,
+          request: request as any,
         });
       }
     }

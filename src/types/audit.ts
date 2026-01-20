@@ -26,6 +26,8 @@ export enum LogModule {
   NOTIFICATION = 'NOTIFICATION',
   /** 档案库管理 */
   ARCHIVE = 'ARCHIVE',
+  /** 事故事件管理 */
+  INCIDENT = 'INCIDENT',
 }
 
 // ============ 操作类型枚举 ============
@@ -64,6 +66,14 @@ export enum LogAction {
   ARCHIVE = 'ARCHIVE',
   /** 恢复 */
   RESTORE = 'RESTORE',
+  /** 关闭 */
+  CLOSE = 'CLOSE',
+  /** 备份失败 */
+  BACKUP_FAILED = 'BACKUP_FAILED',
+  /** 备份错误 */
+  BACKUP_ERROR = 'BACKUP_ERROR',
+  /** 备份超时 */
+  BACKUP_TIMEOUT = 'BACKUP_TIMEOUT',
 }
 
 // ============ 业务角色枚举 ============

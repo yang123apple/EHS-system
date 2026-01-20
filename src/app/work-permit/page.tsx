@@ -230,10 +230,11 @@ export default function WorkPermitPage() {
     }
   };
 
-  // 🟢 新增：获取所有人员
+  // 🟢 新增：获取所有人员（仅在职）
   const fetchAllUsers = async () => {
     try {
-      const data = await UserService.getAll();
+      const res = await apiFetch('/api/users?activeOnly=true');
+      const data = await res.json();
       setAllUsers(data);
     } catch (e) {
       console.error("Fetch users failed", e);

@@ -23,6 +23,7 @@ export const GET = withAuth(async (req, context, user) => {
   const isPaginated = searchParams.has('page');
   const q = searchParams.get('q');
   const dept = searchParams.get('dept'); // This might be department name or ID
+  const activeOnly = searchParams.get('activeOnly') === 'true'; // 🟢 新增：是否只查询在职用户
 
   const whereCondition: any = {};
 
@@ -42,6 +43,11 @@ export const GET = withAuth(async (req, context, user) => {
       whereCondition.department = {
           name: { contains: dept }
       };
+  }
+
+  // 🟢 新增：如果 activeOnly 为 true，只返回在职用户
+  if (activeOnly) {
+      whereCondition.isActive = true;
   }
 
   const queryOptions: any = {

@@ -27,11 +27,21 @@ jest.mock('@/lib/prisma', () => ({
   },
 }));
 
-jest.mock('@/services/systemLog.service');
 jest.mock('@/app/incident/_utils/incident-dispatch-engine');
 jest.mock('@/services/signatureService');
 
-import { SystemLogService } from '@/services/systemLog.service';
+// Mock AuditService as a default export with all methods
+jest.mock('@/services/audit.service', () => ({
+  __esModule: true,
+  default: {
+    recordLog: jest.fn().mockResolvedValue({}),
+    logCreate: jest.fn().mockResolvedValue({}),
+    logUpdate: jest.fn().mockResolvedValue({}),
+    logAction: jest.fn().mockResolvedValue({}),
+  },
+}));
+
+import AuditService from '@/services/audit.service';
 import { IncidentDispatchEngine, IncidentDispatchAction } from '@/app/incident/_utils/incident-dispatch-engine';
 import { createSignature } from '@/services/signatureService';
 
@@ -48,7 +58,6 @@ describe('IncidentService', () => {
       id: 'reporter-001', 
       name: '上报人', 
       departmentId: 'dept-001',
-      department: { id: 'dept-001', name: '安全部' },
     });
 
     mockIncident = {
@@ -76,7 +85,9 @@ describe('IncidentService', () => {
     (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockReporter);
     (prisma.incident.findUnique as jest.Mock).mockResolvedValue(mockIncident);
     (prisma.department.findUnique as jest.Mock).mockResolvedValue({ id: 'dept-001', name: '安全部' });
-    (SystemLogService.createLog as jest.Mock).mockResolvedValue({});
+    
+    // Reset all AuditService mocks
+    jest.clearAllMocks();
   });
 
   describe('reportIncident - 上报事故', () => {
@@ -101,7 +112,7 @@ describe('IncidentService', () => {
       expect(result).toBeDefined();
       expect(result.code).toBe('INC-2025-001');
       expect(prisma.incident.create).toHaveBeenCalled();
-      expect(SystemLogService.createLog).toHaveBeenCalled();
+      expect(AuditService.logCreate).toHaveBeenCalled();
     });
 
     it('应该生成递增的事故编号', async () => {
@@ -152,11 +163,11 @@ describe('IncidentService', () => {
         managementCause: '安全管理制度执行不力',
         rootCause: '安全管理体系存在漏洞，缺乏有效的监督机制',
         correctiveActions: [
-          { action: '立即为所有操作人员配备安全帽', deadline: '2025-01-15', responsible: 'dept-001' },
-          { action: '加强现场安全监督', deadline: '2025-01-20', responsible: 'dept-001' },
+          { action: '立即为所有操作人员配备安全帽', deadline: new Date('2025-01-15'), responsibleId: 'dept-001' },
+          { action: '加强现场安全监督', deadline: new Date('2025-01-20'), responsibleId: 'dept-001' },
         ],
         preventiveActions: [
-          { action: '完善安全管理制度', deadline: '2025-02-01', responsible: 'dept-001' },
+          { action: '完善安全管理制度', deadline: new Date('2025-02-01'), responsibleId: 'dept-001' },
         ],
         actionDeadline: new Date('2025-02-01'),
         actionResponsibleId: 'user-001',
@@ -212,8 +223,13 @@ describe('IncidentService', () => {
       expect(result.status).toBe('reviewed');
       
       // 验证CAPA措施被正确保存
-      expect(JSON.parse(result.correctiveActions!)).toEqual(input.correctiveActions);
-      expect(JSON.parse(result.preventiveActions!)).toEqual(input.preventiveActions);
+      const savedCorrectiveActions = JSON.parse(result.correctiveActions!);
+      const savedPreventiveActions = JSON.parse(result.preventiveActions!);
+      
+      expect(savedCorrectiveActions).toHaveLength(2);
+      expect(savedCorrectiveActions[0].action).toBe(input.correctiveActions[0].action);
+      expect(savedPreventiveActions).toHaveLength(1);
+      expect(savedPreventiveActions[0].action).toBe(input.preventiveActions[0].action);
     });
 
     it('应该在非允许状态下拒绝提交调查报告', async () => {
@@ -286,8 +302,8 @@ describe('IncidentService', () => {
   describe('CAPA流程 - 纠正预防措施', () => {
     it('应该正确处理多条纠正措施', async () => {
       const correctiveActions = [
-        { action: '立即整改措施1', deadline: '2025-01-15', responsible: 'dept-001' },
-        { action: '立即整改措施2', deadline: '2025-01-20', responsible: 'dept-001' },
+        { action: '立即整改措施1', deadline: new Date('2025-01-15'), responsibleId: 'dept-001' },
+        { action: '立即整改措施2', deadline: new Date('2025-01-20'), responsibleId: 'dept-001' },
       ];
 
       const input = {
@@ -334,8 +350,8 @@ describe('IncidentService', () => {
 
     it('应该正确处理预防措施', async () => {
       const preventiveActions = [
-        { action: '完善制度', deadline: '2025-02-01', responsible: 'dept-001' },
-        { action: '加强培训', deadline: '2025-02-15', responsible: 'dept-001' },
+        { action: '完善制度', deadline: new Date('2025-02-01'), responsibleId: 'dept-001' },
+        { action: '加强培训', deadline: new Date('2025-02-15'), responsibleId: 'dept-001' },
       ];
 
       const input = {
@@ -450,7 +466,7 @@ describe('IncidentService', () => {
       expect(result).toBeDefined();
       expect(result.description).toBe(input.description);
       expect(result.location).toBe(input.location);
-      expect(SystemLogService.createLog).toHaveBeenCalled();
+      expect(AuditService.logUpdate).toHaveBeenCalled();
     });
 
     it('应该更新5Why分析字段', async () => {

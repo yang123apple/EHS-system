@@ -23,22 +23,24 @@ export function ExtensionCard({ hazard, onProcess, canRequest, canApprove }: Ext
   const [loading, setLoading] = useState(false);
   const [loadingExtensions, setLoadingExtensions] = useState(true);
 
-  // 加载延期记录
-  useEffect(() => {
-    const loadExtensions = async () => {
-      try {
-        setLoadingExtensions(true);
-        const response = await apiFetch(`/api/hazards/extension?hazardId=${hazard.id}`);
-        const data = await response.json();
-        if (data.success) {
-          setExtensions(data.data || []);
-        }
-      } catch (error) {
-        console.error('加载延期记录失败:', error);
-      } finally {
-        setLoadingExtensions(false);
+  // 加载延期记录函数（提取到组件级别以便复用）
+  const loadExtensions = async () => {
+    try {
+      setLoadingExtensions(true);
+      const response = await apiFetch(`/api/hazards/extension?hazardId=${hazard.id}`);
+      const data = await response.json();
+      if (data.success) {
+        setExtensions(data.data || []);
       }
-    };
+    } catch (error) {
+      console.error('加载延期记录失败:', error);
+    } finally {
+      setLoadingExtensions(false);
+    }
+  };
+
+  // 初始加载延期记录
+  useEffect(() => {
     loadExtensions();
   }, [hazard.id]);
 

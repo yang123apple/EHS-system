@@ -72,7 +72,7 @@ export const PUT = withAdmin<{ params: Promise<{ id: string }> }>(async (req, co
       // 🟢 在职状态支持
       if (formData.has('isActive')) {
         const isActiveValue = formData.get('isActive');
-        updateData.isActive = isActiveValue === 'true' || isActiveValue === true;
+        updateData.isActive = isActiveValue === 'true';
       }
 
       // 如果前端传了 permissions 字符串，尝试解析
@@ -178,4 +178,3 @@ export const PUT = withAdmin<{ params: Promise<{ id: string }> }>(async (req, co
     return NextResponse.json({ error: '更新失败' }, { status: 500 });
   }
 });
-

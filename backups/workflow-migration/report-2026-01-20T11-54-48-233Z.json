@@ -1,0 +1,17 @@
+{
+  "startTime": "2026-01-20T11:54:48.225Z",
+  "mode": "dry-run",
+  "hazardConfig": {
+    "total": 0,
+    "migrated": 0,
+    "failed": 0,
+    "errors": []
+  },
+  "workPermitTemplates": {
+    "total": 0,
+    "migrated": 0,
+    "failed": 0,
+    "errors": []
+  },
+  "endTime": "2026-01-20T11:54:48.233Z"
+}

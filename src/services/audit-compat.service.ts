@@ -8,6 +8,7 @@
 import AuditService from '@/services/audit.service';
 import { LogModule, LogAction, BusinessRole } from '@/types/audit';
 import type { NextRequest } from 'next/server';
+import { adaptNextRequest } from '@/utils/requestAdapter';
 
 /**
  * 旧模块名映射到新模块枚举
@@ -108,7 +109,7 @@ export class ActivityLoggerCompat {
       newData: params.data,
       operator,
       businessRole: params.roleInAction,
-      request: params.request as any,
+      request: adaptNextRequest(params.request),
     });
   }
 
@@ -396,18 +397,6 @@ async function getUserOperator(userId: string) {
   }
 }
 
-export function getClientIP(request: Request): string | undefined {
-  const headers = request.headers;
-  
-  const forwardedFor = headers.get('x-forwarded-for');
-  if (forwardedFor) {
-    return forwardedFor.split(',')[0].trim();
-  }
-  
-  const realIP = headers.get('x-real-ip');
-  if (realIP) {
-    return realIP;
-  }
-  
-  return undefined;
-}
+// getClientIP 函数已迁移到 @/utils/requestAdapter
+// 保留此导出以保持向下兼容
+export { getClientIP } from '@/utils/requestAdapter';

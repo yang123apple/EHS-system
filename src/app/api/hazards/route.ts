@@ -981,11 +981,14 @@ export const PATCH = withErrorHandling(
       }
     }
 
+    // 生成变更描述（用于日志记录）
+    const changeDesc = generateChanges(oldRecord as HazardRecord, updates);
+
     // 记录操作日志
     await logApiOperation(user, 'hidden_danger', actionName || 'update', {
       hazardId: id,
       action: actionName,
-      changes: changeDesc
+      changes: changeDesc || updates.extensionReason || '无关键字段变更'
     });
 
     return NextResponse.json(mapHazard(res));

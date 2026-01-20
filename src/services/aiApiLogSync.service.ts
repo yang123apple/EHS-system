@@ -1,7 +1,8 @@
 // src/services/aiApiLogSync.service.ts
 // AI API调用日志同步到系统操作日志的服务
 import { prisma } from '@/lib/prisma';
-import { SystemLogService } from './systemLog.service';
+import { AuditService } from './audit.service';
+import { LogModule, LogAction } from '@/types/audit';
 
 /**
  * 将AI API调用日志同步到系统操作日志
@@ -58,22 +59,26 @@ export async function syncAIApiLogToSystemLog(logId: string) {
     }
 
     // 创建系统操作日志
-    const systemLog = await SystemLogService.createLog({
-      userId: apiLog.requestBy || undefined,
-      userName: userSnapshot?.name || undefined,
-      userRole: userSnapshot?.role || undefined,
-      userDepartment: userSnapshot?.departmentName || undefined,
-      userDepartmentId: userSnapshot?.departmentId || undefined,
-      userJobTitle: userSnapshot?.jobTitle || undefined,
-      userSnapshot: userSnapshot || undefined,
-      action: apiLog.status === 'success' ? 'CALL_API' : apiLog.status === 'rate_limited' ? 'RATE_LIMITED' : 'CALL_API_ERROR',
-      actionLabel: apiLog.status === 'success' ? '调用AI API' : apiLog.status === 'rate_limited' ? 'AI API调用被限流' : 'AI API调用失败',
-      module: 'AI_API',
+    const systemLog = await AuditService.recordLog({
+      operator: apiLog.requestBy ? {
+        id: apiLog.requestBy,
+        name: userSnapshot?.name || 'Unknown',
+        role: userSnapshot?.role || 'user',
+        departmentId: userSnapshot?.departmentId,
+        departmentName: userSnapshot?.departmentName,
+        jobTitle: userSnapshot?.jobTitle,
+      } : {
+        id: 'system',
+        name: 'System',
+        role: 'admin',
+      },
+      module: LogModule.SYSTEM,
+      action: apiLog.status === 'success' ? LogAction.CONFIG : LogAction.CONFIG,
       targetType: 'ai_api_call',
-      targetId: logId,
+      businessId: logId,
       targetLabel: `${apiLog.config.name} - ${apiLog.requestSource || 'unknown'}`,
-      details,
-      snapshot: {
+      description: details,
+      newData: {
         configId: apiLog.configId,
         configName: apiLog.config.name,
         provider: apiLog.config.provider,
@@ -84,7 +89,9 @@ export async function syncAIApiLogToSystemLog(logId: string) {
         errorMessage: apiLog.errorMessage,
         createdAt: apiLog.createdAt,
       },
-      ip: apiLog.ip || undefined,
+      clientInfo: {
+        ip: apiLog.ip || undefined,
+      },
     });
 
     return systemLog;
@@ -111,4 +118,3 @@ export async function batchSyncAIApiLogs(logIds: string[]) {
     total: logIds.length,
   };
 }
-

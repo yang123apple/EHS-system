@@ -29,21 +29,21 @@ export const INCIDENT_STATUS_VALUES = ['reported', 'investigating', 'reviewed', 
  * 事故类型 schema
  */
 export const incidentTypeSchema = z.enum(INCIDENT_TYPE_VALUES, {
-  errorMap: () => ({ message: '无效的事故类型值' }),
+  message: '无效的事故类型值',
 });
 
 /**
  * 事故严重程度 schema
  */
 export const incidentSeveritySchema = z.enum(INCIDENT_SEVERITY_VALUES, {
-  errorMap: () => ({ message: '无效的事故严重程度值' }),
+  message: '无效的事故严重程度值',
 });
 
 /**
  * 事故状态 schema
  */
 export const incidentStatusSchema = z.enum(INCIDENT_STATUS_VALUES, {
-  errorMap: () => ({ message: '无效的事故状态值' }),
+  message: '无效的事故状态值',
 });
 
 /**

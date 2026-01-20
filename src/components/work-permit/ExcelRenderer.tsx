@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckSquare, Square, Bold, Type, MousePointerClick, Clock, Check, AlertCircle, X } from 'lucide-react';
 import PeopleSelector from '@/components/common/PeopleSelector';
-import HandwrittenSignature from './HandwrittenSignature';
-import SignatureImage from './SignatureImage';
-import MultiSignatureDisplay from './MultiSignatureDisplay';
+import { HandwrittenSignature } from '@/components/common/signature/HandwrittenSignature';
+import { SignatureImage } from '@/components/common/signature/SignatureImage';
+import { MultiSignatureDisplay } from '@/components/common/signature/MultiSignatureDisplay';
 import { ParsedField } from '@/types/work-permit';
 
 // 定义样式接口
@@ -964,7 +964,7 @@ export default function ExcelRenderer({
       rIndex >= archivedRowRange.startRow && 
       rIndex <= archivedRowRange.endRow;
     // 🟢 如果当前行是已归档行，则强制设置为只读模式
-    const effectiveMode = isArchivedRow ? 'view' : mode;
+    const effectiveMode = (isArchivedRow ? 'view' : mode) as 'view' | 'edit' | 'design';
     
     // 🟢 优化：移除频繁的调试日志，避免刷屏
     // 调试日志已移除，如有需要可以通过其他方式调试
@@ -1619,6 +1619,7 @@ export default function ExcelRenderer({
       if (effectiveMode === 'view') return filledValue ? <span className="text-blue-900 font-bold text-sm block text-center whitespace-nowrap" style={styleObj}>{filledValue}</span> : <span className="text-slate-200 block text-center select-none">/</span>;
       
       // 编辑模式或普通输入 - 必填字段在无内容时显示红色星号
+      const isReadOnly = isArchivedRow || mode === 'view';
       return (
         <div className="w-full h-full flex items-center justify-center">
           {isRequired && !filledValue && <span className="text-red-500 font-bold mr-1 flex-shrink-0">*</span>}
@@ -1629,7 +1630,7 @@ export default function ExcelRenderer({
             value={filledValue || ''}
             onChange={(e) => handleInputChange(rIndex, cIndex, e.target.value)}
             style={styleObj}
-            readOnly={effectiveMode === 'view'}
+            readOnly={isReadOnly}
           />
         </div>
       );

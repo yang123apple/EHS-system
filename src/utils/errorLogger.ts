@@ -4,7 +4,8 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import { SystemLogService } from '@/services/systemLog.service';
+import AuditService from '@/services/audit.service';
+import { LogModule } from '@/types/audit';
 import { extractClientInfo } from '@/lib/audit-utils';
 import type { NextRequest } from 'next/server';
 
@@ -35,24 +36,28 @@ export async function logError(
     const errorStack = error instanceof Error ? error.stack : undefined;
 
     // 记录到系统日志
-    await SystemLogService.createLog({
-      userId: context.userId,
-      userName: context.userName,
-      userRole: context.userRole,
-      action: 'ERROR',
-      actionLabel: '系统错误',
-      module: 'SYSTEM',
+    await AuditService.recordLog({
+      module: LogModule.SYSTEM,
+      action: 'ERROR' as any,
+      businessId: context.userId,
       targetType: 'error',
-      details: `错误: ${errorMessage}${context.url ? ` | URL: ${context.url}` : ''}${context.method ? ` | Method: ${context.method}` : ''}`,
-      beforeData: {
+      operator: context.userId ? {
+        id: context.userId,
+        name: context.userName || '未知用户',
+        role: (context.userRole || 'user') as any,
+      } : undefined,
+      description: `错误: ${errorMessage}${context.url ? ` | URL: ${context.url}` : ''}${context.method ? ` | Method: ${context.method}` : ''}`,
+      oldData: {
         url: context.url,
         method: context.method,
         queryParams: context.queryParams,
         requestBody: sanitizeRequestBody(context.requestBody),
         stack: errorStack,
       },
-      ip: context.ip,
-      userAgent: context.userAgent,
+      clientInfo: {
+        ip: context.ip,
+        userAgent: context.userAgent,
+      },
     });
 
     // 同时输出到控制台（用于开发调试）

@@ -1,6 +1,6 @@
 // src/app/api/auth/logout/route.ts
 import { NextResponse } from 'next/server';
-import { logUserLogout, getClientIP } from '@/services/systemLogService';
+import { logUserLogout, getClientIP } from '@/services/audit-compat.service';
 
 export async function POST(req: Request) {
   try {

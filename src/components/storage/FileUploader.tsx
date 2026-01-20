@@ -1,12 +1,14 @@
 /**
  * 文件上传组件
  * 使用 Presigned URL 直接上传到 MinIO，不经过 Next.js 服务器
+ * 重构版本：使用 useMinioUpload Hook
  */
 
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { Upload, X, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { useMinioUpload, UploadResult } from '@/hooks/useMinioUpload';
 
 interface FileUploaderProps {
   bucket: 'private' | 'public';
@@ -15,17 +17,17 @@ interface FileUploaderProps {
   accept?: string;
   maxSize?: number; // 最大文件大小（字节）
   prefix?: string; // 文件路径前缀
+  category?: string; // 文件分类
   multiple?: boolean;
   className?: string;
 }
 
-interface UploadProgress {
+interface FileUploadProgress {
   file: File;
   progress: number;
   status: 'pending' | 'uploading' | 'success' | 'error';
   error?: string;
-  objectName?: string;
-  url?: string;
+  result?: UploadResult;
 }
 
 export default function FileUploader({
@@ -35,138 +37,158 @@ export default function FileUploader({
   accept,
   maxSize = 100 * 1024 * 1024, // 默认 100MB
   prefix,
+  category,
   multiple = false,
   className = '',
 }: FileUploaderProps) {
-  const [uploads, setUploads] = useState<UploadProgress[]>([]);
+  const [uploads, setUploads] = useState<FileUploadProgress[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /**
-   * 获取预签名 URL
+   * 上传单个文件的核心逻辑
    */
-  const getPresignedUrl = async (file: File): Promise<{ presignedUrl: string; objectName: string }> => {
-    const response = await fetch('/api/storage/presigned-url', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        bucket,
-        filename: file.name,
-        contentType: file.type,
-        prefix,
-      }),
-    });
+  const uploadFileCore = useCallback(
+    async (file: File) => {
+      // 检查文件大小
+      if (file.size > maxSize) {
+        const error = `文件大小超过限制 (${(maxSize / 1024 / 1024).toFixed(0)}MB)`;
+        setUploads((prev) =>
+          prev.map((u) => (u.file === file ? { ...u, status: 'error', error } : u))
+        );
+        onUploadError?.(error);
+        return;
+      }
 
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error || '获取上传链接失败');
-    }
+      try {
+        // 获取预签名 URL
+        setUploads((prev) =>
+          prev.map((u) =>
+            u.file === file ? { ...u, status: 'uploading', progress: 0 } : u
+          )
+        );
 
-    const data = await response.json();
-    return {
-      presignedUrl: data.data.presignedUrl,
-      objectName: data.data.objectName,
-    };
-  };
+        const response = await fetch('/api/storage/presigned-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bucket,
+            filename: file.name,
+            contentType: file.type || 'application/octet-stream',
+            size: file.size,
+            prefix,
+            category,
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || '获取上传链接失败');
+        }
+
+        const { data } = await response.json();
+        const presignedUrl = data.presignedUrl || data.uploadUrl;
+        const objectName = data.objectName;
+        const dbRecord = data.dbRecord;
+
+        if (!presignedUrl) {
+          throw new Error('未获取到有效的上传地址');
+        }
+
+        // 使用 XHR 上传
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+
+          xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+              const progress = Math.round((e.loaded / e.total) * 100);
+              setUploads((prev) =>
+                prev.map((u) => (u.file === file ? { ...u, progress } : u))
+              );
+            }
+          });
+
+          xhr.addEventListener('load', () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              reject(new Error(`上传失败: HTTP ${xhr.status}`));
+            }
+          });
+
+          xhr.addEventListener('error', () => reject(new Error('网络错误')));
+          xhr.addEventListener('abort', () => reject(new Error('上传已取消')));
+
+          xhr.open('PUT', presignedUrl);
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+          xhr.send(file);
+        });
+
+        // 构建结果
+        const url =
+          bucket === 'public' && presignedUrl
+            ? presignedUrl.split('?')[0]
+            : dbRecord || undefined;
+
+        const result: UploadResult = {
+          objectName,
+          url,
+          dbRecord,
+        };
+
+        setUploads((prev) =>
+          prev.map((u) =>
+            u.file === file
+              ? { ...u, status: 'success', progress: 100, result }
+              : u
+          )
+        );
+
+        onUploadSuccess?.(objectName, url);
+      } catch (error: any) {
+        const errorMessage = error.message || '上传失败';
+        setUploads((prev) =>
+          prev.map((u) =>
+            u.file === file ? { ...u, status: 'error', error: errorMessage } : u
+          )
+        );
+        onUploadError?.(errorMessage);
+      }
+    },
+    [bucket, prefix, category, maxSize, onUploadSuccess, onUploadError]
+  );
 
   /**
-   * 上传文件到 MinIO
+   * 上传单个文件
    */
-  const uploadFile = async (file: File) => {
-    // 检查文件大小
-    if (file.size > maxSize) {
-      const error = `文件大小超过限制 (${(maxSize / 1024 / 1024).toFixed(0)}MB)`;
-      setUploads(prev => prev.map(u => 
-        u.file === file ? { ...u, status: 'error', error } : u
-      ));
-      onUploadError?.(error);
-      return;
-    }
+  const uploadSingleFile = useCallback(
+    (file: File) => {
+      // 添加到上传列表
+      const uploadItem: FileUploadProgress = {
+        file,
+        progress: 0,
+        status: 'pending',
+      };
+      setUploads((prev) => [...prev, uploadItem]);
 
-    // 添加到上传列表
-    const upload: UploadProgress = {
-      file,
-      progress: 0,
-      status: 'pending',
-    };
-    setUploads(prev => [...prev, upload]);
-
-    try {
-      // 1. 获取预签名 URL
-      const { presignedUrl, objectName } = await getPresignedUrl(file);
-
-      // 更新状态为上传中
-      setUploads(prev => prev.map(u => 
-        u.file === file ? { ...u, status: 'uploading', objectName } : u
-      ));
-
-      // 2. 直接 PUT 文件到 MinIO
-      const xhr = new XMLHttpRequest();
-
-      // 监听上传进度
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-          const progress = Math.round((e.loaded / e.total) * 100);
-          setUploads(prev => prev.map(u => 
-            u.file === file ? { ...u, progress } : u
-          ));
-        }
-      });
-
-      // 上传完成
-      const uploadPromise = new Promise<void>((resolve, reject) => {
-        xhr.addEventListener('load', () => {
-          if (xhr.status === 200 || xhr.status === 204) {
-            const url = bucket === 'public' 
-              ? `${presignedUrl.split('?')[0]}` // 公开文件直接使用 URL
-              : undefined;
-            
-            setUploads(prev => prev.map(u => 
-              u.file === file 
-                ? { ...u, status: 'success', progress: 100, url } 
-                : u
-            ));
-            
-            onUploadSuccess?.(objectName, url);
-            resolve();
-          } else {
-            reject(new Error(`上传失败: HTTP ${xhr.status}`));
-          }
-        });
-
-        xhr.addEventListener('error', () => {
-          reject(new Error('网络错误'));
-        });
-
-        xhr.addEventListener('abort', () => {
-          reject(new Error('上传已取消'));
-        });
-      });
-
-      // 开始上传
-      xhr.open('PUT', presignedUrl);
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-      xhr.send(file);
-
-      await uploadPromise;
-    } catch (error: any) {
-      const errorMessage = error.message || '上传失败';
-      setUploads(prev => prev.map(u => 
-        u.file === file ? { ...u, status: 'error', error: errorMessage } : u
-      ));
-      onUploadError?.(errorMessage);
-    }
-  };
+      // 执行上传
+      uploadFileCore(file);
+    },
+    [uploadFileCore]
+  );
 
   /**
    * 处理文件选择
    */
-  const handleFileSelect = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+  const handleFileSelect = useCallback(
+    (files: FileList | null) => {
+      if (!files || files.length === 0) return;
 
-    const fileArray = Array.from(files);
-    fileArray.forEach(file => uploadFile(file));
-  };
+      const fileArray = Array.from(files);
+      fileArray.forEach((file) => uploadSingleFile(file));
+    },
+    [uploadSingleFile]
+  );
 
   /**
    * 处理拖拽
@@ -191,7 +213,7 @@ export default function FileUploader({
    * 移除上传项
    */
   const removeUpload = (file: File) => {
-    setUploads(prev => prev.filter(u => u.file !== file));
+    setUploads((prev) => prev.filter((u) => u.file !== file));
   };
 
   /**
@@ -214,9 +236,10 @@ export default function FileUploader({
         onDrop={handleDrop}
         className={`
           border-2 border-dashed rounded-lg p-8 text-center transition-colors
-          ${isDragging 
-            ? 'border-blue-500 bg-blue-50' 
-            : 'border-gray-300 hover:border-gray-400'
+          ${
+            isDragging
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-300 hover:border-gray-400'
           }
         `}
       >
@@ -228,7 +251,7 @@ export default function FileUploader({
           onChange={(e) => handleFileSelect(e.target.files)}
           className="hidden"
         />
-        
+
         <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
         <p className="text-gray-600 mb-2">
           拖拽文件到此处或{' '}
@@ -268,7 +291,7 @@ export default function FileUploader({
                     <Loader2 className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
                   )}
                 </div>
-                
+
                 {upload.status === 'uploading' && (
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
@@ -277,18 +300,18 @@ export default function FileUploader({
                     />
                   </div>
                 )}
-                
+
                 {upload.status === 'error' && (
                   <p className="text-sm text-red-600">{upload.error}</p>
                 )}
-                
-                {upload.status === 'success' && (
+
+                {upload.status === 'success' && upload.result && (
                   <p className="text-xs text-gray-500">
-                    {formatFileSize(upload.file.size)} • {upload.objectName}
+                    {formatFileSize(upload.file.size)} • {upload.result.objectName}
                   </p>
                 )}
               </div>
-              
+
               <button
                 type="button"
                 onClick={() => removeUpload(upload.file)}
@@ -303,4 +326,3 @@ export default function FileUploader({
     </div>
   );
 }
-

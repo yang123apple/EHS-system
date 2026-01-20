@@ -31,7 +31,11 @@ function mapUser(pUser: PrismaUserWithDepartment): User {
 // 转换 Prisma Department 到前端 DepartmentNode 类型
 function mapDept(pDept: PrismaDepartment): DepartmentNode {
   return {
-    ...pDept,
+    id: pDept.id,
+    name: pDept.name,
+    parentId: pDept.parentId,
+    managerId: pDept.managerId ?? undefined,
+    level: pDept.level,
     children: [] // 树状结构需要在 getOrgTree 中处理
   };
 }
@@ -39,19 +43,29 @@ function mapDept(pDept: PrismaDepartment): DepartmentNode {
 // 转换 Prisma HazardRecord 到前端 HazardRecord 类型
 function mapHazard(pHazard: PrismaHazardRecord): HazardRecord {
   return {
-    ...pHazard,
+    id: pHazard.id,
+    status: pHazard.status,
+    riskLevel: pHazard.riskLevel,
+    type: pHazard.type,
+    location: pHazard.location,
+    desc: pHazard.desc,
     photos: pHazard.photos ? JSON.parse(pHazard.photos) : [],
+    reporterId: pHazard.reporterId,
+    reporterName: pHazard.reporterName,
+    reportTime: pHazard.reportTime?.toISOString() || new Date().toISOString(),
+    responsibleDept: pHazard.responsibleDept ?? undefined,
+    responsibleId: pHazard.responsibleId ?? undefined,
+    responsibleName: pHazard.responsibleName ?? undefined,
+    deadline: pHazard.deadline?.toISOString(),
     rectifyPhotos: pHazard.rectifyPhotos ? JSON.parse(pHazard.rectifyPhotos) : [],
+    rectifyTime: pHazard.rectifyTime?.toISOString(),
+    verifyTime: pHazard.verifyTime?.toISOString(),
+    emergencyPlanDeadline: pHazard.emergencyPlanDeadline?.toISOString(),
+    emergencyPlanSubmitTime: pHazard.emergencyPlanSubmitTime?.toISOString(),
     logs: pHazard.logs ? JSON.parse(pHazard.logs) : [],
     ccDepts: pHazard.ccDepts ? JSON.parse(pHazard.ccDepts) : [],
     ccUsers: pHazard.ccUsers ? JSON.parse(pHazard.ccUsers) : [],
     old_personal_ID: pHazard.old_personal_ID ? JSON.parse(pHazard.old_personal_ID) : [],
-    reportTime: pHazard.reportTime?.toISOString() || new Date().toISOString(),
-    rectifyTime: pHazard.rectifyTime?.toISOString(),
-    verifyTime: pHazard.verifyTime?.toISOString(),
-    deadline: pHazard.deadline?.toISOString(),
-    emergencyPlanDeadline: pHazard.emergencyPlanDeadline?.toISOString(),
-    emergencyPlanSubmitTime: pHazard.emergencyPlanSubmitTime?.toISOString(),
     createdAt: pHazard.createdAt.toISOString(),
     updatedAt: pHazard.updatedAt.toISOString(),
   };

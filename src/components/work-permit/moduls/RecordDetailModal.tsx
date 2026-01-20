@@ -167,14 +167,17 @@ export default function RecordDetailModal({
       
       // 🟢 修复：确保SECTION_*数据被正确提取
       // 如果data是对象，直接使用；但需要确保所有SECTION_*键都被包含
-      const result: any = { ...data };
+      // 添加类型检查，确保data是对象才进行展开
+      const result: any = (typeof data === 'object' && data !== null && !Array.isArray(data)) 
+        ? { ...data as object } 
+        : {};
       
       // 检查是否有嵌套的_sheetData结构
-      if (data._sheetData && typeof data._sheetData === 'object') {
+      if (result._sheetData && typeof result._sheetData === 'object') {
         // 合并_sheetData中的SECTION_*数据
-        Object.keys(data._sheetData).forEach(key => {
+        Object.keys(result._sheetData).forEach(key => {
           if (key.startsWith('SECTION_')) {
-            result[key] = data._sheetData[key];
+            result[key] = result._sheetData[key];
           }
         });
       }

@@ -4,7 +4,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { X, RotateCcw } from 'lucide-react';
 import { cropSignatureCanvas, canvasToBase64, scaleCanvas } from '@/utils/signatureCrop';
 
-interface HandwrittenSignatureProps {
+export interface HandwrittenSignatureProps {
   value?: string; // base64 图片数据
   onChange?: (base64: string) => void;
   onClose?: () => void;
@@ -13,7 +13,7 @@ interface HandwrittenSignatureProps {
   disabled?: boolean;
 }
 
-export default function HandwrittenSignature({
+export function HandwrittenSignature({
   value,
   onChange,
   onClose,
@@ -340,7 +340,3 @@ export default function HandwrittenSignature({
     </div>
   );
 }
-
-
-
-

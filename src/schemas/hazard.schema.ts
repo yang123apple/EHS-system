@@ -41,28 +41,28 @@ export const isoDateStringSchema = z.string().datetime({
  * 隐患状态 schema
  */
 export const hazardStatusSchema = z.enum(HAZARD_STATUS_VALUES, {
-  errorMap: () => ({ message: '无效的隐患状态值' }),
+  message: '无效的隐患状态值',
 });
 
 /**
  * 风险等级 schema
  */
 export const riskLevelSchema = z.enum(RISK_LEVEL_VALUES, {
-  errorMap: () => ({ message: '无效的风险等级值' }),
+  message: '无效的风险等级值',
 });
 
 /**
  * 审批模式 schema
  */
 export const approvalModeSchema = z.enum(APPROVAL_MODE_VALUES, {
-  errorMap: () => ({ message: '无效的审批模式值' }),
+  message: '无效的审批模式值',
 });
 
 /**
  * 延期状态 schema
  */
 export const extensionStatusSchema = z.enum(EXTENSION_STATUS_VALUES, {
-  errorMap: () => ({ message: '无效的延期状态值' }),
+  message: '无效的延期状态值',
 });
 
 /**

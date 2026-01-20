@@ -4,7 +4,8 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import { SystemLogService } from '@/services/systemLog.service';
+import AuditService from '@/services/audit.service';
+import { LogModule, LogAction } from '@/types/audit';
 import { HazardNotificationService, type NotificationData } from '@/services/hazardNotification.service';
 import { minioStorageService } from '@/services/storage/MinioStorageService';
 import { createSignature } from '@/services/signatureService';
@@ -128,27 +129,26 @@ export class IncidentService {
       });
 
       // 记录系统日志
-      await SystemLogService.createLog({
-        userId: operator.id,
-        userName: operator.name,
-        userRole: operator.role,
-        userDepartment: operator.departmentName,
-        userDepartmentId: operator.departmentId,
-        action: 'CREATE',
-        actionLabel: '上报事故',
-        module: 'INCIDENT',
-        targetId: code,
+      await AuditService.logCreate({
+        module: LogModule.INCIDENT,
+        businessId: code,
         targetType: 'incident',
-        targetLabel: `${input.type} - ${input.location}`,
-        details: `上报了${this.getTypeLabel(input.type)}事故，严重程度：${this.getSeverityLabel(input.severity)}`,
-        afterData: {
+        operator: {
+          id: operator.id,
+          name: operator.name,
+          role: operator.role,
+          departmentId: operator.departmentId,
+          departmentName: operator.departmentName,
+        },
+        businessRole: '上报人',
+        description: `上报了${this.getTypeLabel(input.type)}事故，严重程度：${this.getSeverityLabel(input.severity)}`,
+        newData: {
           code: incident.code,
           type: incident.type,
           severity: incident.severity,
           location: incident.location,
           status: incident.status,
         },
-        userRoleInAction: '上报人',
       });
 
       // 发送通知（通知管理员和安全负责人）
@@ -218,23 +218,20 @@ export class IncidentService {
       });
 
       // 记录系统日志
-      const changes = SystemLogService.compareObjects(oldIncident, updatedIncident);
-      await SystemLogService.createLog({
-        userId: operator.id,
-        userName: operator.name,
-        userRole: operator.role,
-        userDepartment: operator.departmentName,
-        userDepartmentId: operator.departmentId,
-        action: 'UPDATE',
-        actionLabel: '更新事故信息',
-        module: 'INCIDENT',
-        targetId: oldIncident.code || incidentId,
+      await AuditService.logUpdate({
+        module: LogModule.INCIDENT,
+        businessId: oldIncident.code || incidentId,
         targetType: 'incident',
-        targetLabel: `${oldIncident.type} - ${oldIncident.location}`,
-        details: '更新了事故信息',
-        beforeData: oldIncident,
-        afterData: updatedIncident,
-        changes,
+        operator: {
+          id: operator.id,
+          name: operator.name,
+          role: operator.role,
+          departmentId: operator.departmentId,
+          departmentName: operator.departmentName,
+        },
+        description: '更新了事故信息',
+        oldData: oldIncident,
+        newData: updatedIncident,
       });
 
       return updatedIncident;
@@ -375,26 +372,26 @@ export class IncidentService {
       });
 
       // 记录系统日志
-      await SystemLogService.createLog({
-        userId: operator.id,
-        userName: operator.name,
-        userRole: operator.role,
-        userDepartment: operator.departmentName,
-        userDepartmentId: operator.departmentId,
-        action: 'SUBMIT',
-        actionLabel: dispatchResult.log.action,
-        module: 'INCIDENT',
-        targetId: incident.code || incidentId,
+      await AuditService.recordLog({
+        module: LogModule.INCIDENT,
+        action: LogAction.SUBMIT,
+        businessId: incident.code || incidentId,
         targetType: 'incident',
-        targetLabel: `${incident.type} - ${incident.location}`,
-        details: dispatchResult.log.changes,
-        afterData: {
+        operator: {
+          id: operator.id,
+          name: operator.name,
+          role: operator.role,
+          departmentId: operator.departmentId,
+          departmentName: operator.departmentName,
+        },
+        businessRole: '调查人',
+        description: dispatchResult.log.changes,
+        newData: {
           status: updatedIncident.status,
           hasInvestigation: true,
           rootCause: updatedIncident.rootCause,
           currentStepIndex: updatedIncident.currentStepIndex,
         },
-        userRoleInAction: '调查人',
       });
 
       // 发送通知（通过工作流引擎生成的通知数据）
@@ -446,24 +443,24 @@ export class IncidentService {
       });
 
       // 记录系统日志
-      await SystemLogService.createLog({
-        userId: operator.id,
-        userName: operator.name,
-        userRole: operator.role,
-        userDepartment: operator.departmentName,
-        userDepartmentId: operator.departmentId,
-        action: 'CLOSE',
-        actionLabel: '结案事故',
-        module: 'INCIDENT',
-        targetId: incident.code || incidentId,
+      await AuditService.recordLog({
+        module: LogModule.INCIDENT,
+        action: LogAction.CLOSE,
+        businessId: incident.code || incidentId,
         targetType: 'incident',
-        targetLabel: `${incident.type} - ${incident.location}`,
-        details: `结案事故，原因：${closeReason}`,
-        afterData: {
+        operator: {
+          id: operator.id,
+          name: operator.name,
+          role: operator.role,
+          departmentId: operator.departmentId,
+          departmentName: operator.departmentName,
+        },
+        businessRole: '审批人',
+        description: `结案事故，原因：${closeReason}`,
+        newData: {
           status: updatedIncident.status,
           closeTime: updatedIncident.closeTime,
         },
-        userRoleInAction: '审批人',
       });
 
       // 发送通知（通知相关人员）
@@ -662,4 +659,3 @@ export class IncidentService {
     return labels[severity] || severity;
   }
 }
-

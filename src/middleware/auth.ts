@@ -7,7 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { PermissionManager, PermissionError, User } from '@/lib/permissions';
-import { SystemLogService } from '@/services/systemLog.service';
+import AuditService from '@/services/audit.service';
+import { LogModule } from '@/types/audit';
 import { logError, extractErrorContext } from '@/utils/errorLogger';
 
 /**
@@ -253,20 +254,20 @@ export async function logApiOperation(
       'archive': 'archive_file',
     };
     
-    const moduleToLogModule: Record<string, string> = {
-      'hidden_danger': 'HAZARD',
-      'doc_sys': 'DOCUMENT',
-      'work_permit': 'WORK_PERMIT',
-      'training': 'TRAINING',
-      'archive': 'ARCHIVE',
+    const moduleToLogModule: Record<string, LogModule> = {
+      'hidden_danger': LogModule.HAZARD,
+      'doc_sys': LogModule.DOCUMENT,
+      'work_permit': LogModule.WORK_PERMIT,
+      'training': LogModule.TRAINING,
+      'archive': LogModule.ARCHIVE,
     };
     
-    const targetType = (moduleToTargetType[module] || module) as any;
-    const logModule = moduleToLogModule[module] || 'SYSTEM';
+    const targetType = moduleToTargetType[module] || module;
+    const logModule = moduleToLogModule[module] || LogModule.SYSTEM;
     
     // 操作类型映射（将 action 转换为标准操作类型）
-    const actionMap: Record<string, string> = {
-      'upload': 'UPLOAD',
+    const actionMap: Record<string, 'CREATE' | 'UPDATE' | 'DELETE' | 'ACTION'> = {
+      'upload': 'CREATE',
       'create': 'CREATE',
       'update': 'UPDATE',
       'delete': 'DELETE',
@@ -274,7 +275,7 @@ export async function logApiOperation(
       'remove': 'DELETE',
     };
     
-    const standardAction = actionMap[action.toLowerCase()] || action.toUpperCase();
+    const standardAction = actionMap[action.toLowerCase()] || 'ACTION';
     
     // 操作标签映射
     const actionLabelMap: Record<string, string> = {
@@ -288,41 +289,87 @@ export async function logApiOperation(
     
     const actionLabel = actionLabelMap[action.toLowerCase()] || action;
     
-    // 从 details 中提取 targetId 和 targetLabel
-    // 对于文档，优先使用 fullNum（业务编号），否则使用 documentId
-    // 对于作业票，使用 permitId
-    const targetId = details?.fullNum || details?.documentId || details?.permitId || details?.targetId || null;
-    const targetLabel = details?.fileName || details?.name || details?.targetLabel || null;
+    // 从 details 中提取 targetId
+    const targetId = details?.fullNum || details?.documentId || details?.permitId || details?.targetId || '';
     
-    // 提取 details 字段（如果存在），否则使用完整的 details 对象转为 JSON
-    const detailsText = details?.details || (details ? JSON.stringify({
-      ...details,
-      userRole: user.role,
-      timestamp: new Date().toISOString(),
-    }) : null);
+    // 提取 details 字段，组装描述
+    const targetLabel = details?.fileName || details?.name || details?.targetLabel || '';
+    const description = `${actionLabel}${targetType === 'document' ? '文档' : targetType === 'hazard' ? '隐患' : targetType === 'permit' ? '作业票' : targetType === 'archive_file' ? '档案' : ''}${targetLabel ? `: ${targetLabel}` : ''}`;
     
     // 获取用户部门信息
-    // 注意：department 可能是对象（包含 name 属性）或字符串，需要兼容处理
     const userDepartment = (user.department && typeof user.department === 'object' && 'name' in user.department) 
       ? (user.department as any).name 
-      : (typeof user.department === 'string' ? user.department : null);
-    const userDepartmentId = user.departmentId || null;
+      : (typeof user.department === 'string' ? user.department : undefined);
+    const userDepartmentId = user.departmentId || undefined;
     
-    await SystemLogService.createLog({
-      userId: user.id,
-      userName: user.name,
-      userRole: user.role,
-      userDepartment,
-      userDepartmentId,
-      userJobTitle: user.jobTitle || null,
-      action: standardAction,
-      actionLabel: `${actionLabel}${targetType === 'document' ? '文档' : targetType === 'hazard' ? '隐患' : targetType === 'permit' ? '作业票' : targetType === 'archive_file' ? '档案' : ''}`,
-      module: logModule,
-      targetId,
-      targetType,
-      targetLabel,
-      details: detailsText,
-    });
+    // 根据操作类型调用不同的方法
+    if (standardAction === 'CREATE') {
+      await AuditService.logCreate({
+        module: logModule,
+        businessId: targetId,
+        targetType,
+        newData: details,
+        operator: {
+          id: user.id,
+          name: user.name,
+          role: user.role,
+          departmentId: userDepartmentId,
+          departmentName: userDepartment,
+          jobTitle: user.jobTitle || undefined,
+        },
+        description,
+      });
+    } else if (standardAction === 'UPDATE') {
+      await AuditService.logUpdate({
+        module: logModule,
+        businessId: targetId,
+        targetType,
+        oldData: details?.beforeData,
+        newData: details?.afterData || details,
+        operator: {
+          id: user.id,
+          name: user.name,
+          role: user.role,
+          departmentId: userDepartmentId,
+          departmentName: userDepartment,
+          jobTitle: user.jobTitle || undefined,
+        },
+        description,
+      });
+    } else if (standardAction === 'DELETE') {
+      await AuditService.logDelete({
+        module: logModule,
+        businessId: targetId,
+        targetType,
+        oldData: details,
+        operator: {
+          id: user.id,
+          name: user.name,
+          role: user.role,
+          departmentId: userDepartmentId,
+          departmentName: userDepartment,
+          jobTitle: user.jobTitle || undefined,
+        },
+        description,
+      });
+    } else {
+      await AuditService.recordLog({
+        module: logModule,
+        action: action.toUpperCase() as any,
+        businessId: targetId,
+        targetType,
+        operator: {
+          id: user.id,
+          name: user.name,
+          role: user.role,
+          departmentId: userDepartmentId,
+          departmentName: userDepartment,
+          jobTitle: user.jobTitle || undefined,
+        },
+        description,
+        newData: details,
+      });
+    }
   } catch (error) {
     console.error('[API Log] 记录操作日志失败:', error);
   }

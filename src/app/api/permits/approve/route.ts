@@ -18,7 +18,10 @@ export const POST = withAuth(async (req: Request, context, user) => {
     // 1. 获取记录
     const record = await prisma.workPermitRecord.findUnique({
       where: { id: recordId },
-      include: { template: true }
+      include: { 
+        template: true,
+        project: true 
+      }
     });
 
     if (!record) return NextResponse.json({ error: '记录不存在' }, { status: 404 });

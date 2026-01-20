@@ -59,23 +59,41 @@ export async function addCCUsers(
 ): Promise<void> {
   if (ccUsers.length === 0) return;
 
-  // 获取用户信息（如果未提供 userName）
-  const userIds = ccUsers.map(u => u.userId);
-  const users = await prisma.user.findMany({
-    where: { id: { in: userIds } },
-    select: { id: true, name: true }
-  });
+  await prisma.$transaction(async (tx) => {
+    // 1. 查询已存在的抄送记录（1次查询）
+    const userIds = ccUsers.map(u => u.userId);
+    const existingRecords = await tx.hazardCC.findMany({
+      where: {
+        hazardId,
+        userId: { in: userIds }
+      },
+      select: { userId: true }
+    });
 
-  const userMap = new Map(users.map(u => [u.id, u.name]));
+    const existingUserIds = new Set(existingRecords.map(r => r.userId));
 
-  // 使用 createMany 的 skipDuplicates 选项避免重复
-  await prisma.hazardCC.createMany({
-    data: ccUsers.map(cc => ({
-      hazardId,
-      userId: cc.userId,
-      userName: cc.userName || userMap.get(cc.userId) || null
-    })),
-    skipDuplicates: true
+    // 2. 过滤出需要新增的用户
+    const newCCUsers = ccUsers.filter(cc => !existingUserIds.has(cc.userId));
+
+    if (newCCUsers.length === 0) return; // 都已存在，无需操作
+
+    // 3. 获取用户信息（如果未提供 userName）
+    const newUserIds = newCCUsers.map(u => u.userId);
+    const users = await tx.user.findMany({
+      where: { id: { in: newUserIds } },
+      select: { id: true, name: true }
+    });
+
+    const userMap = new Map(users.map(u => [u.id, u.name]));
+
+    // 4. 批量插入新记录（1次操作）
+    await tx.hazardCC.createMany({
+      data: newCCUsers.map(cc => ({
+        hazardId,
+        userId: cc.userId,
+        userName: cc.userName || userMap.get(cc.userId) || null
+      }))
+    });
   });
 }
 

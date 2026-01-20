@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { getAspectRatio } from '@/utils/signatureCrop';
 
-interface SignatureImageProps {
+export interface SignatureImageProps {
   base64: string; // base64 图片数据（不含前缀）
   maxWidth?: number; // 最大宽度
   maxHeight?: number; // 最大高度
@@ -15,7 +15,7 @@ interface SignatureImageProps {
  * 签名图片组件
  * 根据图片的宽高比自动调整显示大小，保持原始比例，避免拉伸变形
  */
-export default function SignatureImage({
+export function SignatureImage({
   base64,
   maxWidth = 200,
   maxHeight = 100,
@@ -150,4 +150,3 @@ export default function SignatureImage({
     />
   );
 }
-

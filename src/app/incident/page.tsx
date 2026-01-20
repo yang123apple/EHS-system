@@ -55,11 +55,9 @@ export default function IncidentPage() {
         endDate: filters.endDate ? new Date(filters.endDate) : undefined,
       });
 
-      if (result.success && result.data) {
-        setIncidents(result.data.data || []);
-        setTotalPages(result.data.meta?.totalPages || 1);
-        setTotal(result.data.meta?.total || 0);
-      }
+      setIncidents((result.data || []) as unknown as Incident[]);
+      setTotalPages(result.meta?.totalPages || 1);
+      setTotal(result.meta?.total || 0);
     } catch (error) {
       console.error('获取事故列表失败:', error);
     } finally {
@@ -329,4 +327,3 @@ export default function IncidentPage() {
     </div>
   );
 }
-

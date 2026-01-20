@@ -1,8 +1,8 @@
 import React, { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from 'react';
 import { Calendar, User, Building, ChevronRight, Hash, AlignLeft, CheckSquare, List, FileText, Users, Building2, Smartphone, X } from 'lucide-react';
-import HandwrittenSignature from '../HandwrittenSignature';
-import SignatureImage from '../SignatureImage';
-import MultiSignatureDisplay from '../MultiSignatureDisplay';
+import { HandwrittenSignature } from '@/components/common/signature/HandwrittenSignature';
+import { SignatureImage } from '@/components/common/signature/SignatureImage';
+import { MultiSignatureDisplay } from '@/components/common/signature/MultiSignatureDisplay';
 
 export interface MobileFormGroup {
   title: string;

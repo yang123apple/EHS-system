@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { PeopleFinder } from '@/lib/peopleFinder';
-import { getClientIP } from '@/services/systemLogService';
+import { getClientIP } from '@/services/audit-compat.service';
 import AuditService from '@/services/audit.service';
 import { LogModule } from '@/types/audit';
 import bcrypt from 'bcryptjs';

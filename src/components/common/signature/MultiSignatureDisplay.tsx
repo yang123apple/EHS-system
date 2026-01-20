@@ -1,9 +1,9 @@
 'use client';
 
 import { Plus, X } from 'lucide-react';
-import SignatureImage from './SignatureImage';
+import { SignatureImage } from './SignatureImage';
 
-interface MultiSignatureDisplayProps {
+export interface MultiSignatureDisplayProps {
   signatures: string | string[]; // base64 签名数组或字符串（兼容旧数据）
   onAddSignature: () => void; // 添加签名回调
   onRemoveSignature?: (index: number) => void; // 删除签名回调（可选）
@@ -17,7 +17,7 @@ interface MultiSignatureDisplayProps {
  * 多人签名显示组件
  * 显示多个签名，每个签名后面有"+"按钮可以添加新签名
  */
-export default function MultiSignatureDisplay({
+export function MultiSignatureDisplay({
   signatures = [],
   onAddSignature,
   onRemoveSignature,
@@ -136,4 +136,3 @@ export default function MultiSignatureDisplay({
     </div>
   );
 }
-

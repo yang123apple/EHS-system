@@ -47,6 +47,7 @@ export async function reportIncident(
     // 转换为 User 类型
     const user: User = {
       id: operator.id,
+      username: operator.username,
       name: operator.name,
       role: operator.role as 'admin' | 'user',
       departmentName: operator.department?.name,
@@ -121,6 +122,7 @@ export async function updateIncident(
     // 转换为 User 类型
     const user: User = {
       id: operator.id,
+      username: operator.username,
       name: operator.name,
       role: operator.role as 'admin' | 'user',
       departmentName: operator.department?.name,
@@ -196,6 +198,7 @@ export async function submitInvestigation(
     // 转换为 User 类型
     const user: User = {
       id: operator.id,
+      username: operator.username,
       name: operator.name,
       role: operator.role as 'admin' | 'user',
       departmentName: operator.department?.name,
@@ -282,6 +285,7 @@ export async function closeIncident(
     // 转换为 User 类型
     const user: User = {
       id: operator.id,
+      username: operator.username,
       name: operator.name,
       role: operator.role as 'admin' | 'user',
       departmentName: operator.department?.name,
@@ -360,4 +364,3 @@ export async function getIncidentById(incidentId: string) {
     throw error;
   }
 }
-

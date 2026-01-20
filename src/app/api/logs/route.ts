@@ -1,6 +1,6 @@
 // src/app/api/logs/route.ts
 import { NextResponse } from 'next/server';
-import { SystemLogService, SystemLogData } from '@/services/systemLog.service';
+import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,35 +18,63 @@ export async function GET(req: Request) {
   const module = searchParams.get('module') || '';
 
   try {
-    const result = await SystemLogService.getLogs({
-      page,
-      limit,
-      targetType,
-      targetId,
-      action,
-      userId,
-      startDate,
-      endDate,
-      module,
-    });
+    const skip = (page - 1) * limit;
+    const where: any = {};
 
-    // 统一返回格式：{ success: true, data: { logs, total, ... }, meta: {...} }
-    // 同时解析所有JSON字段（从字符串转为对象）
-    const logs = result.data.map((log: any) => ({
+    // 构建查询条件
+    if (targetType) where.targetType = { contains: targetType };
+    if (targetId) where.targetId = { contains: targetId };
+    if (action) where.action = { contains: action };
+    if (userId) where.userId = userId;
+    if (module) where.module = module;
+    
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        where.createdAt.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        where.createdAt.lte = end;
+      }
+    }
+
+    const [logs, total] = await Promise.all([
+      prisma.systemLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.systemLog.count({ where }),
+    ]);
+
+    // 解析所有JSON字段（从字符串转为对象）
+    const parsedLogs = logs.map((log: any) => ({
       ...log,
       beforeData: log.beforeData ? (typeof log.beforeData === 'string' ? JSON.parse(log.beforeData) : log.beforeData) : null,
       afterData: log.afterData ? (typeof log.afterData === 'string' ? JSON.parse(log.afterData) : log.afterData) : null,
       changes: log.changes ? (typeof log.changes === 'string' ? JSON.parse(log.changes) : log.changes) : null,
       snapshot: log.snapshot ? (typeof log.snapshot === 'string' ? JSON.parse(log.snapshot) : log.snapshot) : null,
+      diff: log.diff ? (typeof log.diff === 'string' ? JSON.parse(log.diff) : log.diff) : null,
+      clientInfo: log.clientInfo ? (typeof log.clientInfo === 'string' ? JSON.parse(log.clientInfo) : log.clientInfo) : null,
     }));
 
     return NextResponse.json({
       success: true,
       data: {
-        logs,
-        total: result.meta.total,
+        logs: parsedLogs,
+        total,
       },
-      meta: result.meta,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     console.error('获取日志失败:', error);
@@ -54,7 +82,7 @@ export async function GET(req: Request) {
       success: false, 
       error: '获取日志失败',
       data: { logs: [], total: 0 },
-      meta: { page: 1, limit: 50, totalPages: 0 }
+      meta: { page: 1, limit: 50, total: 0, totalPages: 0 }
     }, { status: 500 });
   }
 }
@@ -62,7 +90,8 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const logData: SystemLogData = {
+    
+    const logData: any = {
       // 用户信息
       userId: body.userId,
       userName: body.userName,
@@ -70,7 +99,7 @@ export async function POST(req: Request) {
       userDepartment: body.userDepartment,
       userDepartmentId: body.userDepartmentId,
       userJobTitle: body.userJobTitle,
-      userSnapshot: body.userSnapshot,
+      userRoleInAction: body.userRoleInAction,
       
       // 操作信息
       action: body.action,
@@ -84,17 +113,21 @@ export async function POST(req: Request) {
       
       // 详情
       details: body.details,
-      beforeData: body.beforeData,
-      afterData: body.afterData,
-      changes: body.changes,
-      snapshot: body.snapshot,
+      beforeData: body.beforeData ? JSON.stringify(body.beforeData) : null,
+      afterData: body.afterData ? JSON.stringify(body.afterData) : null,
+      changes: body.changes ? JSON.stringify(body.changes) : null,
+      snapshot: body.snapshot ? JSON.stringify(body.snapshot) : null,
+      diff: body.diff ? JSON.stringify(body.diff) : null,
       
-      // 其他
+      // 客户端信息
       ip: body.ip || req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || undefined,
       userAgent: body.userAgent || req.headers.get('user-agent') || undefined,
+      clientInfo: body.clientInfo ? JSON.stringify(body.clientInfo) : null,
     };
 
-    const log = await SystemLogService.createLog(logData);
+    const log = await prisma.systemLog.create({
+      data: logData,
+    });
 
     if (!log) {
       return NextResponse.json(

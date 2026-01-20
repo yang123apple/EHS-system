@@ -535,7 +535,7 @@ export default function AccountManagement() {
       if (key !== 'avatarFile') {
         // 🟢 处理 isActive 字段：将字符串转换为布尔值
         if (key === 'isActive') {
-          payload[key] = value === 'true' || value === true;
+          payload[key] = value === 'true';
         } else {
           payload[key] = value;
         }
