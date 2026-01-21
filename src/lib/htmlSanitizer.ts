@@ -4,7 +4,7 @@
 
 /**
  * 清理 HTML 内容，移除潜在的 XSS 攻击代码
- * 保留基本的 HTML 标签用于文档显示
+ * 保留基本的 HTML 标签用于文档显示（包括表格标签）
  */
 export function sanitizeHtml(html: string): string {
   if (!html) return '';
@@ -19,7 +19,7 @@ export function sanitizeHtml(html: string): string {
   // 移除 javascript: 协议
   html = html.replace(/javascript:/gi, '');
   
-  // 移除 data: 协议（可能包含恶意代码）
+  // 移除 data: 协议（可能包含恶意代码），但保留图片的 base64 data URI
   html = html.replace(/data:text\/html/gi, '');
   
   // 移除 iframe（除非是受信任的来源）
@@ -33,6 +33,12 @@ export function sanitizeHtml(html: string): string {
   html = html.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, (match) => {
     return match.replace(/expression\s*\(/gi, '');
   });
+  
+  // 🔴 注意：我们明确保留以下标签用于文档显示
+  // 表格标签: table, thead, tbody, tfoot, tr, th, td, caption, colgroup, col
+  // 格式标签: p, div, span, h1-h6, ul, ol, li, strong, em, b, i, u, br, hr
+  // 图片标签: img (已过滤 onerror 等事件)
+  // 这些标签在上面的清理过程中不会被移除，只会移除其危险属性
   
   return html;
 }

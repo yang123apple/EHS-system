@@ -1,84 +1,17 @@
 /**
- * 日志系统统一兼容层
+ * 审计服务兼容层
  * 
- * 将旧的 ActivityLogger 和 SystemLogService API 统一到新的 AuditService
- * 保持向下兼容，同时逐步迁移到新API
+ * 提供向后兼容的API，内部调用新的AuditService
+ * 这个文件用于支持旧代码平滑迁移到新的审计系统
  */
 
-import AuditService from '@/services/audit.service';
-import { LogModule, LogAction, BusinessRole } from '@/types/audit';
+import AuditService from './audit.service';
+import { LogModule, LogAction } from '@/types/audit';
 import type { NextRequest } from 'next/server';
-import { adaptNextRequest } from '@/utils/requestAdapter';
 
 /**
- * 旧模块名映射到新模块枚举
- */
-const MODULE_MAPPING: Record<string, LogModule> = {
-  'hazard': LogModule.HAZARD,
-  'document': LogModule.DOCUMENT,
-  'permit': LogModule.WORK_PERMIT,
-  'training': LogModule.TRAINING,
-  'user': LogModule.USER,
-  'org': LogModule.ORGANIZATION,
-  'config': LogModule.SYSTEM,
-  'system': LogModule.SYSTEM,
-};
-
-/**
- * 旧操作类型映射到新操作枚举
- */
-const ACTION_MAPPING: Record<string, LogAction> = {
-  'CREATE': LogAction.CREATE,
-  'UPDATE': LogAction.UPDATE,
-  'DELETE': LogAction.DELETE,
-  'VIEW': LogAction.VIEW,
-  'EXPORT': LogAction.EXPORT,
-  'IMPORT': LogAction.IMPORT,
-  'SUBMIT': LogAction.SUBMIT,
-  'APPROVE': LogAction.APPROVE,
-  'REJECT': LogAction.REJECT,
-  'REPORT': LogAction.CREATE,
-  'DISPATCH': LogAction.ASSIGN,
-  'RECTIFY': LogAction.SUBMIT,
-  'VERIFY': LogAction.APPROVE,
-  'CLOSE': LogAction.ARCHIVE,
-  'REOPEN': LogAction.RESTORE,
-  'LOGIN': LogAction.LOGIN,
-  'LOGOUT': LogAction.LOGOUT,
-  'CHANGE_PASSWORD': LogAction.UPDATE,
-  'DOWNLOAD': LogAction.DOWNLOAD,
-  'UPLOAD': LogAction.UPLOAD,
-};
-
-/**
- * 旧业务角色映射到新角色枚举
- */
-const ROLE_MAPPING: Record<string, BusinessRole> = {
-  '上报人': BusinessRole.REPORTER,
-  '整改人': BusinessRole.RECTIFIER,
-  '验收人': BusinessRole.VERIFIER,
-  '审批人': BusinessRole.APPROVER,
-  '抄送人': BusinessRole.CC_RECEIVER,
-};
-
-/**
- * 转换旧的用户快照格式到新的操作人格式
- */
-function convertUserSnapshot(userSnapshot: any) {
-  if (!userSnapshot) return undefined;
-  
-  return {
-    id: userSnapshot.id,
-    name: userSnapshot.name,
-    role: userSnapshot.role,
-    departmentId: userSnapshot.departmentId,
-    departmentName: userSnapshot.departmentName,
-    jobTitle: userSnapshot.jobTitle,
-  };
-}
-
-/**
- * ActivityLogger 兼容层
+ * ActivityLogger兼容类
+ * @deprecated 请使用 AuditService
  */
 export class ActivityLoggerCompat {
   /**
@@ -94,22 +27,19 @@ export class ActivityLoggerCompat {
     roleInAction?: string;
     request?: NextRequest;
   }) {
-    const module = MODULE_MAPPING[params.module] || LogModule.SYSTEM;
-    const action = LogAction.CREATE;
-    
-    // 获取用户信息（如果没有提供完整的用户对象）
-    const operator = await getUserOperator(params.userId);
-    
-    return AuditService.recordLog({
-      module,
-      action,
+    return AuditService.logCreate({
+      module: params.module.toUpperCase() as LogModule,
       businessId: params.targetId,
       targetType: params.targetType,
       targetLabel: params.targetLabel,
       newData: params.data,
-      operator,
+      operator: {
+        id: params.userId,
+        name: params.data?.userName || 'Unknown',
+        role: params.roleInAction || 'user',
+      },
       businessRole: params.roleInAction,
-      request: adaptNextRequest(params.request),
+      request: params.request as any,
     });
   }
 
@@ -128,19 +58,18 @@ export class ActivityLoggerCompat {
     roleInAction?: string;
     request?: NextRequest;
   }) {
-    const module = MODULE_MAPPING[params.module] || LogModule.SYSTEM;
-    const action = LogAction.UPDATE;
-    const operator = await getUserOperator(params.userId);
-    
-    return AuditService.recordLog({
-      module,
-      action,
+    return AuditService.logUpdate({
+      module: params.module.toUpperCase() as LogModule,
       businessId: params.targetId,
       targetType: params.targetType,
       targetLabel: params.targetLabel,
       oldData: params.beforeData,
       newData: params.afterData,
-      operator,
+      operator: {
+        id: params.userId,
+        name: params.afterData?.userName || 'Unknown',
+        role: params.roleInAction || 'user',
+      },
       businessRole: params.roleInAction,
       request: params.request as any,
     });
@@ -159,16 +88,17 @@ export class ActivityLoggerCompat {
     roleInAction?: string;
     request?: NextRequest;
   }) {
-    const module = MODULE_MAPPING[params.module] || LogModule.SYSTEM;
-    const operator = await getUserOperator(params.userId);
-    
     return AuditService.logDelete({
-      module,
+      module: params.module.toUpperCase() as LogModule,
       businessId: params.targetId,
       targetType: params.targetType,
       targetLabel: params.targetLabel,
       oldData: params.data,
-      operator,
+      operator: {
+        id: params.userId,
+        name: params.data?.userName || 'Unknown',
+        role: params.roleInAction || 'user',
+      },
       businessRole: params.roleInAction,
       request: params.request as any,
     });
@@ -183,23 +113,29 @@ export class ActivityLoggerCompat {
     targetType: string;
     targetId: string;
     targetLabel?: string;
-    action: string; // 'approve' or 'reject'
+    action: 'APPROVE' | 'REJECT';
     comment?: string;
+    beforeStatus?: string;
+    afterStatus?: string;
     roleInAction?: string;
     request?: NextRequest;
   }) {
-    const module = MODULE_MAPPING[params.module] || LogModule.SYSTEM;
-    const action = params.action === 'approve' ? LogAction.APPROVE : LogAction.REJECT;
-    const operator = await getUserOperator(params.userId);
+    const logAction = params.action === 'APPROVE' ? LogAction.APPROVE : LogAction.REJECT;
     
     return AuditService.recordLog({
-      module,
-      action,
+      module: params.module.toUpperCase() as LogModule,
+      action: logAction,
       businessId: params.targetId,
       targetType: params.targetType,
       targetLabel: params.targetLabel,
-      operator,
-      businessRole: params.roleInAction || BusinessRole.APPROVER,
+      oldData: params.beforeStatus ? { status: params.beforeStatus } : undefined,
+      newData: params.afterStatus ? { status: params.afterStatus, comment: params.comment } : undefined,
+      operator: {
+        id: params.userId,
+        name: 'Unknown',
+        role: params.roleInAction || 'user',
+      },
+      businessRole: params.roleInAction,
       description: params.comment,
       request: params.request as any,
     });
@@ -212,18 +148,22 @@ export class ActivityLoggerCompat {
     userId: string;
     module: string;
     targetType: string;
+    description: string;
     count?: number;
-    filters?: any;
+    roleInAction?: string;
     request?: NextRequest;
   }) {
-    const module = MODULE_MAPPING[params.module] || LogModule.SYSTEM;
-    const operator = await getUserOperator(params.userId);
-    
     return AuditService.logExport({
-      module,
+      module: params.module.toUpperCase() as LogModule,
       targetType: params.targetType,
-      operator,
-      description: `导出了 ${params.count || 0} 条${params.targetType}数据`,
+      description: params.description,
+      newData: { count: params.count },
+      operator: {
+        id: params.userId,
+        name: 'Unknown',
+        role: params.roleInAction || 'user',
+      },
+      businessRole: params.roleInAction,
       request: params.request as any,
     });
   }
@@ -235,168 +175,132 @@ export class ActivityLoggerCompat {
     userId: string;
     module: string;
     targetType: string;
+    description: string;
     count: number;
+    roleInAction?: string;
     request?: NextRequest;
   }) {
-    const module = MODULE_MAPPING[params.module] || LogModule.SYSTEM;
-    const operator = await getUserOperator(params.userId);
-    
     return AuditService.recordLog({
-      module,
+      module: params.module.toUpperCase() as LogModule,
       action: LogAction.IMPORT,
       targetType: params.targetType,
-      operator,
-      description: `导入了 ${params.count} 条${params.targetType}数据`,
+      description: params.description,
+      newData: { count: params.count },
+      operator: {
+        id: params.userId,
+        name: 'Unknown',
+        role: params.roleInAction || 'user',
+      },
+      businessRole: params.roleInAction,
       request: params.request as any,
     });
   }
 
   /**
-   * 记录登录操作
+   * 记录用户登录
    */
   static async logLogin(params: {
     userId: string;
-    userName?: string;
+    userName: string;
+    success: boolean;
     request?: NextRequest;
   }) {
-    const operator = await getUserOperator(params.userId);
-    
     return AuditService.logLogin({
-      module: LogModule.USER,
+      module: LogModule.AUTH,
       businessId: params.userId,
       targetType: 'user',
-      targetLabel: params.userName || operator?.name,
-      operator,
+      targetLabel: params.userName,
+      operator: {
+        id: params.userId,
+        name: params.userName,
+        role: 'user',
+      },
+      description: params.success ? '登录成功' : '登录失败',
       request: params.request as any,
     });
   }
 
   /**
-   * 通用记录方法
+   * 记录通用操作
    */
   static async logAction(params: {
     userId: string;
     action: string;
+    actionLabel?: string;
     module: string;
     targetType: string;
     targetId?: string;
     targetLabel?: string;
     details?: string;
-    data?: any;
+    beforeData?: any;
+    afterData?: any;
+    changes?: any[];
     roleInAction?: string;
     request?: NextRequest;
   }) {
-    const module = MODULE_MAPPING[params.module] || LogModule.SYSTEM;
-    const action = ACTION_MAPPING[params.action] || LogAction.UPDATE;
-    const operator = await getUserOperator(params.userId);
-    
     return AuditService.recordLog({
-      module,
-      action,
+      module: params.module.toUpperCase() as LogModule,
+      action: params.action as LogAction,
       businessId: params.targetId,
       targetType: params.targetType,
       targetLabel: params.targetLabel,
-      operator,
+      oldData: params.beforeData,
+      newData: params.afterData,
+      operator: {
+        id: params.userId,
+        name: 'Unknown',
+        role: params.roleInAction || 'user',
+      },
       businessRole: params.roleInAction,
       description: params.details,
-      newData: params.data,
       request: params.request as any,
     });
   }
 }
 
 /**
- * systemLogService 兼容层
+ * 从请求中获取客户端IP
+ * @deprecated 请使用 @/utils/requestAdapter 中的 getClientIP
  */
-export async function createSystemLog(params: {
-  userId?: string;
-  userName?: string;
-  action: string;
-  targetId?: string;
-  targetType?: string;
-  details?: string;
-  snapshot?: string;
-  ip?: string;
-}) {
-  const action = ACTION_MAPPING[params.action.toUpperCase()] || LogAction.UPDATE;
+export function getClientIP(request?: Request): string | undefined {
+  if (!request) return undefined;
   
-  const operator = params.userId 
-    ? await getUserOperator(params.userId)
-    : { id: '', name: params.userName || '系统', role: 'system' };
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  if (forwardedFor) {
+    return forwardedFor.split(',')[0].trim();
+  }
   
-  return AuditService.recordLog({
-    module: LogModule.SYSTEM,
-    action,
-    businessId: params.targetId,
-    targetType: params.targetType,
-    operator,
-    description: params.details,
-    clientInfo: {
-      ip: params.ip,
-    },
-  });
+  const realIP = request.headers.get('x-real-ip');
+  if (realIP) {
+    return realIP;
+  }
+  
+  return undefined;
 }
 
-export async function logUserLogin(userId: string, userName: string, ip?: string) {
-  const operator = { id: userId, name: userName, role: 'user' };
-  
-  return AuditService.logLogin({
-    module: LogModule.USER,
-    businessId: userId,
-    targetType: 'user',
-    targetLabel: userName,
-    operator,
-    clientInfo: { ip },
-  });
-}
-
-export async function logUserLogout(userId: string, userName: string, ip?: string) {
-  const operator = { id: userId, name: userName, role: 'user' };
-  
-  return AuditService.recordLog({
-    module: LogModule.USER,
+/**
+ * 记录用户登出
+ * @deprecated 请直接使用 AuditService.recordLog
+ */
+export async function logUserLogout(
+  userId: string,
+  userName: string,
+  clientIP?: string
+): Promise<void> {
+  await AuditService.recordLog({
+    module: LogModule.AUTH,
     action: LogAction.LOGOUT,
     businessId: userId,
     targetType: 'user',
     targetLabel: userName,
-    operator,
-    clientInfo: { ip },
+    operator: {
+      id: userId,
+      name: userName,
+      role: 'user',
+    },
+    description: `用户 ${userName} 退出系统`,
+    clientInfo: {
+      ip: clientIP,
+    },
   });
 }
-
-// ============ 辅助函数 ============
-
-/**
- * 获取用户操作人信息
- */
-async function getUserOperator(userId: string) {
-  try {
-    // 动态导入避免循环依赖
-    const { prisma } = await import('@/lib/prisma');
-    
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { department: true },
-    });
-    
-    if (!user) {
-      return { id: userId, name: '未知用户', role: 'user' };
-    }
-    
-    return {
-      id: user.id,
-      name: user.name,
-      role: user.role,
-      departmentId: user.departmentId || undefined,
-      departmentName: user.department?.name,
-      jobTitle: user.jobTitle || undefined,
-    };
-  } catch (error) {
-    console.error('获取用户信息失败:', error);
-    return { id: userId, name: '未知用户', role: 'user' };
-  }
-}
-
-// getClientIP 函数已迁移到 @/utils/requestAdapter
-// 保留此导出以保持向下兼容
-export { getClientIP } from '@/utils/requestAdapter';

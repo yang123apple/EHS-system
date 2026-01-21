@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { sanitizeHtml, sanitizeHighlightHtml } from '@/lib/htmlSanitizer';
 // 移除客户端 mammoth 和 xlsx 导入，改为使用 API 路由在服务端处理
@@ -63,7 +63,10 @@ export default function DocSystemPage() {
   const [currentFile, setCurrentFile] = useState<DocFile | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string>('');
   const [uploading, setUploading] = useState(false); // 上传状态
+  const uploadingRef = useRef(false); // 🔴 使用 ref 立即标记，避免异步状态更新延迟
   const [showAllChildren, setShowAllChildren] = useState(false); // 是否显示所有下级文件
+  const [availableParentFiles, setAvailableParentFiles] = useState<DocFile[]>([]); // 🔴 可选的上级文件列表（用于上传对话框）
+  const [loadingParents, setLoadingParents] = useState(false); // 🔴 正在加载上级文件列表
   
   // 🔴 水印配置状态
   const [watermarkText, setWatermarkText] = useState<string>('');
@@ -99,6 +102,22 @@ export default function DocSystemPage() {
       setLoading(false);
     }
   }, [user]);
+
+  // 🔴 监听 uploadLevel 变化，自动加载可选的上级文件列表
+  useEffect(() => {
+    if (showUploadModal) {
+      if (uploadLevel > 1) {
+        // 级别 2-4：加载对应的上级文件
+        // 二级 -> 加载一级文件
+        // 三级 -> 加载二级文件
+        // 四级 -> 加载三级文件
+        loadAvailableParents(uploadLevel);
+      } else {
+        // 级别 1：清空上级文件列表（一级文件不需要上级）
+        setAvailableParentFiles([]);
+      }
+    }
+  }, [uploadLevel, showUploadModal]);
 
   // 🔴 加载水印配置
   const loadWatermarkConfig = async () => {
@@ -266,11 +285,60 @@ export default function DocSystemPage() {
       }
   };
 
+  // 🔴 加载可选的上级文件列表（用于上传对话框）
+  const loadAvailableParents = async (level: number) => {
+    if (level <= 1) {
+      setAvailableParentFiles([]);
+      return;
+    }
+    
+    const targetLevel = level - 1;
+    setLoadingParents(true);
+    
+    try {
+      // 调用API获取指定级别的所有文件（不分页，不受展开状态限制）
+      const res = await apiFetch(`/api/docs?level=${targetLevel}&limit=1000`);
+      
+      if (!res.ok) {
+        console.error('加载上级文件列表失败:', res.status);
+        setAvailableParentFiles([]);
+        return;
+      }
+      
+      const data = await res.json();
+      const parentFiles = Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []);
+      
+      // 🔴 添加级别过滤，确保只保留目标级别的文件
+      const filteredFiles = parentFiles.filter((f: DocFile) => f.level === targetLevel);
+      
+      // 按编号排序
+      filteredFiles.sort((a: DocFile, b: DocFile) => {
+        if (a.fullNum && b.fullNum) {
+          return a.fullNum.localeCompare(b.fullNum);
+        }
+        return (a.suffix || 0) - (b.suffix || 0);
+      });
+      
+      setAvailableParentFiles(filteredFiles);
+    } catch (error) {
+      console.error('加载上级文件列表出错:', error);
+      setAvailableParentFiles([]);
+    } finally {
+      setLoadingParents(false);
+    }
+  };
+
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
-    // 防止重复提交
-    if (uploading) return;
+    // 🔴 双重防护：使用 ref 和 state 防止重复提交
+    if (uploading || uploadingRef.current) {
+      console.warn('上传正在进行中，忽略重复提交');
+      return;
+    }
+    
+    // 立即标记为正在上传（ref 是同步的）
+    uploadingRef.current = true;
     
     const formData = new FormData(e.currentTarget);
     if (user) formData.append('uploader', user.username);
@@ -364,6 +432,7 @@ export default function DocSystemPage() {
       alert('网络错误，请重试'); 
     } finally {
       setUploading(false);
+      uploadingRef.current = false; // 🔴 重置 ref 标记，允许后续上传
     }
   };
 
@@ -574,6 +643,230 @@ export default function DocSystemPage() {
           }
         } else alert('更新失败');
     } catch (e) { alert('网络错误'); }
+  };
+
+  const handleUploadChild = async (fileInput: HTMLInputElement | null) => {
+    // 📊 最显眼的提示 - 确保函数被调用
+    alert('🔔 上传下级文件功能已触发！');
+    
+    // 📊 日志：开始处理上传下级文件请求
+    const timestamp = nowISOString();
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📤 [上传下级文件] 开始处理');
+    console.log('⏰ 时间:', timestamp);
+    console.log('👤 操作用户:', user?.name || '未知', `(ID: ${user?.id || 'N/A'})`);
+    
+    if (!currentFile) {
+      console.error('❌ [上传下级文件] 错误: currentFile 为空');
+      return;
+    }
+    
+    console.log('📁 父文件信息:');
+    console.log('  - ID:', currentFile.id);
+    console.log('  - 编号:', currentFile.fullNum);
+    console.log('  - 名称:', currentFile.name);
+    console.log('  - 级别:', currentFile.level);
+    console.log('  - 前缀:', currentFile.prefix || '无');
+    console.log('  - 部门:', currentFile.dept || '未设置');
+    
+    // 🔴 检查级别限制（只有1-3级文件可以上传下级文件）
+    if (currentFile.level >= 4) {
+      console.error('❌ [上传下级文件] 验证失败: 4级文件无法上传下级文件');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      alert('4级文件无法上传下级文件');
+      return;
+    }
+    
+    if (!fileInput || !fileInput.files?.[0]) {
+      console.error('❌ [上传下级文件] 验证失败: 未选择文件');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      alert('请选择要上传的文件');
+      return;
+    }
+    
+    const file = fileInput.files[0];
+    
+    if (!file) {
+      console.error('❌ [上传下级文件] 验证失败: 未选择文件');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      alert('请选择要上传的文件');
+      return;
+    }
+    
+    console.log('📄 上传文件信息:');
+    console.log('  - 文件名:', file.name);
+    console.log('  - 文件大小:', (file.size / 1024).toFixed(2), 'KB');
+    console.log('  - 文件类型:', file.type || '未知');
+    
+    // 🔴 验证文件类型
+    const childLevel = currentFile.level + 1;
+    console.log('📊 计算下级文件级别:', childLevel);
+    
+    if (childLevel === 4) {
+      if (!file.name.endsWith('.docx') && !file.name.endsWith('.xlsx')) {
+        console.error('❌ [上传下级文件] 验证失败: 4级文件类型不符合要求');
+        console.log('  - 要求: .docx 或 .xlsx');
+        console.log('  - 实际:', file.name.split('.').pop());
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        alert('4级文件支持 .docx 或 .xlsx');
+        return;
+      }
+      console.log('✅ [上传下级文件] 4级文件类型验证通过');
+    } else {
+      if (!file.name.endsWith('.docx')) {
+        console.error('❌ [上传下级文件] 验证失败: 非4级文件必须是.docx格式');
+        console.log('  - 要求: .docx');
+        console.log('  - 实际:', file.name.split('.').pop());
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        alert('仅支持 .docx 文件');
+        return;
+      }
+      console.log('✅ [上传下级文件] 文件类型验证通过');
+    }
+    
+    // 🔴 构建上传参数（自动继承父文件信息）
+    console.log('🔨 构建上传表单数据:');
+    const uploadFormData = new FormData();
+    uploadFormData.append('file', file);
+    uploadFormData.append('level', childLevel.toString());
+    console.log('  - 级别:', childLevel);
+    
+    uploadFormData.append('dept', currentFile.dept || '');
+    console.log('  - 部门:', currentFile.dept || '(继承父文件，为空)');
+    
+    uploadFormData.append('parentId', currentFile.id);
+    console.log('  - 父文件ID:', currentFile.id);
+    
+    if (user) {
+      uploadFormData.append('uploader', user.username);
+      console.log('  - 上传者:', user.username);
+    }
+    
+    // 🔴 如果不是4级文件，需要前缀（继承父文件前缀）
+    if (childLevel < 4) {
+      if (!currentFile.prefix) {
+        console.error('❌ [上传下级文件] 验证失败: 父文件缺少前缀，无法继承');
+        console.log('  - 父文件级别:', currentFile.level);
+        console.log('  - 父文件前缀:', currentFile.prefix);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        alert('无法继承前缀编号，请使用上传新文档功能');
+        return;
+      }
+      uploadFormData.append('prefix', currentFile.prefix);
+      console.log('  - 前缀编号:', currentFile.prefix, '(继承)');
+    } else {
+      console.log('  - 前缀编号: 无需设置（4级文件自动生成）');
+    }
+    
+    console.log('📡 准备发送API请求...');
+    setUploading(true);
+    
+    try {
+      const apiStartTime = Date.now();
+      const res = await apiFetch('/api/docs', { method: 'POST', body: uploadFormData });
+      const apiDuration = Date.now() - apiStartTime;
+      
+      console.log('📡 API响应接收:', apiDuration, 'ms');
+      console.log('  - 状态码:', res.status);
+      console.log('  - 状态文本:', res.statusText);
+      
+      if (res.ok) {
+        const data = await res.json();
+        console.log('✅ [上传下级文件] API响应成功');
+        console.log('📦 返回数据:', JSON.stringify(data, null, 2));
+        
+        alert('下级文件上传成功');
+        
+        // 🔴 清除父文件的加载状态，强制重新加载子文件
+        console.log('🔄 清除父文件加载状态:', currentFile.id);
+        setLoadedFolders(prev => {
+          const next = new Set(prev);
+          next.delete(currentFile.id);
+          return next;
+        });
+        
+        // 🔴 如果父文件已展开，强制重新加载其子文件
+        const isExpanded = expandedFolders.has(currentFile.id);
+        console.log('📂 父文件展开状态:', isExpanded);
+        if (isExpanded) {
+          console.log('🔄 重新加载父文件子文件列表...');
+          await fetchChildren(currentFile.id, true);
+          console.log('✅ 子文件列表重新加载完成');
+        }
+        
+        // 🔴 重置文件输入框
+        console.log('🧹 重置文件输入');
+        if (fileInput) {
+          fileInput.value = '';
+        }
+        
+        // 🔴 记录系统日志
+        console.log('📝 写入系统操作日志...');
+        try {
+          const logPayload = {
+            module: 'doc_sys',
+            action: 'document_uploaded',
+            targetType: 'document',
+            targetId: data.id || 'unknown',
+            userId: user?.id || 'system',
+            userName: user?.name || '系统',
+            details: `上传下级文档：${file.name}（父文件：${currentFile.fullNum} ${currentFile.name}）`,
+            snapshot: {
+              action: 'document_uploaded',
+              operatorName: user?.name || '未知',
+              operatedAt: timestamp,
+              documentInfo: {
+                fileName: file.name,
+                fileSize: file.size,
+                level: childLevel,
+                dept: currentFile.dept,
+                prefix: currentFile.prefix,
+                parentId: currentFile.id,
+                parentFullNum: currentFile.fullNum,
+                parentName: currentFile.name
+              }
+            }
+          };
+          
+          console.log('📝 日志内容:', JSON.stringify(logPayload, null, 2));
+          
+          const logRes = await apiFetch('/api/logs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(logPayload)
+          });
+          
+          if (logRes.ok) {
+            console.log('✅ 系统日志写入成功');
+          } else {
+            const logError = await logRes.text();
+            console.error('⚠️ 系统日志写入失败:', logRes.status, logError);
+          }
+        } catch (logErr) {
+          console.error('❌ 系统日志写入异常:', logErr);
+        }
+        
+        console.log('✅ [上传下级文件] 完成');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      } else {
+        const err = await res.json().catch(() => ({ error: '未知错误' }));
+        console.error('❌ [上传下级文件] API响应失败');
+        console.error('  - 状态码:', res.status);
+        console.error('  - 错误信息:', err.error || err);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        alert(err.error || '上传失败');
+      }
+    } catch (err) {
+      console.error('❌ [上传下级文件] 网络请求异常');
+      console.error('  - 错误类型:', err instanceof Error ? err.name : typeof err);
+      console.error('  - 错误信息:', err instanceof Error ? err.message : String(err));
+      console.error('  - 堆栈跟踪:', err instanceof Error ? err.stack : 'N/A');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      alert('网络错误，请重试');
+    } finally {
+      setUploading(false);
+      console.log('🔓 上传状态已解锁');
+    }
   };
 
   const handleSaveEdit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -803,31 +1096,169 @@ export default function DocSystemPage() {
         // 使用 API 路由在服务端处理文件转换，避免在客户端导入 Node 模块
         if (file.type === 'xlsx') {
             // Excel 文件使用专门的转换 API
+            console.log('正在预览 Excel 文件:', file.docxPath);
             const res = await apiFetch(`/api/docs/convert-excel?url=${encodeURIComponent(file.docxPath)}`, {
                 cache: 'no-store' // Next.js 16: 明确指定不缓存
             });
+            
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.error('Excel 转换 API 错误:', res.status, errorText);
+                setPreviewHtml(`<div class="text-red-500 p-4">Excel 解析失败: ${res.status} ${errorText}</div>`);
+                return;
+            }
+            
             const data = await res.json();
-            if (data.html) {
+            console.log('Excel 转换结果:', data);
+            
+            if (data.html && data.html.trim()) {
                 // 🔒 清理 HTML 内容，防止 XSS 攻击
                 const cleanedHtml = sanitizeHtml(data.html);
-                setPreviewHtml(`<style>#excel-preview-table { border-collapse: collapse; width: 100%; } #excel-preview-table td, #excel-preview-table th { border: 1px solid #ddd; padding: 8px; font-size: 14px; } #excel-preview-table tr:nth-child(even) { background-color: #f9f9f9; }</style>${cleanedHtml}`);
+                if (cleanedHtml.trim()) {
+                    setPreviewHtml(`<style>#excel-preview-table { border-collapse: collapse; width: 100%; } #excel-preview-table td, #excel-preview-table th { border: 1px solid #ddd; padding: 8px; font-size: 14px; } #excel-preview-table tr:nth-child(even) { background-color: #f9f9f9; }</style>${cleanedHtml}`);
+                } else {
+                    console.warn('清理后的 HTML 为空');
+                    setPreviewHtml('<div class="text-amber-600 p-4">文件内容为空或仅包含不支持的元素</div>');
+                }
             } else {
-                setPreviewHtml('<div class="text-red-500">Excel 解析失败</div>');
+                console.warn('API 返回的 HTML 为空');
+                setPreviewHtml('<div class="text-amber-600 p-4">Excel 文件内容为空</div>');
             }
         } else if (file.type === 'docx') {
             // DOCX 文件使用转换 API
+            console.log('正在预览 DOCX 文件:', file.docxPath);
             const res = await apiFetch(`/api/docs/convert?url=${encodeURIComponent(file.docxPath)}`, {
                 cache: 'no-store' // Next.js 16: 明确指定不缓存
             });
+            
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.error('DOCX 转换 API 错误:', res.status, errorText);
+                setPreviewHtml(`<div class="text-red-500 p-4">文档解析失败: ${res.status} ${errorText}</div>`);
+                return;
+            }
+            
             const data = await res.json();
-            // 🔒 清理 HTML 内容，防止 XSS 攻击
-            setPreviewHtml(sanitizeHtml(data.html || '<p>空内容</p>'));
+            console.log('DOCX 转换结果:', data);
+            
+            // 🔴 修复2：增强空内容检测和诊断
+            if (data.empty || !data.html || !data.html.trim()) {
+                console.warn('⚠️ DOCX 转换返回空内容');
+                console.warn('  - 原因:', data.reason || '未知');
+                console.warn('  - 文件大小:', data.fileSize || '未知');
+                console.warn('  - 转换消息:', data.messages || []);
+                
+                // 🔴 提供详细的错误诊断信息
+                const diagnosticInfo = data.fileSize 
+                    ? `文件大小: ${(data.fileSize / 1024).toFixed(2)} KB` 
+                    : '';
+                
+            } else if (data.html && data.html.trim()) {
+                // 🔒 清理 HTML 内容，防止 XSS 攻击
+                const cleanedHtml = sanitizeHtml(data.html);
+                
+                if (cleanedHtml.trim()) {
+                    // 🔴 为 DOCX 添加表格样式支持
+                    const styledHtml = `
+                      <style>
+                        /* DOCX 表格样式 */
+                        table {
+                          border-collapse: collapse;
+                          width: 100%;
+                          margin: 1rem 0;
+                          font-size: 14px;
+                        }
+                        table td, table th {
+                          border: 1px solid #ddd;
+                          padding: 8px 12px;
+                          text-align: left;
+                          vertical-align: top;
+                        }
+                        table th {
+                          background-color: #f8f9fa;
+                          font-weight: 600;
+                          color: #1e293b;
+                        }
+                        table tr:nth-child(even) {
+                          background-color: #f9fafb;
+                        }
+                        table tr:hover {
+                          background-color: #f1f5f9;
+                        }
+                        /* 表格标题 */
+                        table caption {
+                          caption-side: top;
+                          padding: 8px;
+                          font-weight: 600;
+                          color: #475569;
+                          text-align: left;
+                        }
+                      </style>
+                      ${cleanedHtml}
+                    `;
+                    setPreviewHtml(styledHtml);
+                } else {
+                    console.warn('⚠️ sanitizeHtml 过滤掉了所有内容');
+                    setPreviewHtml(`
+                        <div class="flex flex-col items-center justify-center p-8 gap-4">
+                            <div class="text-amber-600 text-center">
+                                <svg class="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                <h3 class="text-lg font-bold mb-2">内容安全过滤</h3>
+                                <p class="text-sm text-slate-600 max-w-md">
+                                    该文档包含不支持的HTML元素，已被安全过滤移除。<br/>
+                                    <span class="text-xs text-slate-500">请下载源文件查看完整内容</span>
+                                </p>
+                            </div>
+                        </div>
+                    `);
+                }
+            } else {
+                console.warn('⚠️ API 返回的 HTML 为空 - 可能是文件包含不支持的元素');
+                // 🔴 提供友好的 fallback 提示和下载选项
+                setPreviewHtml(`
+                    <div class="flex flex-col items-center justify-center p-8 gap-4">
+                        <div class="text-amber-600 text-center">
+                            <svg class="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <h3 class="text-lg font-bold mb-2">无法在线预览此文档</h3>
+                            <p class="text-sm text-slate-600 max-w-md">
+                                该文档包含特殊格式（如嵌入内容），预览功能暂不支持。<br/>
+                                <span class="text-xs text-slate-500">技术详情: 文档使用了 w:altChunk 元素</span>
+                            </p>
+                        </div>
+                        <div class="flex flex-col gap-2 w-full max-w-xs">
+                            <p class="text-sm font-medium text-slate-700 text-center">您可以选择：</p>
+                            ${canDownloadSource(file) ? `
+                                <button 
+                                    onclick="document.querySelector('[data-download-source]').click()"
+                                    class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-md"
+                                >
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                    下载源文件查看完整内容
+                                </button>
+                            ` : `
+                                <div class="px-6 py-3 bg-slate-100 text-slate-500 rounded-lg text-center text-sm">
+                                    您暂无权限下载此文件
+                                </div>
+                            `}
+                            <p class="text-xs text-slate-400 text-center mt-2">
+                                建议使用 Microsoft Word 或 WPS 打开源文件
+                            </p>
+                        </div>
+                    </div>
+                `);
+            }
         } else { 
             setPreviewHtml('<div class="text-center p-8 text-slate-400">不支持预览</div>'); 
         }
     } catch (err) { 
         console.error('文件预览失败:', err);
-        setPreviewHtml('<div class="text-red-500">解析失败，请重试</div>'); 
+        setPreviewHtml(`<div class="text-red-500 p-4">解析失败: ${err instanceof Error ? err.message : '未知错误'}</div>`); 
     }
   };
 
@@ -853,6 +1284,9 @@ export default function DocSystemPage() {
   const renderFileItem = (file: DocFile, depth: number, recursive: boolean, highlightContent?: string | null) => {
     const isFolder = file.level < 4; // Assuming < 4 are folders/categories
     const isExpanded = expandedFolders.has(file.id);
+    // 🔴 修复：基于文件级别判断是否可能有子文件，而不是检查已加载的子文件
+    // level < 4 的文件都可能有子文件，应该显示展开按钮
+    const hasChildren = isFolder;
 
     return (
     <div key={file.id}>
@@ -860,14 +1294,43 @@ export default function DocSystemPage() {
             {depth > 0 && !highlightContent && <div className="absolute -left-2 md:-left-6 top-1/2 -translate-y-1/2 w-2 md:w-4 h-px bg-slate-300"></div>}
             <div className="flex items-start justify-between gap-2">
                 {/* 左侧：图标 + 文件信息 */}
-                <div className="flex items-start gap-2 flex-1 min-w-0 cursor-pointer" onClick={() => isFolder ? toggleFolder(file) : handlePreview(file)}>
-                    {/* 文件图标 */}
-                    <div className={`p-1.5 md:p-2 rounded-lg shrink-0 ${file.level === 1 ? 'bg-blue-100 text-blue-600' : file.level === 4 ? ((file.type || 'docx') === 'xlsx' ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600') : 'bg-slate-100 text-slate-600'}`}>
-                        {file.level === 1 ? <FolderOpen size={16} className="md:w-5 md:h-5" /> : (file.type || 'docx') === 'xlsx' ? <Sheet size={16} className="md:w-5 md:h-5" /> : file.level === 4 ? <FileIcon size={16} className="md:w-5 md:h-5" /> : <FileText size={16} className="md:w-5 md:h-5" />}
+                <div className="flex items-start gap-2 flex-1 min-w-0">
+                    {/* 🔴 修复1：文件图标 + 展开箭头（横向布局，更明显） */}
+                    <div className="flex items-center gap-1 shrink-0">
+                        {/* 展开/收起箭头 - 放在图标左侧，更符合常规UI习惯 */}
+                        {hasChildren && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleFolder(file);
+                                }}
+                                className={`p-1.5 rounded-lg hover:bg-blue-100 transition-all ${isExpanded ? 'bg-blue-50' : 'bg-slate-100'}`}
+                                title={isExpanded ? '收起下级文件' : '展开下级文件'}
+                            >
+                                <ChevronRight 
+                                    size={18} 
+                                    className={`transition-transform ${isExpanded ? 'rotate-90 text-blue-600' : 'text-slate-500'}`}
+                                />
+                            </button>
+                        )}
+                        
+                        {/* 文件图标 */}
+                        <div 
+                            className={`p-1.5 md:p-2 rounded-lg ${isFolder ? 'cursor-pointer hover:scale-110 transition-transform' : ''} ${file.level === 1 ? 'bg-blue-100 text-blue-600' : file.level === 4 ? ((file.type || 'docx') === 'xlsx' ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600') : 'bg-slate-100 text-slate-600'}`}
+                            onClick={(e) => {
+                                if (isFolder) {
+                                    e.stopPropagation();
+                                    toggleFolder(file);
+                                }
+                            }}
+                            title={isFolder ? (isExpanded ? '收起' : '展开') : ''}
+                        >
+                            {file.level === 1 ? <FolderOpen size={16} className="md:w-5 md:h-5" /> : (file.type || 'docx') === 'xlsx' ? <Sheet size={16} className="md:w-5 md:h-5" /> : file.level === 4 ? <FileIcon size={16} className="md:w-5 md:h-5" /> : <FileText size={16} className="md:w-5 md:h-5" />}
+                        </div>
                     </div>
                     
-                    {/* 文件信息 */}
-                    <div className="flex-1 min-w-0">
+                    {/* 文件信息 - 点击预览 */}
+                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handlePreview(file)}>
                         {/* 编号（独立一行，移动端更醒目） */}
                         <div className="mb-1">
                             <span className="inline-block text-[10px] md:text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-mono">
@@ -875,9 +1338,9 @@ export default function DocSystemPage() {
                             </span>
                         </div>
                         
-                        {/* 文件名（允许换行） */}
+                        {/* 文件名（允许换行） - 点击预览文件 */}
                         <div className="mb-1.5">
-                            <span className="text-sm md:text-base font-medium text-slate-800 leading-snug break-words group-hover:text-blue-600">
+                            <span className="text-sm md:text-base font-medium text-slate-800 leading-snug break-words group-hover:text-blue-600 hover:underline">
                                 {file.name || '未命名文档'}
                             </span>
                             {/* 文件类型标签 */}
@@ -1023,7 +1486,14 @@ export default function DocSystemPage() {
     // 关键点：默认树状图中，过滤掉 4级文件
     levelFiles = levelFiles.filter(f => f.level !== 4);
 
-    levelFiles.sort((a, b) => a.level - b.level);
+    // 排序：先按级别，再按编号（suffix）升序
+    levelFiles.sort((a, b) => {
+      // 首先按级别排序
+      if (a.level !== b.level) return a.level - b.level;
+      // 同级别内按 suffix 排序（编号的数字部分）
+      return (a.suffix || 0) - (b.suffix || 0);
+    });
+    
     if (levelFiles.length === 0 && depth === 0) return <div className="text-center py-20 text-slate-400">暂无文档</div>;
     return <div className="space-y-2">{levelFiles.map(file => <div key={file.id}>{renderFileItem(file, depth, true)}</div>)}</div>;
   };
@@ -1303,11 +1773,31 @@ export default function DocSystemPage() {
                     <div><label className="block text-sm font-medium text-slate-700 mb-1">源文件 *</label><input name="file" type="file" accept={uploadLevel === 4 ? ".docx,.xlsx" : ".docx"} required className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/><p className="text-xs text-slate-400 mt-1">{uploadLevel === 4 ? '支持 .docx 或 .xlsx' : '仅支持 .docx'}</p></div>
                     {uploadLevel < 4 ? (<div><label className="block text-sm font-medium text-slate-700 mb-1">前缀编号</label><input name="prefix" type="text" placeholder="ESH-XF" required className="w-full px-3 py-2 border rounded-lg outline-none uppercase" /></div>) : (<div className="p-3 bg-blue-50 text-blue-800 text-sm rounded-lg border border-blue-100"><strong>4级文件模式：</strong><br/>无需输入前缀，编号将自动继承自“上级文件”。<br/>例如：上级 ESH-001 &rarr; 本文件 ESH-001-001</div>)}
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">上级文件 {uploadLevel === 4 && <span className="text-red-500">*</span>}</label>
-                        <select name="parentId" required={uploadLevel === 4} className="w-full px-3 py-2 border rounded-lg outline-none">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          上级文件 {uploadLevel === 4 && <span className="text-red-500">*</span>}
+                          {loadingParents && <span className="ml-2 text-xs text-blue-600">加载中...</span>}
+                        </label>
+                        <select 
+                          name="parentId" 
+                          required={uploadLevel === 4} 
+                          className="w-full px-3 py-2 border rounded-lg outline-none"
+                          disabled={loadingParents}
+                        >
                             <option value="">-- 无 --</option>
-                            {files.filter(f => f.level === uploadLevel - 1).map(f => <option key={f.id} value={f.id}>[{f.fullNum}] {f.name}</option>)}
+                            {uploadLevel > 1 ? (
+                              availableParentFiles.map(f => (
+                                <option key={f.id} value={f.id}>
+                                  [{f.fullNum}] {f.name}
+                                </option>
+                              ))
+                            ) : (
+                              // uploadLevel === 1 时没有上级文件选项
+                              null
+                            )}
                         </select>
+                        {uploadLevel > 1 && availableParentFiles.length === 0 && !loadingParents && (
+                          <p className="text-xs text-amber-600 mt-1">⚠️ 暂无可选的上级文件</p>
+                        )}
                     </div>
                     <div className="flex justify-end gap-3 mt-6">
                       <button 
@@ -1365,6 +1855,67 @@ export default function DocSystemPage() {
                             {files.filter(f => f.level === editLevel - 1 && f.id !== currentFile!.id).map(f => <option key={f.id} value={f.id}>[{f.fullNum}] {f.name}</option>)}
                         </select>
                     </div>
+                    
+                    {/* 🔴 上传下级文件区域 */}
+                    {currentFile.level < 4 && hasPerm('upload') && (
+                      <div className="pt-4 border-t border-slate-100">
+                        <h4 className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                          <Upload size={14} className="text-blue-600" />
+                          快速上传下级文件
+                        </h4>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                          <p className="text-xs text-blue-800 mb-2">
+                            <strong>自动配置：</strong>
+                          </p>
+                          <ul className="text-xs text-blue-700 space-y-1 ml-4 list-disc">
+                            <li>级别：{currentFile.level + 1}级（自动+1）</li>
+                            <li>前缀：{currentFile.prefix || '继承父文件'}（自动继承）</li>
+                            <li>部门：{currentFile.dept || '未设置'}（自动继承）</li>
+                            <li>上级：当前文件（自动关联）</li>
+                          </ul>
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                              选择文件 *
+                            </label>
+                            <input 
+                              id="childFileInput"
+                              type="file" 
+                              accept={currentFile.level + 1 === 4 ? ".docx,.xlsx" : ".docx"}
+                              className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                            />
+                            <p className="text-xs text-slate-400 mt-1">
+                              {currentFile.level + 1 === 4 ? '支持 .docx 或 .xlsx' : '仅支持 .docx'}
+                            </p>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const fileInput = document.getElementById('childFileInput') as HTMLInputElement;
+                              handleUploadChild(fileInput);
+                            }}
+                            disabled={uploading}
+                            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+                          >
+                            {uploading ? (
+                              <>
+                                <span className="animate-spin">⏳</span>
+                                上传中...
+                              </>
+                            ) : (
+                              <>
+                                <Upload size={14} />
+                                上传下级文件
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="pt-4 border-t border-slate-100"><label className="block text-sm font-medium text-slate-700 mb-1">更新 PDF 附件 (旧 PDF 将移入历史)</label><input name="pdfFile" type="file" accept=".pdf" className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-red-50 file:text-red-700 hover:file:bg-red-100"/>{currentFile.pdfPath && <p className="text-xs text-green-600 mt-1">✓ 当前已包含 PDF 副本</p>}</div>
                     <div className="flex justify-end gap-3 mt-6"><button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">取消</button><button type="submit" className="px-4 py-2 bg-hytzer-blue text-white rounded-lg hover:bg-blue-600">保存修改</button></div>
                 </form>
@@ -1463,7 +2014,11 @@ export default function DocSystemPage() {
                                 return (
                                     <>
                                         {canDownloadSrc ? (
-                                            <button onClick={() => handleDownload(currentFile, 'source')} className={`w-full flex items-center gap-2 px-3 py-2 rounded text-sm ${currentFile.type === 'xlsx' ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>
+                                            <button 
+                                                onClick={() => handleDownload(currentFile, 'source')} 
+                                                data-download-source
+                                                className={`w-full flex items-center gap-2 px-3 py-2 rounded text-sm ${currentFile.type === 'xlsx' ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                                            >
                                                 <Download size={14} /> 源文件 ({(currentFile.type || 'docx').toUpperCase()})
                                             </button>
                                         ) : (

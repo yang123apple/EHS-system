@@ -1,6 +1,8 @@
 // src/app/api/auth/logout/route.ts
 import { NextResponse } from 'next/server';
-import { logUserLogout, getClientIP } from '@/services/audit-compat.service';
+import { getClientIP } from '@/utils/requestAdapter';
+import AuditService from '@/services/audit.service';
+import { LogModule, LogAction } from '@/types/audit';
 
 export async function POST(req: Request) {
   try {
@@ -15,7 +17,23 @@ export async function POST(req: Request) {
 
     // 记录退出日志
     const clientIP = getClientIP(req);
-    await logUserLogout(userId, userName, clientIP);
+    await AuditService.recordLog({
+      module: LogModule.AUTH,
+      action: LogAction.LOGOUT,
+      businessId: userId,
+      targetType: 'user',
+      targetLabel: userName,
+      operator: {
+        id: userId,
+        name: userName,
+        role: 'user', // 登出时角色信息可能已不可用，使用默认值
+      },
+      description: `用户 ${userName} 退出系统`,
+      request: req,
+      clientInfo: {
+        ip: clientIP,
+      },
+    });
 
     // 清除认证 cookie
     const response = NextResponse.json({ 

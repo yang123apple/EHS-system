@@ -4,13 +4,26 @@ import { useRouter } from 'next/navigation';
 import ExamEditor from '@/components/training/ExamEditor';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/apiClient';
+import { useMinioUpload } from '@/hooks/useMinioUpload';
 
 export default function UploadPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
+
+  // MinIO 上传 Hook
+  const { upload, state: uploadState, isUploading } = useMinioUpload({
+    bucket: 'public',
+    prefix: 'training-materials',
+    maxSize: 500 * 1024 * 1024, // 500MB
+    onProgress: (progress) => {
+      console.log(`上传进度: ${progress}%`);
+    },
+    onError: (error) => {
+      alert(`上传失败: ${error}`);
+    }
+  });
 
   // Form Data
   const [file, setFile] = useState<File | null>(null);
@@ -76,27 +89,22 @@ export default function UploadPage() {
       if (!file || !title) return alert('请完善信息');
       if (!category) return alert('请选择学习类型');
 
-      setUploading(true);
       try {
           if (!user?.id) {
               alert('登录状态失效，请重新登录');
-              setUploading(false);
               return;
           }
 
-          // 1. Upload File
-          const formData = new FormData();
-          formData.append('file', file);
-          const uploadRes = await apiFetch('/api/upload', { method: 'POST', body: formData });
-          const { url } = await uploadRes.json();
-
+          // 1. Upload File to MinIO
+          const uploadResult = await upload(file);
+          
           // 2. Create Material
           const body = {
               title,
               description: desc,
               type,
               category,
-              url,
+              url: uploadResult.url || uploadResult.objectName, // 使用 MinIO 返回的 URL
               duration: type === 'video' ? 300 : null, // Placeholder duration
               isExamRequired: isExam,
               passingScore,
@@ -113,13 +121,11 @@ export default function UploadPage() {
           if (res.ok) {
               router.push('/training/materials');
           } else {
-              alert('Failed');
+              alert('创建学习材料失败');
           }
       } catch (e) {
           console.error(e);
-          alert('Error');
-      } finally {
-          setUploading(false);
+          alert('操作失败，请重试');
       }
   };
 
@@ -227,8 +233,8 @@ export default function UploadPage() {
                     {isExam ? (
                         <button onClick={() => setStep(2)} className="bg-blue-600 text-white px-6 py-2 rounded font-bold">下一步：编辑考题</button>
                     ) : (
-                        <button onClick={handleSubmit} disabled={uploading} className="bg-blue-600 text-white px-6 py-2 rounded font-bold">
-                            {uploading ? '上传中...' : '提交'}
+                        <button onClick={handleSubmit} disabled={isUploading} className="bg-blue-600 text-white px-6 py-2 rounded font-bold">
+                            {isUploading ? `上传中 ${uploadState.progress}%...` : '提交'}
                         </button>
                     )}
                 </div>
@@ -240,8 +246,8 @@ export default function UploadPage() {
                 <ExamEditor questions={questions} onChange={setQuestions} />
                 <div className="flex justify-between pt-6 mt-6 border-t">
                     <button onClick={() => setStep(1)} className="text-slate-500 hover:bg-slate-100 px-4 py-2 rounded">上一步</button>
-                    <button onClick={handleSubmit} disabled={uploading} className="bg-blue-600 text-white px-6 py-2 rounded font-bold">
-                        {uploading ? '上传中...' : '完成并提交'}
+                    <button onClick={handleSubmit} disabled={isUploading} className="bg-blue-600 text-white px-6 py-2 rounded font-bold">
+                        {isUploading ? `上传中 ${uploadState.progress}%...` : '完成并提交'}
                     </button>
                 </div>
             </div>

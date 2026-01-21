@@ -91,6 +91,14 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     
+    // 验证必需字段
+    if (!body.module) {
+      return NextResponse.json(
+        { success: false, error: 'module字段为必需字段' },
+        { status: 400 }
+      );
+    }
+    
     const logData: any = {
       // 用户信息
       userId: body.userId,
