@@ -1,5 +1,5 @@
 // src/app/(dashboard)/hidden-danger/_components/modals/HazardDetailModal/index.tsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Trash2, Siren, ZoomIn, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 import { StatusBadge, RiskBadge } from '../../Badges';
 import { ProcessingFlow } from './ProcessingFlow';
@@ -17,8 +17,11 @@ import {
   canRequestExtension,
   canApproveExtension
 } from '../../../_utils/permissions';
+import { getCheckTypeName } from '@/utils/checkTypeMapping';
+import { useMinioImageUrls } from '@/hooks/useMinioImageUrl';
 
 export default function HazardDetailModal({ hazard, onClose, user, allUsers, onProcess, onDelete }: any) {
+  const [checkTypeName, setCheckTypeName] = useState<string>(hazard.checkType || '');
   // 权限检查
   const hasViewPermission = canViewHazard(hazard, user);
   const hasAssignPermission = canAssignHazard(hazard, user);
@@ -31,19 +34,33 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showRejectModal, setShowRejectModal] = useState(false);
 
-  // 确保 photos 始终是数组
+  // 确保三类照片始终是数组
   const photos = Array.isArray(hazard.photos) ? hazard.photos : (hazard.photos ? [hazard.photos] : []);
+  const rectifyPhotos = Array.isArray(hazard.rectifyPhotos) ? hazard.rectifyPhotos : (hazard.rectifyPhotos ? [hazard.rectifyPhotos] : []);
+  const verifyPhotos = Array.isArray(hazard.verifyPhotos) ? hazard.verifyPhotos : (hazard.verifyPhotos ? [hazard.verifyPhotos] : []);
 
-  const handleImageClick = (photo: string, index: number) => {
-    setPreviewImage(photo);
+  // 🔧 使用 useMinioImageUrls hook 将 MinIO 路径转换为预签名 URL
+  const { urls: photoUrls, loading: photosLoading } = useMinioImageUrls(photos);
+  const { urls: rectifyPhotoUrls, loading: rectifyPhotosLoading } = useMinioImageUrls(rectifyPhotos);
+  const { urls: verifyPhotoUrls, loading: verifyPhotosLoading } = useMinioImageUrls(verifyPhotos);
+
+  // 加载检查类型名称
+  useEffect(() => {
+    if (hazard.checkType) {
+      getCheckTypeName(hazard.checkType).then(setCheckTypeName);
+    }
+  }, [hazard.checkType]);
+
+  const handleImageClick = (photoUrl: string, index: number) => {
+    setPreviewImage(photoUrl);
     setCurrentImageIndex(index);
   };
 
   const handleNextImage = () => {
-    if (currentImageIndex < photos.length - 1) {
+    if (currentImageIndex < photoUrls.length - 1) {
       const nextIndex = currentImageIndex + 1;
       setCurrentImageIndex(nextIndex);
-      setPreviewImage(photos[nextIndex]);
+      setPreviewImage(photoUrls[nextIndex]);
     }
   };
 
@@ -51,7 +68,7 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
     if (currentImageIndex > 0) {
       const prevIndex = currentImageIndex - 1;
       setCurrentImageIndex(prevIndex);
-      setPreviewImage(photos[prevIndex]);
+      setPreviewImage(photoUrls[prevIndex]);
     }
   };
 
@@ -102,8 +119,46 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
           {/* Left: Info Section */}
           <div className="w-full lg:w-1/2 overflow-y-auto p-4 lg:p-6 space-y-4 lg:space-y-6">
-            <div className="bg-slate-50 p-4 lg:p-6 rounded-xl border border-slate-100">
-              <h2 className="text-lg lg:text-xl font-bold text-slate-900 mb-3 lg:mb-4">{hazard.desc}</h2>
+            {/* 🟢 已作废提示横幅 */}
+            {hazard.isVoided && (
+              <div className="bg-gradient-to-r from-gray-100 to-gray-50 border-2 border-gray-300 rounded-xl p-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-bold text-gray-800 text-lg mb-2">此隐患已作废</h3>
+                    <div className="space-y-1.5 text-sm text-gray-600">
+                      {hazard.voidReason && (
+                        <p><span className="font-semibold">作废原因：</span>{hazard.voidReason}</p>
+                      )}
+                      {hazard.voidedAt && (
+                        <p><span className="font-semibold">作废时间：</span>{new Date(hazard.voidedAt).toLocaleString()}</p>
+                      )}
+                      {hazard.voidedBy && (() => {
+                        try {
+                          const voidedBy = JSON.parse(hazard.voidedBy);
+                          return <p><span className="font-semibold">操作人：</span>{voidedBy.name || voidedBy.id}</p>;
+                        } catch {
+                          return null;
+                        }
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div className={`p-4 lg:p-6 rounded-xl border ${
+              hazard.isVoided 
+                ? 'bg-gray-50/50 border-gray-200' 
+                : 'bg-slate-50 border-slate-100'
+            }`}>
+              <h2 className={`text-lg lg:text-xl font-bold mb-3 lg:mb-4 ${
+                hazard.isVoided ? 'text-gray-600 line-through' : 'text-slate-900'
+              }`}>{hazard.desc}</h2>
               {/* 移动端：单列，桌面端：2列 */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4 text-sm text-slate-500">
                 {hazard.code && (
@@ -113,6 +168,16 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                 )}
                 <p>类型：<span className="text-slate-800">{hazard.type}</span></p>
                 <p>区域：<span className="text-slate-800">{hazard.location}</span></p>
+                {hazard.checkType && (
+                  <p>检查类型：<span className="text-slate-800">{checkTypeName}</span></p>
+                )}
+                {hazard.rectificationType && (
+                  <p>整改方式：
+                    <span className={`font-medium ${hazard.rectificationType === 'immediate' ? 'text-green-600' : 'text-blue-600'}`}>
+                      {hazard.rectificationType === 'immediate' ? '立即整改' : '限期整改'}
+                    </span>
+                  </p>
+                )}
                 <p>上报：<span className="text-slate-800">{hazard.reporterName}</span></p>
                 <p>时间：<span className="text-slate-800 break-words">{new Date(hazard.reportTime).toLocaleString()}</span></p>
                 {(hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) ? (
@@ -133,29 +198,97 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                   </div>
                 ) : null}
               </div>
-              {/* 照片展示区域 - 移动端横向滚动 */}
-              {photos.length > 0 && (
-                <div className="mt-4 lg:mt-6">
-                  <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0">
-                    {photos.map((p: string, i: number) => (
+              {/* 照片展示区域 - 三列布局 */}
+              <div className="mt-4 lg:mt-6">
+                <div className="grid grid-cols-3 gap-3 lg:gap-4">
+                  {/* 隐患照片列 */}
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-500 font-medium">隐患照片</p>
+                    {photosLoading ? (
+                      <div className="w-full aspect-square rounded-lg bg-slate-200 animate-pulse" />
+                    ) : photoUrls.length > 0 && photoUrls[0] ? (
                       <div 
-                        key={i} 
-                        className="relative group cursor-pointer shrink-0 flex-shrink-0"
-                        onClick={() => handleImageClick(p, i)}
+                        className="relative group cursor-pointer"
+                        onClick={() => handleImageClick(photoUrls[0], 0)}
                       >
                         <img 
-                          src={p} 
-                          className="w-20 h-20 lg:w-24 lg:h-24 rounded-lg object-cover border-2 border-white shadow-sm transition-transform group-active:scale-105" 
-                          alt="现场"
+                          src={photoUrls[0]} 
+                          className="w-full aspect-square rounded-lg object-cover border-2 border-white shadow-sm transition-transform group-active:scale-105" 
+                          alt="隐患照片"
+                          onError={(e) => {
+                            e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5sb2FkIGVycm9yPC90ZXh0Pjwvc3ZnPg==';
+                          }}
                         />
                         <div className="absolute inset-0 bg-black/0 group-active:bg-black/40 rounded-lg transition-all flex items-center justify-center">
                           <ZoomIn className="text-white opacity-0 group-active:opacity-100 transition-opacity" size={20} />
                         </div>
                       </div>
-                    ))}
+                    ) : (
+                      <div className="w-full aspect-square rounded-lg bg-slate-200 flex items-center justify-center">
+                        <span className="text-xs text-slate-400">暂无照片</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 整改照片列 */}
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-500 font-medium">整改照片</p>
+                    {rectifyPhotosLoading ? (
+                      <div className="w-full aspect-square rounded-lg bg-slate-200 animate-pulse" />
+                    ) : rectifyPhotoUrls.length > 0 && rectifyPhotoUrls[0] ? (
+                      <div 
+                        className="relative group cursor-pointer"
+                        onClick={() => handleImageClick(rectifyPhotoUrls[0], 0)}
+                      >
+                        <img 
+                          src={rectifyPhotoUrls[0]} 
+                          className="w-full aspect-square rounded-lg object-cover border-2 border-white shadow-sm transition-transform group-active:scale-105" 
+                          alt="整改照片"
+                          onError={(e) => {
+                            e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5sb2FkIGVycm9yPC90ZXh0Pjwvc3ZnPg==';
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-active:bg-black/40 rounded-lg transition-all flex items-center justify-center">
+                          <ZoomIn className="text-white opacity-0 group-active:opacity-100 transition-opacity" size={20} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-full aspect-square rounded-lg bg-slate-200 flex items-center justify-center">
+                        <span className="text-xs text-slate-400">未整改</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 验收照片列 */}
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-500 font-medium">验收照片</p>
+                    {verifyPhotosLoading ? (
+                      <div className="w-full aspect-square rounded-lg bg-slate-200 animate-pulse" />
+                    ) : verifyPhotoUrls.length > 0 && verifyPhotoUrls[0] ? (
+                      <div 
+                        className="relative group cursor-pointer"
+                        onClick={() => handleImageClick(verifyPhotoUrls[0], 0)}
+                      >
+                        <img 
+                          src={verifyPhotoUrls[0]} 
+                          className="w-full aspect-square rounded-lg object-cover border-2 border-white shadow-sm transition-transform group-active:scale-105" 
+                          alt="验收照片"
+                          onError={(e) => {
+                            e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5sb2FkIGVycm9yPC90ZXh0Pjwvc3ZnPg==';
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-active:bg-black/40 rounded-lg transition-all flex items-center justify-center">
+                          <ZoomIn className="text-white opacity-0 group-active:opacity-100 transition-opacity" size={20} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-full aspect-square rounded-lg bg-slate-200 flex items-center justify-center">
+                        <span className="text-xs text-slate-400">未验收</span>
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+              </div>
             </div>
 
             <ProcessingFlow logs={hazard.logs} />
@@ -182,17 +315,30 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
               ) : null}
             </div>
 
-            {/* 待指派状态 - 系统自动处理，用户不需要手动操作 */}
-            {hazard.status === 'reported' && (
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <p className="text-blue-800 font-medium text-center">
-                  ⏳ 系统正在自动处理，请稍候...
-                </p>
+            {/* 🟢 已作废隐患：禁用所有业务操作 */}
+            {hazard.isVoided ? (
+              <div className="bg-gray-100 border-2 border-gray-300 rounded-xl p-6 text-center">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-500 mb-4">
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                  </svg>
+                </div>
+                <p className="text-gray-800 font-bold text-lg mb-2">此隐患已作废</p>
+                <p className="text-gray-600 text-sm">已作废的隐患无法进行任何业务操作</p>
               </div>
-            )}
+            ) : (
+              <>
+                {/* 待指派状态 - 系统自动处理，用户不需要手动操作 */}
+                {hazard.status === 'reported' && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <p className="text-blue-800 font-medium text-center">
+                      ⏳ 系统正在自动处理，请稍候...
+                    </p>
+                  </div>
+                )}
 
-            {/* 已指派/整改中状态 */}
-            {(hazard.status === 'assigned' || hazard.status === 'rectifying') && (
+                {/* 已指派/整改中状态 */}
+                {(hazard.status === 'assigned' || hazard.status === 'rectifying') && (
               <div className="space-y-4">
                 <div className="bg-white p-4 rounded-xl border shadow-sm text-sm space-y-2">
                   <p className="text-slate-500">整改责任人：<span className="font-bold text-slate-800">{hazard.responsibleName}</span></p>
@@ -262,11 +408,13 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
               </>
             )}
 
-            {/* 已关闭状态 - 显示最终状态 */}
-            {hazard.status === 'closed' && (
-              <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-                <p className="text-green-800 font-medium">✓ 此隐患已完成验收并关闭</p>
-              </div>
+                {/* 已关闭状态 - 显示最终状态 */}
+                {hazard.status === 'closed' && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                    <p className="text-green-800 font-medium">✓ 此隐患已完成验收并关闭</p>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -284,7 +432,7 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
           </button>
 
           {/* 左右切换按钮 */}
-          {photos.length > 1 && (
+          {photoUrls.length > 1 && (
             <>
               <button
                 onClick={handlePrevImage}
@@ -297,9 +445,9 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
               </button>
               <button
                 onClick={handleNextImage}
-                disabled={currentImageIndex === photos.length - 1}
+                disabled={currentImageIndex === photoUrls.length - 1}
                 className={`absolute right-4 text-white hover:bg-white/20 p-3 rounded-lg transition-colors ${
-                  currentImageIndex === photos.length - 1 ? 'opacity-50 cursor-not-allowed' : ''
+                  currentImageIndex === photoUrls.length - 1 ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
                 <ChevronRight size={32} />
@@ -313,10 +461,13 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
               src={previewImage} 
               alt="预览" 
               className="max-h-[85vh] max-w-full object-contain rounded-lg"
+              onError={(e) => {
+                e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj7lm77niYfliqDovb3lpLHotKU8L3RleHQ+PC9zdmc+';
+              }}
             />
-            {photos.length > 1 && (
+            {photoUrls.length > 1 && (
               <div className="mt-4 text-white text-sm bg-black/50 px-4 py-2 rounded-full">
-                {currentImageIndex + 1} / {photos.length}
+                {currentImageIndex + 1} / {photoUrls.length}
               </div>
             )}
           </div>

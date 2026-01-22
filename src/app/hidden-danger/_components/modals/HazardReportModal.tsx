@@ -1,6 +1,6 @@
 // src/app/hidden-danger/_components/modals/HazardReportModal.tsx
 import { useState, useEffect, useRef } from 'react';
-import { X, Camera, ChevronRight, User, GitBranch, Mail, CheckCircle, ChevronDown, Upload } from 'lucide-react';
+import { X, Camera, ChevronRight, User, GitBranch, Mail, CheckCircle, ChevronDown, Upload, Loader2 } from 'lucide-react';
 import { HazardConfig, RiskLevel } from '@/types/hidden-danger';
 import { RISK_LEVEL_MAP, STRATEGY_NAME_MAP } from '@/constants/hazard';
 import PeopleSelector from '@/components/common/PeopleSelector';
@@ -8,6 +8,7 @@ import { matchHandler } from '../../_utils/handler-matcher';
 import { matchAllCCRules } from '../../_utils/cc-matcher';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/apiClient';
+import { useMinioUpload } from '@/hooks/useMinioUpload';
 
 interface HazardReportModalProps {
   config: HazardConfig;
@@ -22,18 +23,24 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
   const { user } = useAuth();
   const [showDeptModal, setShowDeptModal] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
+  const [checkTypes, setCheckTypes] = useState<Array<{ id: string; name: string; value: string; sortOrder: number }>>([]);
   const [formData, setFormData] = useState({
+    checkType: 'daily' as string, // 检查类型（改为 string 以支持动态值）
     riskLevel: 'low' as RiskLevel,
     type: '',
     location: '',
     desc: '',
+    rectifyRequirement: '', // 整改措施
     responsibleDeptId: '',
     responsibleDeptName: '',
     responsibleId: '',
     responsibleName: '',
-    deadline: ''
+    deadline: '',
+    rectificationType: 'immediate' as 'immediate' | 'scheduled' // 整改方式：立即整改 | 限期整改
   });
-  const [photos, setPhotos] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<string[]>([]); // 存储 MinIO objectName
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]); // 存储预览 URL
+  const [uploadingPhotos, setUploadingPhotos] = useState<Set<number>>(new Set());
   const [departments, setDepartments] = useState<any[]>(propDepartments || []);
   const [departmentTree, setDepartmentTree] = useState<any[]>([]); // 保存完整的部门树
   const [showWorkflowPreview, setShowWorkflowPreview] = useState(false);
@@ -41,6 +48,29 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
   const [isMobileWorkflowExpanded, setIsMobileWorkflowExpanded] = useState(false); // 移动端流程预览折叠状态
   const [isDragging, setIsDragging] = useState(false); // 拖拽状态
   const dragCounterRef = useRef(0); // 用于跟踪拖拽进入/离开次数
+
+  // 获取检查类型列表
+  useEffect(() => {
+    const fetchCheckTypes = async () => {
+      try {
+        const res = await apiFetch('/api/check-types?activeOnly=true');
+        const data = await res.json();
+        setCheckTypes(data);
+        
+        // 如果有数据，设置第一个为默认值
+        if (data.length > 0) {
+          setFormData(prev => ({ ...prev, checkType: data[0].value }));
+        }
+      } catch (error) {
+        console.error('获取检查类型失败:', error);
+        // 失败时使用默认值
+        setCheckTypes([
+          { id: 'ckt_daily', name: '日常检查', value: 'daily', sortOrder: 1 }
+        ]);
+      }
+    };
+    fetchCheckTypes();
+  }, []);
 
   // 获取部门列表（如果没有从 props 传入）
   useEffect(() => {
@@ -87,7 +117,16 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
     }
   }, [propDepartments]);
 
-  const handleFile = (e: any) => {
+  // MinIO 上传 Hook
+  const { upload: uploadToMinio } = useMinioUpload({
+    bucket: 'private',
+    businessType: 'inspection', // 隐患排查照片使用 inspection 业务类型
+    prefix: 'hazards/photos',
+    category: 'hazard',
+    maxSize: 10 * 1024 * 1024, // 10MB
+  });
+
+  const handleFile = async (e: any) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
@@ -96,37 +135,107 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
     const fileExtension = file.name.toLowerCase().split('.').pop();
     const allowedExtensions = ['jpg', 'jpeg', 'png'];
     
-    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
+    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension || '')) {
       alert('仅支持上传 JPG、PNG、JPEG 格式的照片');
       e.target.value = ''; // 清空输入
       return;
     }
+
+    // 创建预览 URL
+    const previewUrl = URL.createObjectURL(file);
+    const photoIndex = photos.length;
     
-    const reader = new FileReader();
-    reader.onload = (evt) => setPhotos([...photos, evt.target?.result as string]);
-    reader.readAsDataURL(file);
+    // 添加预览
+    setPhotoUrls(prev => [...prev, previewUrl]);
+    setPhotos(prev => [...prev, '']); // 占位
+    setUploadingPhotos(prev => new Set(prev).add(photoIndex));
+
+    try {
+      // 上传到 MinIO
+      const result = await uploadToMinio(file);
+      
+      // 更新 objectName
+      setPhotos(prev => {
+        const newPhotos = [...prev];
+        newPhotos[photoIndex] = result.objectName;
+        return newPhotos;
+      });
+      
+      setUploadingPhotos(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(photoIndex);
+        return newSet;
+      });
+    } catch (error: any) {
+      console.error('照片上传失败:', error);
+      alert(`照片上传失败: ${error.message || '未知错误'}`);
+      
+      // 移除失败的照片
+      setPhotos(prev => prev.filter((_, idx) => idx !== photoIndex));
+      setPhotoUrls(prev => prev.filter((_, idx) => idx !== photoIndex));
+      setUploadingPhotos(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(photoIndex);
+        return newSet;
+      });
+    }
+    
+    e.target.value = ''; // 清空输入以支持重复选择同一文件
   };
 
   // 处理文件列表上传（支持批量）
-  const handleFiles = (files: FileList | File[]) => {
+  const handleFiles = async (files: FileList | File[]) => {
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
     const allowedExtensions = ['jpg', 'jpeg', 'png'];
     
-    Array.from(files).forEach((file) => {
+    for (const file of Array.from(files)) {
       const fileExtension = file.name.toLowerCase().split('.').pop();
       
       // 验证文件格式
       if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension || '')) {
         alert(`文件 ${file.name} 格式不支持，仅支持 JPG、PNG、JPEG 格式`);
-        return;
+        continue;
       }
+
+      // 创建预览 URL
+      const previewUrl = URL.createObjectURL(file);
+      const photoIndex = photos.length + Array.from(files).indexOf(file);
       
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        setPhotos(prev => [...prev, evt.target?.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
+      // 添加预览
+      setPhotoUrls(prev => [...prev, previewUrl]);
+      setPhotos(prev => [...prev, '']); // 占位
+      setUploadingPhotos(prev => new Set(prev).add(photoIndex));
+
+      try {
+        // 上传到 MinIO
+        const result = await uploadToMinio(file);
+        
+        // 更新 objectName
+        setPhotos(prev => {
+          const newPhotos = [...prev];
+          newPhotos[photoIndex] = result.objectName;
+          return newPhotos;
+        });
+        
+        setUploadingPhotos(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(photoIndex);
+          return newSet;
+        });
+      } catch (error: any) {
+        console.error('照片上传失败:', error);
+        alert(`照片 ${file.name} 上传失败: ${error.message || '未知错误'}`);
+        
+        // 移除失败的照片
+        setPhotos(prev => prev.filter((_, idx) => idx !== photoIndex));
+        setPhotoUrls(prev => prev.filter((_, idx) => idx !== photoIndex));
+        setUploadingPhotos(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(photoIndex);
+          return newSet;
+        });
+      }
+    }
   };
 
   // 拖拽事件处理
@@ -209,6 +318,18 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
     }
     setShowUserModal(false);
   };
+
+  // 当选择"立即整改"时，自动设置deadline为当天23:59:59
+  useEffect(() => {
+    if (formData.rectificationType === 'immediate') {
+      const today = new Date();
+      const dateStr = today.toISOString().split('T')[0];
+      setFormData(prev => ({ ...prev, deadline: dateStr }));
+    } else if (formData.rectificationType === 'scheduled' && formData.deadline === new Date().toISOString().split('T')[0]) {
+      // 从立即整改切换到限期整改时，清空默认的今日期限
+      setFormData(prev => ({ ...prev, deadline: '' }));
+    }
+  }, [formData.rectificationType]);
 
   // 预测流程
   const predictWorkflow = async () => {
@@ -350,10 +471,15 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
   }, [formData.type, formData.location, formData.riskLevel, formData.responsibleId]);
 
   const handleSubmit = () => {
-    const { type, location, desc, deadline, responsibleDeptId, responsibleDeptName, responsibleId, responsibleName } = formData;
+    const { type, location, desc, rectifyRequirement, deadline, responsibleDeptId, responsibleDeptName, responsibleId, responsibleName } = formData;
     
     if (!type || !location || !desc) {
       alert('请填写基础隐患信息（类型、区域、描述）');
+      return;
+    }
+    
+    if (!rectifyRequirement) {
+      alert('请填写整改措施');
       return;
     }
     
@@ -387,11 +513,14 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
     // 提交数据：保留用户填写的责任部门和责任人作为业务数据
     // 流程执行人将由后端工作流引擎根据配置自动匹配
     const finalData = {
+      checkType: formData.checkType, // 检查类型
       type,
       location,
       desc,
+      rectifyRequirement, // 整改措施
       deadline,
       riskLevel: formData.riskLevel,
+      rectificationType: formData.rectificationType, // 整改方式
       photos,
       status: 'reported', // 初始状态为 reported
       // 上报人信息（用于处理人匹配，如"上报人主管"策略）
@@ -604,9 +733,25 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
 
           <div className="mb-4 shrink-0">
             <div className="flex gap-2 overflow-x-auto py-2 scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0">
-              {photos.map((p, i) => (
-                <div key={i} className="shrink-0 flex-shrink-0">
-                  <img src={p} className="w-20 h-20 object-cover rounded border" alt={`照片${i + 1}`} />
+              {photoUrls.map((url, i) => (
+                <div key={i} className="shrink-0 flex-shrink-0 relative">
+                  <img src={url} className="w-20 h-20 object-cover rounded border" alt={`照片${i + 1}`} />
+                  {uploadingPhotos.has(i) && (
+                    <div className="absolute inset-0 bg-black/50 rounded flex items-center justify-center">
+                      <Loader2 size={20} className="text-white animate-spin" />
+                    </div>
+                  )}
+                  {!uploadingPhotos.has(i) && (
+                    <button
+                      onClick={() => {
+                        setPhotos(prev => prev.filter((_, idx) => idx !== i));
+                        setPhotoUrls(prev => prev.filter((_, idx) => idx !== i));
+                      }}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
                 </div>
               ))}
               <label className="shrink-0 flex-shrink-0 w-20 h-20 min-w-[80px] min-h-[80px] border-2 border-dashed border-slate-300 rounded flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-red-400 active:border-red-500 transition-colors">
@@ -624,6 +769,33 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
           </div>
 
           <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-2">
+                检查类型 <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
+                {checkTypes.map(checkType => (
+                  <button
+                    key={checkType.value}
+                    type="button"
+                    onClick={() => setFormData({...formData, checkType: checkType.value})}
+                    className={`px-2 py-2 rounded-lg text-xs font-medium transition-all ${
+                      formData.checkType === checkType.value
+                        ? 'bg-purple-500 text-white ring-2 ring-offset-1 ring-purple-400 shadow-md'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      <span className="truncate">{checkType.name}</span>
+                      {formData.checkType === checkType.value && (
+                        <CheckCircle size={12} className="shrink-0" />
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-bold text-slate-600 mb-2">
                 隐患级别 <span className="text-red-500">*</span>
@@ -653,6 +825,49 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
                   );
                 })}
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-2">
+                整改方式 <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFormData({...formData, rectificationType: 'immediate'})}
+                  className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    formData.rectificationType === 'immediate'
+                      ? 'bg-green-500 text-white ring-2 ring-offset-1 ring-green-400 shadow-md'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <span>立即整改</span>
+                    {formData.rectificationType === 'immediate' && (
+                      <CheckCircle size={14} className="shrink-0" />
+                    )}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({...formData, rectificationType: 'scheduled'})}
+                  className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    formData.rectificationType === 'scheduled'
+                      ? 'bg-blue-500 text-white ring-2 ring-offset-1 ring-blue-400 shadow-md'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <span>限期整改</span>
+                    {formData.rectificationType === 'scheduled' && (
+                      <CheckCircle size={14} className="shrink-0" />
+                    )}
+                  </div>
+                </button>
+              </div>
+              {formData.rectificationType === 'immediate' && (
+                <p className="text-xs text-green-600 mt-1.5">整改期限将自动设置为今日23:59:59</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -724,29 +939,44 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">
-                整改期限 <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                className="w-full border rounded-lg p-2 text-sm"
-                value={formData.deadline}
-                onChange={(e) => setFormData({...formData, deadline: e.target.value})}
-                min={new Date().toISOString().split('T')[0]}
-              />
-            </div>
+            {formData.rectificationType === 'scheduled' && (
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">
+                  整改期限 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  className="w-full border rounded-lg p-2 text-sm"
+                  value={formData.deadline}
+                  onChange={(e) => setFormData({...formData, deadline: e.target.value})}
+                  min={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+            )}
 
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">
-                隐患描述 <span className="text-red-500">*</span>
-              </label>
-              <textarea 
-                className="w-full border rounded-lg p-3 text-sm h-32" 
-                placeholder="请详细描述发现的隐患情况..." 
-                value={formData.desc}
-                onChange={(e) => setFormData({...formData, desc: e.target.value})}
-              />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">
+                  隐患描述 <span className="text-red-500">*</span>
+                </label>
+                <textarea 
+                  className="w-full border rounded-lg p-3 text-sm h-32" 
+                  placeholder="请详细描述发现的隐患情况..." 
+                  value={formData.desc}
+                  onChange={(e) => setFormData({...formData, desc: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">
+                  整改措施 <span className="text-red-500">*</span>
+                </label>
+                <textarea 
+                  className="w-full border rounded-lg p-3 text-sm h-32" 
+                  placeholder="请填写具体的整改措施和要求..." 
+                  value={formData.rectifyRequirement}
+                  onChange={(e) => setFormData({...formData, rectifyRequirement: e.target.value})}
+                />
+              </div>
             </div>
           </div>
 

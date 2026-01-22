@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { sanitizeHtml, sanitizeHighlightHtml } from '@/lib/htmlSanitizer';
 // 移除客户端 mammoth 和 xlsx 导入，改为使用 API 路由在服务端处理
@@ -276,12 +276,20 @@ export default function DocSystemPage() {
   const toggleFolder = (file: DocFile) => {
       const isExpanded = expandedFolders.has(file.id);
       if (isExpanded) {
-          const next = new Set(expandedFolders);
-          next.delete(file.id);
-          setExpandedFolders(next);
+          // 收起文件夹
+          setExpandedFolders(prev => {
+              const next = new Set(prev);
+              next.delete(file.id);
+              return next;
+          });
       } else {
+          // 展开文件夹
           setExpandedFolders(prev => new Set(prev).add(file.id));
-          fetchChildren(file.id);
+          // 🔴 修复：只在子文件未加载时才加载，避免重复请求
+          // 但如果已加载，仍然需要确保 expandedFolders 状态正确
+          if (!loadedFolders.has(file.id)) {
+              fetchChildren(file.id);
+          }
       }
   };
 
@@ -400,6 +408,7 @@ export default function DocSystemPage() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              module: 'doc_sys',
               action: 'document_uploaded',
               targetType: 'document',
               targetId: data.id || 'unknown',
@@ -459,6 +468,7 @@ export default function DocSystemPage() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
+                module: 'doc_sys',
                 action: 'document_deleted',
                 targetType: 'document',
                 targetId: id,
@@ -510,6 +520,7 @@ export default function DocSystemPage() {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
+                    module: 'doc_sys',
                     action: 'document_history_deleted',
                     targetType: 'document',
                     targetId: docId,
@@ -616,6 +627,7 @@ export default function DocSystemPage() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
+                module: 'doc_sys',
                 action: 'document_version_updated',
                 targetType: 'document',
                 targetId: currentFile.id,
@@ -833,7 +845,10 @@ export default function DocSystemPage() {
           const logRes = await apiFetch('/api/logs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(logPayload)
+            body: JSON.stringify({
+              ...logPayload,
+              module: 'doc_sys'
+            })
           });
           
           if (logRes.ok) {
@@ -1054,6 +1069,7 @@ export default function DocSystemPage() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
+                module: 'doc_sys',
                 action: 'document_info_updated',
                 targetType: 'document',
                 targetId: currentFile.id,
@@ -1083,7 +1099,7 @@ export default function DocSystemPage() {
     } catch (err) { alert('网络错误'); }
   };
 
-  const handlePreview = async (file: DocFile) => {
+  const handlePreview = useCallback(async (file: DocFile) => {
     setCurrentFile(file); setShowPreviewModal(true); setPreviewHtml('<div class="text-center p-4">正在解析...</div>');
     setShowAllChildren(false); // 重置为不显示全部状态
     
@@ -1260,7 +1276,7 @@ export default function DocSystemPage() {
         console.error('文件预览失败:', err);
         setPreviewHtml(`<div class="text-red-500 p-4">解析失败: ${err instanceof Error ? err.message : '未知错误'}</div>`); 
     }
-  };
+  }, [user, canDownloadSource, loadedFolders, expandedFolders, fetchChildren]);
 
   const highlightText = (text: string | undefined, keyword: string) => {
     if (!text || !keyword) return null;

@@ -22,6 +22,7 @@ interface PresignedUploaderProps {
   }) => void;
   onUploadError?: (error: string) => void;
   bucket?: 'private' | 'public';
+  businessType: 'training' | 'inspection' | 'system_policy'; // 业务类型（必需）
   category?: string;
   accept?: string;
   maxSize?: number; // 字节
@@ -32,6 +33,7 @@ export function PresignedUploader({
   onUploadSuccess,
   onUploadError,
   bucket = 'public',
+  businessType,
   category,
   accept,
   maxSize = 5 * 1024 * 1024 * 1024, // 默认 5GB
@@ -43,6 +45,7 @@ export function PresignedUploader({
   // 使用统一的上传 Hook
   const { upload, state, isUploading } = useMinioUpload({
     bucket,
+    businessType,
     category,
     maxSize,
     onSuccess: (result) => {

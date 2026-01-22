@@ -4,6 +4,7 @@ import { useHazardData } from './_hooks/useHazardData';
 import { useHazardWorkflow } from './_hooks/useHazardWorkflow';
 import { OverviewDashboard } from './_components/views/OverviewDashboard';
 import { HazardDataTable } from './_components/views/HazardDataTable';
+import { FilterBar } from './_components/FilterBar';
 import { WorkflowConfig } from './_components/views/WorkflowConfig';
 import { StatsAnalysis } from './_components/views/StatsAnalysis';
 import { SystemLogView } from './_components/views/SystemLogView';
@@ -33,7 +34,8 @@ export default function HiddenDangerPage({
   const [selectedHazard, setSelectedHazard] = useState<HazardRecord | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showBatchUploadModal, setShowBatchUploadModal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<HazardRecord | null>(null);
+  const [voidReason, setVoidReason] = useState<string>('');
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [workflowConfig, setWorkflowConfig] = useState<any>(null);
@@ -48,7 +50,9 @@ export default function HiddenDangerPage({
     config, 
     workflowRules,
     loading,
-    totalCount // 🟢 Destructure totalCount
+    totalCount, // 🟢 Destructure totalCount
+    filters,
+    setFilters
   } = useHazardData(user, initialViewMode);
 
   // 处理 URL 参数中的 hazardId，自动打开详情弹窗
@@ -231,23 +235,41 @@ export default function HiddenDangerPage({
     }
   };
 
-  // 删除隐患
-  const handleDelete = async (id: string) => {
-    setShowDeleteConfirm(id);
+  // 删除隐患（根据状态决定软删除或硬删除）
+  const handleDelete = async (hazard: HazardRecord) => {
+    setShowDeleteConfirm(hazard);
+    setVoidReason(''); // 重置作废原因
   };
 
   const confirmDelete = async () => {
     if (!showDeleteConfirm) return;
     
+    const isVoided = showDeleteConfirm.isVoided;
+    
+    // 如果是未作废的隐患，验证作废原因
+    if (!isVoided && (!voidReason || voidReason.trim() === '')) {
+      toast.error('请填写作废原因');
+      return;
+    }
+    
     try {
-      await hazardService.deleteHazard(showDeleteConfirm);
+      if (isVoided) {
+        // 已作废的隐患 → 硬删除（彻底删除）
+        await hazardService.destroyHazard(showDeleteConfirm.id);
+        toast.success('隐患已彻底删除');
+      } else {
+        // 未作废的隐患 → 软删除（作废）
+        await hazardService.voidHazard(showDeleteConfirm.id, voidReason);
+        toast.success('隐患已作废');
+      }
+      
       setShowDeleteConfirm(null);
+      setVoidReason('');
       setSelectedHazard(null); // 关闭详情弹窗
       await refresh(); // 等待刷新完成
-      toast.success('删除成功');
     } catch (error) {
-      console.error('删除失败:', error);
-      toast.error('删除失败，请重试');
+      console.error(isVoided ? '彻底删除失败:' : '作废失败:', error);
+      toast.error(isVoided ? '彻底删除失败，请重试' : '作废失败，请重试');
     }
   };
 
@@ -266,18 +288,29 @@ export default function HiddenDangerPage({
         )}
         
         {(viewMode === 'all_list' || viewMode === 'my_tasks') && (
-          <HazardDataTable 
-            hazards={paginatedHazards}
-            total={totalCount || filteredHazards.length}
-            page={page}
-            pageSize={pageSize}
-            onPageChange={setPage}
-            onSelect={setSelectedHazard} 
-            onDelete={handleDelete}
-            loading={loading}
-            viewMode={viewMode}
-            user={user}
-          />
+          <div className="space-y-4">
+            {/* 筛选栏 */}
+            <FilterBar 
+              filters={filters}
+              onFilterChange={setFilters}
+              config={config}
+              departments={departments}
+            />
+            
+            {/* 数据表格 */}
+            <HazardDataTable 
+              hazards={paginatedHazards}
+              total={totalCount || filteredHazards.length}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onSelect={setSelectedHazard} 
+              onDelete={handleDelete}
+              loading={loading}
+              viewMode={viewMode}
+              user={user}
+            />
+          </div>
         )}
 
         {viewMode === 'stats' && (
@@ -336,26 +369,81 @@ export default function HiddenDangerPage({
         />
       )}
 
-      {/* 删除确认弹窗 */}
+      {/* 删除确认弹窗（作废 or 彻底删除） */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-bold mb-4">确认删除</h3>
-            <p className="text-slate-600 mb-6">确定要删除这条隐患记录吗？此操作无法撤销。</p>
-            <div className="flex gap-3 justify-end">
-              <button 
-                onClick={() => setShowDeleteConfirm(null)}
-                className="px-4 py-2 border rounded-lg hover:bg-slate-50"
-              >
-                取消
-              </button>
-              <button 
-                onClick={confirmDelete}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-              >
-                确认删除
-              </button>
-            </div>
+            {showDeleteConfirm.isVoided ? (
+              // 已作废的隐患 → 彻底删除确认
+              <>
+                <h3 className="text-lg font-bold mb-4 text-red-600">⚠️ 彻底删除隐患</h3>
+                <p className="text-slate-600 mb-4">
+                  您确定要彻底删除该隐患吗？
+                </p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                  <p className="text-sm text-red-800">
+                    <strong>警告：</strong>此操作将永久删除该隐患记录，包括所有相关数据和历史记录。此操作不可恢复！
+                  </p>
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <button 
+                    onClick={() => {
+                      setShowDeleteConfirm(null);
+                      setVoidReason('');
+                    }}
+                    className="px-4 py-2 border rounded-lg hover:bg-slate-50"
+                  >
+                    取消
+                  </button>
+                  <button 
+                    onClick={confirmDelete}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    确认彻底删除
+                  </button>
+                </div>
+              </>
+            ) : (
+              // 未作废的隐患 → 作废确认
+              <>
+                <h3 className="text-lg font-bold mb-4">作废隐患</h3>
+                <p className="text-slate-600 mb-4">
+                  作废后的隐患记录将保留在系统中，管理员可以查看"已作废"的隐患。
+                </p>
+                
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    作废原因 <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={voidReason}
+                    onChange={(e) => setVoidReason(e.target.value)}
+                    placeholder="请输入作废原因，如：录入错误、重复上报等"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                    rows={3}
+                    autoFocus
+                  />
+                </div>
+                
+                <div className="flex gap-3 justify-end">
+                  <button 
+                    onClick={() => {
+                      setShowDeleteConfirm(null);
+                      setVoidReason('');
+                    }}
+                    className="px-4 py-2 border rounded-lg hover:bg-slate-50"
+                  >
+                    取消
+                  </button>
+                  <button 
+                    onClick={confirmDelete}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                  >
+                    确认作废
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

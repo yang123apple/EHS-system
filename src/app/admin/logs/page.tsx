@@ -35,6 +35,8 @@ interface SystemLog {
   details: string | null;
   ip: string | null;
   createdAt: string;
+  snapshot?: string | null; // JSON字符串，包含操作前的数据快照
+  diff?: string | null; // JSON字符串，包含数据变更详情
 }
 
 interface LogStats {
@@ -793,7 +795,20 @@ export default function LogsPage() {
                               {log.targetType || '-'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {log.targetId || '-'}
+                              {(() => {
+                                // 尝试从snapshot中提取code字段用于列表显示
+                                try {
+                                  if (log.snapshot) {
+                                    const snapshot = JSON.parse(log.snapshot);
+                                    if (snapshot.code) {
+                                      return <span className="font-mono text-blue-600">{snapshot.code}</span>;
+                                    }
+                                  }
+                                } catch (e) {
+                                  // JSON解析失败，回退到显示targetId
+                                }
+                                return log.targetId || '-';
+                              })()}
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-500">
                               {log.details ? (
@@ -974,11 +989,32 @@ export default function LogsPage() {
                       </div>
                     )}
                     {selectedDetailsLog.targetId && (
-                      <div>
+                      <div className="col-span-2">
                         <label className="text-xs font-medium text-gray-500">目标ID</label>
                         <div className="mt-1 text-sm text-gray-900 font-mono">
                           {selectedDetailsLog.targetId}
                         </div>
+                        {/* 尝试从snapshot中提取code字段 */}
+                        {(() => {
+                          try {
+                            if (selectedDetailsLog.snapshot) {
+                              const snapshot = JSON.parse(selectedDetailsLog.snapshot);
+                              if (snapshot.code) {
+                                return (
+                                  <div className="mt-2">
+                                    <label className="text-xs font-medium text-gray-500">编号</label>
+                                    <div className="mt-1 text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg inline-block font-mono">
+                                      {snapshot.code}
+                                    </div>
+                                  </div>
+                                );
+                              }
+                            }
+                          } catch (e) {
+                            // JSON解析失败，忽略
+                          }
+                          return null;
+                        })()}
                       </div>
                     )}
                     <div>

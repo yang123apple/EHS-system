@@ -5,7 +5,19 @@ import { HazardRecord } from '@/types/hidden-danger';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 
-// Prisma 类型定义
+// Prisma 类型定义 - 包含关联数据
+type PrismaHazardWithRelations = Prisma.HazardRecordGetPayload<{
+  include: {
+    reporter: true;
+    responsible: {
+      include: {
+        department: true;
+      };
+    };
+  };
+}>;
+
+// 基础类型（不包含关联数据）
 type PrismaHazardRecord = Prisma.HazardRecordGetPayload<{}>;
 import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
 import { setEndOfDay, extractDatePart, normalizeDate } from '@/utils/dateUtils';
@@ -107,7 +119,7 @@ async function generateHazardCode(): Promise<string> {
 }
 
 // 转换 Prisma HazardRecord 到前端 HazardRecord 类型
-async function mapHazard(pHazard: PrismaHazardRecord): Promise<HazardRecord> {
+async function mapHazard(pHazard: PrismaHazardWithRelations | PrismaHazardRecord): Promise<HazardRecord> {
   try {
     // ✅ 修复问题9：使用统一的 safeJsonParse 替代直接 JSON.parse
     const parseJsonField = (field: string | null): string[] => {
@@ -159,11 +171,15 @@ async function mapHazard(pHazard: PrismaHazardRecord): Promise<HazardRecord> {
       type: pHazard.type,
       location: pHazard.location,
       desc: pHazard.desc,
+      checkType: (pHazard as any).checkType ?? undefined,
+      rectificationType: (pHazard as any).rectificationType ?? undefined,
       reporterId: pHazard.reporterId,
       reporterName: pHazard.reporterName,
       responsibleId: pHazard.responsibleId ?? undefined,
       responsibleName: pHazard.responsibleName ?? undefined,
-      responsibleDept: pHazard.responsibleDept ?? undefined,
+      // ✅ 优先从关联的User.department获取部门名称，回退到responsibleDept字段
+      responsibleDept: ('responsible' in pHazard && pHazard.responsible?.department?.name) ?? pHazard.responsibleDept ?? undefined,
+      responsibleDeptName: ('responsible' in pHazard && pHazard.responsible?.department?.name) ?? pHazard.responsibleDept ?? undefined,
       verifierId: pHazard.verifierId ?? undefined,
       verifierName: pHazard.verifierName ?? undefined,
       rectifyDesc: pHazard.rectifyDesc ?? undefined,
@@ -192,6 +208,11 @@ async function mapHazard(pHazard: PrismaHazardRecord): Promise<HazardRecord> {
       emergencyPlanSubmitTime: normalizeDate(pHazard.emergencyPlanSubmitTime) ?? undefined,
       createdAt: normalizeDate(pHazard.createdAt) ?? new Date().toISOString(),
       updatedAt: normalizeDate(pHazard.updatedAt) ?? new Date().toISOString(),
+      // 🟢 软删除字段
+      isVoided: (pHazard as any).isVoided ?? false,
+      voidReason: (pHazard as any).voidReason ?? undefined,
+      voidedAt: normalizeDate((pHazard as any).voidedAt) ?? undefined,
+      voidedBy: (pHazard as any).voidedBy ?? undefined,
       // 延期记录通过独立的 API 获取，这里不包含
       extensions: undefined,
     } as HazardRecord;
@@ -236,6 +257,9 @@ export const GET = withErrorHandling(
     const risk = searchParams.get('risk');
     const userId = searchParams.get('userId');
     const viewMode = searchParams.get('viewMode');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const responsibleDept = searchParams.get('responsibleDept'); // ✅ 添加责任部门筛选参数
 
     // ✅ 修复问题6：使用数据库聚合查询替代全表扫描
     if (type === 'stats') {
@@ -298,6 +322,36 @@ export const GET = withErrorHandling(
     if (area) where.location = area;
     if (status) where.status = status;
     if (risk) where.riskLevel = risk;
+    
+    // ✅ 责任部门筛选：通过关联的用户部门ID筛选
+    if (responsibleDept) {
+      where.responsible = {
+        departmentId: responsibleDept
+      };
+    }
+    
+    // 日期范围筛选：上报时间在startDate和endDate之间
+    if (startDate || endDate) {
+      where.reportTime = {};
+      if (startDate) {
+        // startDate已经是00:00:00
+        where.reportTime.gte = new Date(startDate);
+      }
+      if (endDate) {
+        // endDate已经是23:59:59.999
+        where.reportTime.lte = new Date(endDate);
+      }
+    }
+
+    // 🟢 软删除过滤：根据用户角色决定是否显示已作废数据
+    if (isAdmin) {
+      // 管理员：显示所有数据（包括已作废的），不添加过滤条件
+      console.log('[Hazard GET] 管理员模式：显示所有隐患（包括已作废）');
+    } else {
+      // 普通用户：只显示未作废的数据
+      where.isVoided = false;
+      console.log('[Hazard GET] 普通用户模式：只显示未作废的隐患');
+    }
 
     // 非管理员用户：添加权限过滤条件
     if (!isAdmin) {
@@ -348,41 +402,45 @@ export const GET = withErrorHandling(
     }
 
     // Handle 'My Tasks' logic server-side
-    // 注意：在"我的任务"模式下，权限过滤已经在上面处理了，这里只需要进一步细化查询条件
+    // 🟢 优化："我的任务"模式只显示当前用户需要操作的隐患
     if (viewMode === 'my_tasks' && userId) {
       // 确保使用当前登录用户的ID，而不是请求参数中的userId（防止IDOR）
       const actualUserId = user.id;
       
       // 🟢 使用关联表查询，提升性能和准确性
-      // 查询条件：上报人、责任人、验收人、抄送人、当前执行人、候选处理人
-      const ccHazards = await prisma.hazardCC.findMany({
-        where: { userId: actualUserId },
-        select: { hazardId: true }
-      });
-      const ccHazardIds = ccHazards.map(h => h.hazardId);
-
+      // 查询未操作的候选处理人相关的隐患（或签/会签模式下等待该用户操作）
       const candidateHazards = await prisma.hazardCandidateHandler.findMany({
         where: {
           userId: actualUserId,
-          hasOperated: false // 只查询未操作的候选处理人
+          hasOperated: false // ✅ 只查询未操作的候选处理人
         },
         select: { hazardId: true }
       });
       const candidateHazardIds = candidateHazards.map(h => h.hazardId);
 
-      // 合并所有相关的隐患ID
-      const allRelatedHazardIds = [
-        ...ccHazardIds,
-        ...candidateHazardIds
-      ];
-
       // 构建"我的任务"的特定查询条件
+      // ✅ 只包含当前用户需要操作的隐患：
+      // 1. responsibleId = 当前用户（责任人需要整改）
+      // 2. verifierId = 当前用户（验收人需要验收）
+      // 3. dopersonal_ID = 当前用户（当前执行人需要操作）
+      // 4. 候选处理人列表中包含当前用户且未操作（或签/会签模式）
       const myTasksConditions: Prisma.HazardRecordWhereInput[] = [
-        { reporterId: actualUserId },
-        { responsibleId: actualUserId },
-        { verifierId: actualUserId },
-        { dopersonal_ID: actualUserId },
-        ...(allRelatedHazardIds.length > 0 ? [{ id: { in: allRelatedHazardIds } }] : [])
+        { 
+          responsibleId: actualUserId,
+          status: { in: ['reported', 'rectifying'] } // 只显示需要整改的状态
+        },
+        { 
+          verifierId: actualUserId,
+          status: { in: ['rectified', 'accepted'] } // 只显示需要验收的状态
+        },
+        { 
+          dopersonal_ID: actualUserId,
+          status: { not: 'closed' } // 当前执行人且未关闭
+        },
+        ...(candidateHazardIds.length > 0 ? [{ 
+          id: { in: candidateHazardIds },
+          status: { not: 'closed' } // 候选人且未关闭
+        }] : [])
       ];
 
       // 与现有权限条件合并
@@ -396,6 +454,12 @@ export const GET = withErrorHandling(
       } else {
         where.OR = myTasksConditions;
       }
+      
+      console.log('[Hazard GET] 我的任务模式筛选条件:', {
+        userId: actualUserId,
+        candidateHazardsCount: candidateHazardIds.length,
+        conditionsCount: myTasksConditions.length
+      });
     }
 
     if (isPaginated) {
@@ -406,7 +470,14 @@ export const GET = withErrorHandling(
             skip,
             take: limit,
             orderBy: { createdAt: 'desc' },
-            include: { reporter: true, responsible: true }
+            include: { 
+              reporter: true, 
+              responsible: {
+                include: {
+                  department: true
+                }
+              }
+            }
           }),
           prisma.hazardRecord.count({ where })
         ]);
@@ -523,7 +594,14 @@ export const GET = withErrorHandling(
       const data = await prisma.hazardRecord.findMany({
         where, // ✅ 修复问题7：应用权限过滤条件
         orderBy: { createdAt: 'desc' },
-        include: { reporter: true, responsible: true }
+        include: { 
+          reporter: true, 
+          responsible: {
+            include: {
+              department: true
+            }
+          }
+        }
       });
       
       // ✅ 修复问题7：在返回数据前再次进行权限校验
@@ -612,6 +690,15 @@ export const POST = withErrorHandling(
       ...validData
     } = body;
 
+    // 🔐 构造初始日志记录（上报操作）
+    const initialLog = {
+      operatorId: user.id,
+      operatorName: user.name,
+      action: '上报隐患',
+      time: new Date().toISOString(),
+      changes: `创建隐患记录 - 类型: ${validData.type}, 位置: ${validData.location}, 风险等级: ${validData.riskLevel}`
+    };
+
     // 处理数组字段：转换为 JSON 字符串
     // 处理日期字段：转换为 Date 对象
     const processedData: any = {
@@ -619,7 +706,9 @@ export const POST = withErrorHandling(
       photos: photosInput ? (Array.isArray(photosInput) ? JSON.stringify(photosInput) : photosInput) : null,
       ccDepts: ccDeptsInput ? (Array.isArray(ccDeptsInput) ? JSON.stringify(ccDeptsInput) : ccDeptsInput) : null,
       ccUsers: ccUsersInput ? (Array.isArray(ccUsersInput) ? JSON.stringify(ccUsersInput) : ccUsersInput) : null,
-      logs: logsInput ? (Array.isArray(logsInput) ? JSON.stringify(logsInput) : logsInput) : null,
+      logs: logsInput && Array.isArray(logsInput) && logsInput.length > 0 
+        ? JSON.stringify([initialLog, ...logsInput])  // 如果有传入日志，添加初始日志到前面
+        : JSON.stringify([initialLog]),  // 否则只包含初始日志
       old_personal_ID: oldPersonalIdInput ? (Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput) : null,
     };
 
@@ -653,12 +742,27 @@ export const POST = withErrorHandling(
         data: processedData
       });
 
-      // 记录操作日志
+      // 记录操作日志 - 保存完整的隐患信息快照
       await logApiOperation(user, 'hidden_danger', 'report', {
-        hazardId: res.id,
-        type: res.type,
-        location: res.location,
-        riskLevel: res.riskLevel
+        hazardId: res.code || res.id,           // 保留向后兼容
+        code: res.code,                          // 隐患编号
+        id: res.id,                              // 数据库主键
+        type: res.type,                          // 隐患类型
+        location: res.location,                  // 位置
+        riskLevel: res.riskLevel,                // 风险等级
+        desc: res.desc,                          // 描述
+        checkType: res.checkType,                // 检查类型
+        rectificationType: res.rectificationType, // 整改类型
+        reporterId: res.reporterId,              // 上报人ID
+        reporterName: res.reporterName,          // 上报人姓名
+        reportTime: res.reportTime,              // 上报时间
+        responsibleId: res.responsibleId,        // 责任人ID
+        responsibleName: res.responsibleName,    // 责任人姓名
+        responsibleDept: res.responsibleDept,    // 责任部门
+        deadline: res.deadline,                  // 整改期限
+        rectifyRequirement: res.rectifyRequirement, // 整改要求
+        requireEmergencyPlan: res.requireEmergencyPlan, // 是否需要应急预案
+        status: res.status                       // 状态
       });
 
       return NextResponse.json(await mapHazard(res));
@@ -677,15 +781,32 @@ export const POST = withErrorHandling(
 
 export const PATCH = withErrorHandling(
   withAuth(async (request: NextRequest, context, user) => {
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch (parseError) {
+      console.error('[Hazard PATCH] JSON解析失败:', parseError);
+      throw new Error('请求体JSON格式错误');
+    }
+
+    console.log('[Hazard PATCH] 收到请求:', {
+      id: body.id,
+      action: body.actionName,
+      hasNotifications: !!body.notifications,
+      notificationCount: body.notifications?.length,
+      hasDispatchResult: !!body.dispatchResult,
+      candidateHandlersCount: body.dispatchResult?.candidateHandlers?.length
+    });
+
     const {
       id,
       operatorId,
       operatorName,
       actionName,
-      // 过滤掉 Prisma schema 中不存在的字段（但保留 currentStepIndex 和 currentStepId）
-      dopersonal_ID,
-      dopersonal_Name,
+      // 🔴 关键修复：过滤掉不应该更新到 HazardRecord 的字段
+      notifications, // ❌ 通知数据（单独处理）
+      dispatchResult, // ❌ 派发结果（单独处理）
+      // 过滤掉 Prisma schema 中不存在的字段
       responsibleDeptId,
       responsibleDeptName,
       isExtensionRequested,
@@ -705,18 +826,42 @@ export const PATCH = withErrorHandling(
       verifyDesc,
       verifyPhotos,
       rootCause,
+      // ✅ 关键修复：显式提取 dopersonal_ID 和 dopersonal_Name 并立即转换类型
+      dopersonal_ID: dopersonal_ID_raw,
+      dopersonal_Name: dopersonal_Name_raw,
       ...updates
     } = body;
+
+    // ✅ 立即进行类型转换，确保类型安全
+    if (dopersonal_ID_raw !== undefined) {
+      updates.dopersonal_ID = dopersonal_ID_raw === null 
+        ? null 
+        : String(dopersonal_ID_raw);
+    }
+    if (dopersonal_Name_raw !== undefined) {
+      updates.dopersonal_Name = dopersonal_Name_raw === null 
+        ? null 
+        : String(dopersonal_Name_raw);
+    }
 
     // 🔒 使用事务保护，避免并发覆盖
     let oldRecord: any = null; // 用于事务外访问
     const res = await prisma.$transaction(async (tx) => {
-      // 1. 在事务中重新读取当前状态（避免并发覆盖）
-      oldRecord = await tx.hazardRecord.findUnique({ where: { id } });
+      try {
+        // 1. 在事务中重新读取当前状态（避免并发覆盖）
+        oldRecord = await tx.hazardRecord.findUnique({ where: { id } });
 
-      if (!oldRecord) {
-        throw new Error('隐患记录不存在');
-      }
+        if (!oldRecord) {
+          console.error('[Hazard PATCH] 隐患记录不存在:', id);
+          throw new Error('隐患记录不存在');
+        }
+
+        console.log('[Hazard PATCH] 事务开始，当前记录状态:', {
+          id: oldRecord.id,
+          status: oldRecord.status,
+          currentStepIndex: oldRecord.currentStepIndex,
+          dopersonal_ID: oldRecord.dopersonal_ID
+        });
 
       // 2. 并发一致性校验：检查关键字段是否被其他操作修改
       if (updates.status !== undefined && oldRecord.status !== updates.status) {
@@ -736,15 +881,11 @@ export const PATCH = withErrorHandling(
       }
 
       // 校验 dopersonal_ID 一致性（如果传入且当前状态需要执行人）
-      if (dopersonal_ID !== undefined && oldRecord.dopersonal_ID && oldRecord.dopersonal_ID !== dopersonal_ID) {
+      if (updates.dopersonal_ID !== undefined && oldRecord.dopersonal_ID && oldRecord.dopersonal_ID !== updates.dopersonal_ID) {
         // 如果当前执行人已被其他操作修改，且不是预期的更新，则拒绝
         // 注意：这里允许更新为新的执行人（正常流转），但不允许覆盖已变更的执行人
-        if (updates.dopersonal_ID === oldRecord.dopersonal_ID) {
-          // 如果传入的dopersonal_ID与数据库中的一致，说明没有并发冲突
-        } else {
-          console.warn(`[并发检测] dopersonal_ID 不一致: 数据库=${oldRecord.dopersonal_ID}, 传入=${dopersonal_ID}`);
-          // 不直接拒绝，因为可能是正常的流转更新
-        }
+        console.warn(`[并发检测] dopersonal_ID 不一致: 数据库=${oldRecord.dopersonal_ID}, 传入=${updates.dopersonal_ID}`);
+        // 不直接拒绝，因为可能是正常的流转更新
       }
 
       // 构造日志
@@ -774,13 +915,7 @@ export const PATCH = withErrorHandling(
         logs: JSON.stringify(updatedLogs)
       };
 
-      // 🔴 关键修复：确保 dopersonal_ID 和 dopersonal_Name 被保存
-      if (dopersonal_ID !== undefined) {
-        finalUpdates.dopersonal_ID = dopersonal_ID;
-      }
-      if (dopersonal_Name !== undefined) {
-        finalUpdates.dopersonal_Name = dopersonal_Name;
-      }
+      // ✅ dopersonal_ID 和 dopersonal_Name 已在解构时转换，这里不需要再次处理
 
       // 处理数组字段
       if (photosInput !== undefined) {
@@ -825,119 +960,175 @@ export const PATCH = withErrorHandling(
         finalUpdates.deadline = setEndOfDay(extractDatePart(finalUpdates.deadline));
       }
 
-      // 3. 在同一事务中更新隐患记录
-      const updatedRecord = await tx.hazardRecord.update({
-        where: { id },
-        data: finalUpdates
-      });
-
-      // 🟢 4. 在同一事务中更新候选处理人关联表（如果提供了派发结果）
-      if (body.dispatchResult?.candidateHandlers && Array.isArray(body.dispatchResult.candidateHandlers)) {
-        const stepIndex = finalUpdates.currentStepIndex ?? oldRecord.currentStepIndex ?? 0;
-        const stepId = finalUpdates.currentStepId ?? oldRecord.currentStepId ?? undefined;
-        
-        // 删除该步骤的旧记录
-        await tx.hazardCandidateHandler.deleteMany({
-          where: {
-            hazardId: id,
-            stepIndex
-          }
+        // 3. 在同一事务中更新隐患记录
+        console.log('[Hazard PATCH] 准备更新记录，字段数量:', Object.keys(finalUpdates).length);
+        const updatedRecord = await tx.hazardRecord.update({
+          where: { id },
+          data: finalUpdates
         });
+        console.log('[Hazard PATCH] 记录更新成功');
 
-        // 创建新的候选处理人记录
-        if (body.dispatchResult.candidateHandlers.length > 0) {
-          await tx.hazardCandidateHandler.createMany({
-            data: body.dispatchResult.candidateHandlers.map((ch: any) => ({
-              hazardId: id,
-              userId: ch.userId,
-              userName: ch.userName,
-              stepIndex,
-              stepId: stepId || null,
-              hasOperated: false
-            }))
+        // 🟢 4. 在同一事务中更新候选处理人关联表（如果提供了派发结果）
+        if (body.dispatchResult?.candidateHandlers && Array.isArray(body.dispatchResult.candidateHandlers)) {
+          console.log('[Hazard PATCH] 开始更新候选处理人关联表:', {
+            count: body.dispatchResult.candidateHandlers.length,
+            handlers: body.dispatchResult.candidateHandlers
           });
-        }
-      }
 
-      // 🟢 5. 在同一事务中更新候选处理人操作状态（如果用户执行了操作）
-      if (operatorId && (actionName === '提交整改' || actionName === '验收通过' || actionName === '驳回')) {
-        const stepIndex = finalUpdates.currentStepIndex ?? oldRecord.currentStepIndex ?? 0;
-        const approvalMode = finalUpdates.approvalMode ?? oldRecord.approvalMode;
-        
-        if (approvalMode && (approvalMode === 'OR' || approvalMode === 'AND')) {
-          // 更新操作状态
-          await tx.hazardCandidateHandler.updateMany({
+          const stepIndex = finalUpdates.currentStepIndex ?? oldRecord.currentStepIndex ?? 0;
+          const stepId = finalUpdates.currentStepId ?? oldRecord.currentStepId ?? undefined;
+          
+          // 删除该步骤的旧记录
+          await tx.hazardCandidateHandler.deleteMany({
             where: {
               hazardId: id,
-              userId: operatorId,
               stepIndex
-            },
-            data: {
-              hasOperated: true,
-              operatedAt: new Date(),
-              opinion: actionName === '驳回' ? rejectReason || null : null
             }
           });
-        }
-      }
+          console.log('[Hazard PATCH] 已删除旧的候选处理人记录');
 
-      // 🟢 6. 在同一事务中更新抄送用户关联表（如果提供了抄送用户）
-      if (ccUsersInput && Array.isArray(ccUsersInput) && ccUsersInput.length > 0) {
-        // 删除旧的抄送记录
-        await tx.hazardCC.deleteMany({
-          where: { hazardId: id }
-        });
-
-        // 获取用户信息
-        const users = await tx.user.findMany({
-          where: { id: { in: ccUsersInput } },
-          select: { id: true, name: true }
-        });
-        const userMap = new Map(users.map(u => [u.id, u.name]));
-
-        // 创建新的抄送记录
-        await tx.hazardCC.createMany({
-          data: ccUsersInput.map((userId: string) => ({
-            hazardId: id,
-            userId,
-            userName: userMap.get(userId) || null
-          }))
-        });
-      }
-
-      // 7. 在同一事务中创建通知（如果提供了通知数据）
-      if (body.notifications && Array.isArray(body.notifications) && body.notifications.length > 0) {
-        const notifications = body.notifications;
-        
-        // 验证每个通知都有必要字段
-        const invalidNotification = notifications.find(
-          (n: any) => !n.userId || !n.type || !n.title || !n.content
-        );
-
-        if (invalidNotification) {
-          throw new Error('通知数据缺少必要字段');
+          // 创建新的候选处理人记录
+          if (body.dispatchResult.candidateHandlers.length > 0) {
+            await tx.hazardCandidateHandler.createMany({
+              data: body.dispatchResult.candidateHandlers.map((ch: any) => ({
+                hazardId: id,
+                userId: ch.userId,
+                userName: ch.userName,
+                stepIndex,
+                stepId: stepId || null,
+                hasOperated: false
+              }))
+            });
+            console.log('[Hazard PATCH] 已创建新的候选处理人记录');
+          }
         }
 
-        // 批量创建通知（在同一事务中）
-        await Promise.all(notifications.map(async (n: any) => {
-          await tx.notification.create({
-            data: {
+        // 🟢 5. 在同一事务中更新候选处理人操作状态（如果用户执行了操作）
+        if (operatorId && (actionName === '提交整改' || actionName === '验收通过' || actionName === '驳回')) {
+          const stepIndex = finalUpdates.currentStepIndex ?? oldRecord.currentStepIndex ?? 0;
+          const approvalMode = finalUpdates.approvalMode ?? oldRecord.approvalMode;
+          
+          console.log('[Hazard PATCH] 检查是否需要更新候选人操作状态:', {
+            operatorId,
+            actionName,
+            stepIndex,
+            approvalMode
+          });
+
+          if (approvalMode && (approvalMode === 'OR' || approvalMode === 'AND')) {
+            // 更新操作状态
+            const updateResult = await tx.hazardCandidateHandler.updateMany({
+              where: {
+                hazardId: id,
+                userId: operatorId,
+                stepIndex
+              },
+              data: {
+                hasOperated: true,
+                operatedAt: new Date(),
+                opinion: actionName === '驳回' ? rejectReason || null : null
+              }
+            });
+            console.log('[Hazard PATCH] 已更新候选人操作状态，影响行数:', updateResult.count);
+          }
+        }
+
+        // 🟢 6. 在同一事务中更新抄送用户关联表（如果提供了抄送用户）
+        if (ccUsersInput && Array.isArray(ccUsersInput) && ccUsersInput.length > 0) {
+          console.log('[Hazard PATCH] 开始更新抄送用户关联表:', {
+            count: ccUsersInput.length,
+            userIds: ccUsersInput
+          });
+
+          // 删除旧的抄送记录
+          await tx.hazardCC.deleteMany({
+            where: { hazardId: id }
+          });
+          console.log('[Hazard PATCH] 已删除旧的抄送记录');
+
+          // 获取用户信息
+          const users = await tx.user.findMany({
+            where: { id: { in: ccUsersInput } },
+            select: { id: true, name: true }
+          });
+          const userMap = new Map(users.map(u => [u.id, u.name]));
+          console.log('[Hazard PATCH] 已获取用户信息，找到:', users.length, '个用户');
+
+          // 创建新的抄送记录
+          await tx.hazardCC.createMany({
+            data: ccUsersInput.map((userId: string) => ({
+              hazardId: id,
+              userId,
+              userName: userMap.get(userId) || null
+            }))
+          });
+          console.log('[Hazard PATCH] 已创建新的抄送记录');
+        }
+
+        // 7. 在同一事务中创建通知（如果提供了通知数据）
+        if (body.notifications && Array.isArray(body.notifications) && body.notifications.length > 0) {
+          const notifications = body.notifications;
+          
+          console.log('[Hazard PATCH] 开始创建通知:', {
+            count: notifications.length,
+            notifications: notifications.map((n: any) => ({
               userId: n.userId,
               type: n.type,
               title: n.title,
-              content: n.content,
-              relatedType: n.relatedType || 'hazard',
-              relatedId: n.relatedId || id,
-              isRead: false,
-            }
+              hasContent: !!n.content
+            }))
           });
-        }));
 
-        console.log(`✅ [事务] 已创建 ${notifications.length} 条通知（事务内）`);
+          // 验证每个通知都有必要字段
+          const invalidNotification = notifications.find(
+            (n: any) => !n.userId || !n.type || !n.title || !n.content
+          );
+
+          if (invalidNotification) {
+            console.error('[Hazard PATCH] 通知数据验证失败:', invalidNotification);
+            throw new Error(`通知数据缺少必要字段: ${JSON.stringify(invalidNotification)}`);
+          }
+
+          // 批量创建通知（在同一事务中）
+          await Promise.all(notifications.map(async (n: any, index: number) => {
+            try {
+              await tx.notification.create({
+                data: {
+                  userId: n.userId,
+                  type: n.type,
+                  title: n.title,
+                  content: n.content,
+                  relatedType: n.relatedType || 'hazard',
+                  relatedId: n.relatedId || id,
+                  isRead: false,
+                }
+              });
+              console.log(`[Hazard PATCH] 通知 ${index + 1}/${notifications.length} 创建成功`);
+            } catch (notifError) {
+              console.error(`[Hazard PATCH] 通知 ${index + 1} 创建失败:`, notifError);
+              throw notifError;
+            }
+          }));
+
+          console.log(`✅ [事务] 已创建 ${notifications.length} 条通知（事务内）`);
+        }
+
+        console.log('[Hazard PATCH] 事务即将提交');
+        return updatedRecord;
+      } catch (txError) {
+        console.error('[Hazard PATCH] 事务执行失败:', {
+          error: txError,
+          message: txError instanceof Error ? txError.message : String(txError),
+          stack: txError instanceof Error ? txError.stack : undefined
+        });
+        throw txError;
       }
-
-      return updatedRecord;
+    }).catch(txError => {
+      console.error('[Hazard PATCH] 事务回滚:', txError);
+      throw txError;
     });
+
+    console.log('[Hazard PATCH] 事务提交成功');
 
     // 🔐 处理电子签名：如果是验收通过操作且提供了签名数据，创建签名记录
     // 判断条件：1. actionName 是验收相关 2. 状态变为 closed 且提供了签名 3. 提供了签名数据
@@ -984,9 +1175,11 @@ export const PATCH = withErrorHandling(
     // 生成变更描述（用于日志记录）
     const changeDesc = generateChanges(oldRecord as HazardRecord, updates);
 
-    // 记录操作日志
+    // 记录操作日志 - 同时保存编号和数据库ID
     await logApiOperation(user, 'hidden_danger', actionName || 'update', {
-      hazardId: id,
+      hazardId: res.code || id,  // 保留向后兼容
+      code: res.code,            // 隐患编号
+      id: res.id || id,          // 数据库主键
       action: actionName,
       changes: changeDesc || updates.extensionReason || '无关键字段变更'
     });
@@ -1007,14 +1200,16 @@ export const DELETE = withErrorHandling(
     // 获取隐患信息用于日志
     const hazard = await prisma.hazardRecord.findUnique({
       where: { id },
-      select: { type: true, location: true }
+      select: { code: true, type: true, location: true }
     });
 
     await prisma.hazardRecord.delete({ where: { id } });
 
-    // 记录操作日志
+    // 记录操作日志 - 同时保存编号和数据库ID
     await logApiOperation(user, 'hidden_danger', 'delete', {
-      hazardId: id,
+      hazardId: hazard?.code || id, // 保留向后兼容
+      code: hazard?.code,           // 隐患编号
+      id: id,                       // 数据库主键
       type: hazard?.type,
       location: hazard?.location
     });

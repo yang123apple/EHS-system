@@ -15,6 +15,11 @@ export const hazardService = {
         if (filters.risk) params.risk = filters.risk;
         if (filters.viewMode) params.viewMode = filters.viewMode;
         if (filters.userId) params.userId = filters.userId;
+        // ✅ 添加时间筛选参数
+        if (filters.startDate) params.startDate = filters.startDate;
+        if (filters.endDate) params.endDate = filters.endDate;
+        // ✅ 添加责任部门筛选参数
+        if (filters.responsibleDept) params.responsibleDept = filters.responsibleDept;
     }
 
     return api.get('/api/hazards', params);
@@ -36,7 +41,18 @@ export const hazardService = {
     return api.post('/api/hazards', payload);
   },
 
-  async deleteHazard(id: string) {
-    return api.delete('/api/hazards', { id });
+  // 软删除（作废）- 默认操作
+  async voidHazard(id: string, reason: string) {
+    return api.post('/api/hazards/void', { hazardId: id, reason });
+  },
+
+  // 硬删除（永久删除）- 仅管理员特殊情况使用
+  async destroyHazard(id: string) {
+    return api.delete('/api/hazards/destroy', { id });
+  },
+
+  // 保留旧方法名作为别名，默认执行软删除
+  async deleteHazard(id: string, reason: string = '管理员作废') {
+    return this.voidHazard(id, reason);
   }
 };

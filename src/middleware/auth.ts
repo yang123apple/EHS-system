@@ -289,8 +289,8 @@ export async function logApiOperation(
     
     const actionLabel = actionLabelMap[action.toLowerCase()] || action;
     
-    // 从 details 中提取 targetId
-    const targetId = details?.fullNum || details?.documentId || details?.permitId || details?.targetId || '';
+    // 从 details 中提取 targetId（支持多种字段名）
+    const targetId = details?.hazardId || details?.fullNum || details?.documentId || details?.permitId || details?.targetId || '';
     
     // 提取 details 字段，组装描述
     const targetLabel = details?.fileName || details?.name || details?.targetLabel || '';

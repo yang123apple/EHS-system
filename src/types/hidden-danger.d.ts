@@ -35,6 +35,8 @@ export interface HazardRecord {
   location: string;
   desc: string;
   photos: string[];
+  checkType?: string; // 检查类型：daily, special, monthly, pre-holiday, self, other
+  rectificationType?: string; // 整改方式：immediate, scheduled
   reporterId: string;
   reporterName: string;
   reportTime: string;
@@ -78,6 +80,11 @@ export interface HazardRecord {
   ccUsers?: string[];
   ccUserNames?: string[]; // 抄送用户名称列表
   rejectReason?: string; // 驳回原因
+  // 🟢 软删除字段
+  isVoided?: boolean; // 是否已作废
+  voidReason?: string; // 作废原因
+  voidedAt?: string; // 作废时间（ISO 8601字符串）
+  voidedBy?: string; // 作废操作人信息（JSON格式：{id, name, role}）
   // 关联关系
   extensions?: HazardExtension[]; // 延期记录
 }
@@ -102,6 +109,7 @@ export interface EmergencyPlanRule {
 export interface HazardConfig {
   types: string[];
   areas: string[];
+  checkTypes?: string[]; // 检查类型配置（可选，向下兼容）
 }
 
 // 隐患整改延期历史记录

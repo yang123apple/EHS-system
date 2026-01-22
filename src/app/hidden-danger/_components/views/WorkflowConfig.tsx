@@ -15,11 +15,23 @@ interface Props {
   planRules?: any[];
 }
 
+// 检查类型数据结构
+interface CheckType {
+  id: string;
+  name: string;
+  value: string;
+  description?: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
 export function WorkflowConfig({ config, allUsers, departments, onRefresh }: Props) {
   const [basicConfig, setBasicConfig] = useState<HazardConfig>({
     types: [],
-    areas: []
+    areas: [],
+    checkTypes: []
   });
+  const [checkTypes, setCheckTypes] = useState<CheckType[]>([]);
   const [workflowConfig, setWorkflowConfig] = useState<HazardWorkflowConfig>({
     steps: [],
     version: 1,
@@ -32,6 +44,7 @@ export function WorkflowConfig({ config, allUsers, departments, onRefresh }: Pro
   useEffect(() => {
     loadWorkflowConfig();
     loadBasicConfig();
+    loadCheckTypes();
   }, [config]);
 
   const loadBasicConfig = async () => {
@@ -43,6 +56,18 @@ export function WorkflowConfig({ config, allUsers, departments, onRefresh }: Pro
       }
     } catch (error) {
       console.error('加载基础配置失败:', error);
+    }
+  };
+
+  const loadCheckTypes = async () => {
+    try {
+      const response = await apiFetch('/api/check-types');
+      if (response.ok) {
+        const data = await response.json();
+        setCheckTypes(data);
+      }
+    } catch (error) {
+      console.error('加载检查类型失败:', error);
     }
   };
 
@@ -188,6 +213,68 @@ export function WorkflowConfig({ config, allUsers, departments, onRefresh }: Pro
     }
   };
 
+  const addCheckType = async () => {
+    const name = prompt('请输入检查类型名称（如：日常检查）：');
+    if (!name || !name.trim()) return;
+
+    const value = prompt('请输入检查类型值（英文，如：daily）：');
+    if (!value || !value.trim()) return;
+
+    const description = prompt('请输入描述（可选）：');
+
+    setIsSaving(true);
+    try {
+      const response = await apiFetch('/api/check-types', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          value: value.trim(),
+          description: description?.trim() || '',
+          sortOrder: checkTypes.length + 1,
+          isActive: true,
+        }),
+      });
+
+      if (response.ok) {
+        alert('检查类型添加成功！');
+        await loadCheckTypes();
+      } else {
+        const error = await response.json();
+        alert(`添加失败: ${error.error || '未知错误'}`);
+      }
+    } catch (error) {
+      console.error('添加检查类型失败:', error);
+      alert('添加失败，请检查网络连接');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const removeCheckType = async (checkType: CheckType) => {
+    if (!confirm(`确定删除检查类型"${checkType.name}"吗？`)) return;
+
+    setIsSaving(true);
+    try {
+      const response = await apiFetch(`/api/check-types?id=${checkType.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        alert('检查类型删除成功！');
+        await loadCheckTypes();
+      } else {
+        const error = await response.json();
+        alert(`删除失败: ${error.error || '未知错误'}`);
+      }
+    } catch (error) {
+      console.error('删除检查类型失败:', error);
+      alert('删除失败，请检查网络连接');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // 验证工作流配置
   const validateWorkflowConfig = (config: HazardWorkflowConfig): string | null => {
     if (!config.steps || config.steps.length < 2) {
@@ -270,7 +357,7 @@ export function WorkflowConfig({ config, allUsers, departments, onRefresh }: Pro
 
         <div className="p-6">
           {/* 隐患类型主区域 */}
-          <div className="space-y-3">
+          <div className="space-y-3 mb-8">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Tags size={18} className="text-slate-400" />
@@ -309,6 +396,55 @@ export function WorkflowConfig({ config, allUsers, departments, onRefresh }: Pro
                 <div className="w-full flex flex-col items-center justify-center py-8 text-slate-400">
                   <Tags size={32} className="opacity-20 mb-2" />
                   <p className="text-sm">暂无分类</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 检查类型配置区域 */}
+          <div className="space-y-3 pt-6 border-t border-slate-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Settings2 size={18} className="text-purple-500" />
+                <label className="text-base font-bold text-slate-700">检查类型</label>
+                <span className="bg-purple-100 text-purple-600 text-xs px-2 py-1 rounded font-medium">
+                  {checkTypes.length} 项
+                </span>
+              </div>
+              <button
+                onClick={addCheckType}
+                disabled={isSaving}
+                className="text-sm font-bold px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+              >
+                <Plus size={16} /> 添加
+              </button>
+            </div>
+
+            {/* 检查类型标签容器 */}
+            <div className="flex flex-wrap gap-3 min-h-[100px] p-4 bg-purple-50/30 rounded-lg border border-dashed border-purple-200">
+              {checkTypes.map((checkType) => (
+                <div 
+                  key={checkType.id} 
+                  className="group flex items-center gap-2 bg-white px-4 py-2.5 rounded-lg border border-purple-100 hover:border-red-200 hover:bg-red-50 transition-all"
+                  title={checkType.description || checkType.value}
+                >
+                  <div className="w-2 h-2 rounded-full bg-purple-400 group-hover:bg-red-400 transition-colors" />
+                  <span className="text-sm text-slate-700 font-medium">{checkType.name}</span>
+                  <span className="text-xs text-slate-400 font-mono">({checkType.value})</span>
+                  <button
+                    onClick={() => removeCheckType(checkType)}
+                    disabled={isSaving}
+                    className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 disabled:cursor-not-allowed transition-opacity"
+                  >
+                    <X size={16} strokeWidth={2.5} />
+                  </button>
+                </div>
+              ))}
+              
+              {checkTypes.length === 0 && (
+                <div className="w-full flex flex-col items-center justify-center py-8 text-slate-400">
+                  <Settings2 size={32} className="opacity-20 mb-2" />
+                  <p className="text-sm">暂无检查类型</p>
                 </div>
               )}
             </div>

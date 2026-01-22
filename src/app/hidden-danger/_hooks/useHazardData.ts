@@ -19,7 +19,7 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const [totalCount, setTotalCount] = useState(0); // Track total count
-  const [filters, setFilters] = useState({ type: '', area: '', status: '', risk: '' });
+  const [filters, setFilters] = useState({ type: '', startDate: '', endDate: '', status: '', risk: '', responsibleDept: '', search: '' });
 
   const fetchData = async (pageNum = 1, currentFilters = filters) => {
     // 如果用户未登录，直接返回，避免发起请求
@@ -179,7 +179,7 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
       fetchData(page, filters);
   }, [page, filters, currentViewMode, user]); // Added user dependency
 
-  // Client-side post-filtering for permissions
+  // Client-side post-filtering for permissions and search
   // 'My Tasks' logic is now handled by Server.
   // We still keep 'canViewHazard' as a safety check on the client.
   const filteredHazards = useMemo(() => {
@@ -194,9 +194,38 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
       if (!canViewHazard(h, user)) {
         return false;
       }
+      
+      // 🟢 全局搜索过滤：按顺序匹配多个字段
+      if (filters.search && filters.search.trim()) {
+        const searchLower = filters.search.toLowerCase().trim();
+        const searchFields = [
+          h.code,                      // 隐患编号
+          h.location,                  // 位置
+          h.desc,                      // 描述
+          h.type,                      // 类型
+          h.responsibleName,           // 责任人姓名
+          h.responsibleDept,           // 责任部门
+          h.reporterName,              // 上报人姓名
+          h.verifierName,              // 验收人姓名
+          h.riskLevel,                 // 风险等级
+          h.status,                    // 状态
+          h.rectifyDesc,               // 整改描述
+          h.verifyDesc,                // 验收描述
+        ].filter(Boolean); // 过滤掉 null/undefined
+        
+        // 检查是否有任何字段包含搜索关键词
+        const matches = searchFields.some(field => 
+          field?.toLowerCase().includes(searchLower)
+        );
+        
+        if (!matches) {
+          return false;
+        }
+      }
+      
       return true;
     });
-  }, [hazards, user]);
+  }, [hazards, user, filters.search]);
 
   // paginatedHazards was slicing the filtered list.
   // Now `hazards` is already a slice (from server).

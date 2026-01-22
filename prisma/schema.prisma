@@ -141,6 +141,8 @@ model HazardRecord {
   code                    String?   @unique
   status                  String    @default("reported")
   riskLevel               String    @default("low")
+  checkType               String    @default("daily") // 检查类型：daily, special, monthly, pre-holiday, self, other
+  rectificationType       String    @default("scheduled") // 整改方式：immediate, scheduled
   type                    String
   location                String
   desc                    String
@@ -178,6 +180,13 @@ model HazardRecord {
   approvalMode            String? // 🟢 当前步骤的审批模式（OR=或签，AND=会签）
   currentStepIndex        Int?      @default(0) // 当前步骤索引（用于追踪工作流位置）
   currentStepId           String? // 当前步骤ID（用于追踪工作流位置）
+  
+  // 🟢 软删除字段（用于审计和恢复）
+  isVoided                Boolean   @default(false) // 是否已作废
+  voidReason              String? // 作废原因
+  voidedAt                DateTime? // 作废时间
+  voidedBy                String? // 作废操作人信息（JSON格式：{id, name, role}）
+  
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
@@ -186,6 +195,10 @@ model HazardRecord {
   extensions HazardExtension[]
   candidateHandlersRel HazardCandidateHandler[] // 🟢 或签/会签候选处理人关联表
   ccUsersRel HazardCC[] // 🟢 抄送用户关联表
+  
+  // 🟢 索引优化
+  @@index([isVoided])
+  @@index([voidedAt])
 }
 
 // 隐患整改延期历史记录
@@ -784,6 +797,21 @@ model ArchiveConfig {
   value     String // JSON 格式存储
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// 检查类型配置表
+model CheckType {
+  id          String   @id @default(cuid())
+  name        String // 显示名称，如："日常检查"
+  value       String   @unique // 值，如："daily"
+  description String? // 描述
+  sortOrder   Int      @default(0) // 排序
+  isActive    Boolean  @default(true) // 是否启用
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
 }
 
 // ============ 注意事项 ============

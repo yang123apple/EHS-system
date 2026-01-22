@@ -229,15 +229,18 @@ class MinioStorageService {
   /**
    * 解析数据库记录
    * 
-   * 支持两种格式：
-   * 1. "bucket:key" (推荐)
-   * 2. 旧格式兼容: "/uploads/..." -> 转换为 public bucket
+   * 支持多种格式：
+   * 1. "bucket:key" (推荐) - 显式指定 bucket
+   * 2. "hazard/..." 或 "hazards/..." -> private bucket（隐患照片）
+   * 3. "training/..." -> public bucket（培训资料）
+   * 4. "/uploads/..." -> public bucket（旧格式兼容）
+   * 5. 其他 -> public bucket（默认）
    * 
    * @param dbRecord 数据库记录
    * @returns 解析后的 bucket 和 objectName
    */
   private parseDbRecord(dbRecord: string): { bucket: 'private' | 'public'; objectName: string } {
-    // 格式1: "bucket:key"
+    // 格式1: "bucket:key" (显式指定 bucket)
     if (dbRecord.includes(':')) {
       const [bucket, ...keyParts] = dbRecord.split(':');
       if (bucket === 'private' || bucket === 'public') {
@@ -248,7 +251,15 @@ class MinioStorageService {
       }
     }
 
-    // 格式2: 旧格式兼容 "/uploads/..." -> public bucket
+    // 格式2: 隐患相关文件 -> private bucket
+    if (dbRecord.startsWith('hazard/') || dbRecord.startsWith('hazards/')) {
+      return {
+        bucket: 'private',
+        objectName: dbRecord,
+      };
+    }
+
+    // 格式3: 旧格式兼容 "/uploads/..." -> public bucket
     if (dbRecord.startsWith('/uploads/')) {
       return {
         bucket: 'public',
@@ -256,9 +267,17 @@ class MinioStorageService {
       };
     }
 
+    // 格式4: 培训资料 -> public bucket
+    if (dbRecord.startsWith('training/')) {
+      return {
+        bucket: 'public',
+        objectName: dbRecord,
+      };
+    }
+
     // 默认：假设是 public bucket 的 key
     return {
-      bucket: 'public',
+        bucket: 'public',
       objectName: dbRecord,
     };
   }
@@ -325,4 +344,3 @@ export const minioStorageService = MinioStorageService.getInstance();
 
 // 导出类（用于类型定义）
 export { MinioStorageService };
-

@@ -15,6 +15,7 @@ export default function UploadPage() {
   // MinIO 上传 Hook
   const { upload, state: uploadState, isUploading } = useMinioUpload({
     bucket: 'public',
+    businessType: 'training', // 培训材料使用 training 业务类型
     prefix: 'training-materials',
     maxSize: 500 * 1024 * 1024, // 500MB
     onProgress: (progress) => {

@@ -405,10 +405,86 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
                       {selectedDetailsLog.targetType || '-'}
                     </div>
                   </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500">目标ID</label>
-                    <div className="mt-1 text-sm text-slate-900 font-mono">
-                      {selectedDetailsLog.targetId || '-'}
+                  <div className="col-span-2">
+                    <label className="text-xs font-medium text-slate-500">目标信息</label>
+                    <div className="mt-1 space-y-2">
+                      {(() => {
+                        try {
+                          // 从多个来源提取 code 和 id
+                          let code = null;
+                          let id = null;
+                          
+                          // 1. 从 snapshot 中提取信息（优先级最高，因为最完整）
+                          if (selectedDetailsLog.snapshot && typeof selectedDetailsLog.snapshot === 'object') {
+                            const snapshot = selectedDetailsLog.snapshot;
+                            
+                            // 提取 code
+                            if (snapshot.code) {
+                              code = snapshot.code;
+                            } else if (snapshot.hazardId && snapshot.hazardId.startsWith('Hazard')) {
+                              // 如果 hazardId 是编号格式（Hazard开头）
+                              code = snapshot.hazardId;
+                            }
+                            
+                            // 提取 id
+                            if (snapshot.id) {
+                              id = snapshot.id;
+                            } else if (snapshot.hazardId && snapshot.hazardId.startsWith('cm')) {
+                              // 如果 hazardId 是数据库ID格式（cm开头）
+                              id = snapshot.hazardId;
+                            }
+                          }
+                          
+                          // 2. 从 targetId 中补充信息（如果 snapshot 没有）
+                          if (selectedDetailsLog.targetId) {
+                            if (selectedDetailsLog.targetId.startsWith('Hazard')) {
+                              // targetId 是编号格式
+                              code = code || selectedDetailsLog.targetId;
+                            } else if (selectedDetailsLog.targetId.startsWith('cm')) {
+                              // targetId 是数据库ID格式
+                              id = id || selectedDetailsLog.targetId;
+                            }
+                          }
+                          
+                          // 构建显示内容
+                          const hasData = code || id;
+                          
+                          return (
+                            <div className="space-y-1">
+                              {/* 编号行 */}
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 w-16">编号:</span>
+                                {code ? (
+                                  <span className="text-sm font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded font-mono">
+                                    {code}
+                                  </span>
+                                ) : (
+                                  <span className="text-sm text-slate-400">-</span>
+                                )}
+                              </div>
+                              {/* ID行 */}
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 w-16">数据库ID:</span>
+                                {id ? (
+                                  <span className="text-xs text-slate-600 font-mono bg-slate-50 px-2 py-0.5 rounded">
+                                    {id}
+                                  </span>
+                                ) : (
+                                  <span className="text-sm text-slate-400">-</span>
+                                )}
+                              </div>
+                              {!hasData && (
+                                <div className="text-sm text-slate-400 italic">
+                                  无目标信息
+                                </div>
+                              )}
+                            </div>
+                          );
+                        } catch (e) {
+                          console.error('解析目标信息失败:', e);
+                          return <span className="text-sm text-red-500">解析失败</span>;
+                        }
+                      })()}
                     </div>
                   </div>
                   <div>
@@ -417,6 +493,27 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
                       {selectedDetailsLog.userName || 'System'}
                     </div>
                   </div>
+                  {/* 编号字段 - 从snapshot中解析 */}
+                  {(() => {
+                    try {
+                      if (selectedDetailsLog.snapshot && typeof selectedDetailsLog.snapshot === 'object') {
+                        const snapshot = selectedDetailsLog.snapshot;
+                        if (snapshot.code) {
+                          return (
+                            <div className="col-span-2">
+                              <label className="text-xs font-medium text-slate-500">编号</label>
+                              <div className="mt-1 text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg inline-block font-mono">
+                                {snapshot.code}
+                              </div>
+                            </div>
+                          );
+                        }
+                      }
+                    } catch (e) {
+                      console.error('解析snapshot失败:', e);
+                    }
+                    return null;
+                  })()}
                 </div>
 
                 {/* 详情描述 */}
@@ -476,6 +573,18 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
                     {selectedSnapshot.operatedAt && (
                       <div className="text-sm text-blue-700 mt-1">
                         <strong>操作时间：</strong>{formatTime(selectedSnapshot.operatedAt)}
+                      </div>
+                    )}
+                    {selectedSnapshot.code && (
+                      <div className="text-sm text-blue-700 mt-1">
+                        <strong>编号：</strong>
+                        <span className="font-mono font-bold ml-1">{selectedSnapshot.code}</span>
+                      </div>
+                    )}
+                    {selectedSnapshot.id && (
+                      <div className="text-sm text-blue-700 mt-1">
+                        <strong>数据库ID：</strong>
+                        <span className="font-mono text-xs ml-1">{selectedSnapshot.id}</span>
                       </div>
                     )}
                   </div>

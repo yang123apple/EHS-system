@@ -7,6 +7,7 @@ import { useState, useCallback, useRef } from 'react';
 
 export interface MinioUploadOptions {
   bucket: 'private' | 'public';
+  businessType: 'training' | 'inspection' | 'system_policy'; // 业务类型（必需）
   prefix?: string;
   category?: string;
   maxSize?: number; // 字节
@@ -38,6 +39,7 @@ interface PresignedUrlResponse {
 export function useMinioUpload(options: MinioUploadOptions) {
   const {
     bucket,
+    businessType,
     prefix,
     category,
     maxSize = 100 * 1024 * 1024, // 默认 100MB
@@ -62,11 +64,10 @@ export function useMinioUpload(options: MinioUploadOptions) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          bucket,
+          businessType,
           filename: file.name,
           contentType: file.type || 'application/octet-stream',
           size: file.size,
-          prefix,
           category,
         }),
       });
@@ -84,7 +85,7 @@ export function useMinioUpload(options: MinioUploadOptions) {
         dbRecord: data.dbRecord,
       };
     },
-    [bucket, prefix, category]
+    [businessType, category]
   );
 
   /**
