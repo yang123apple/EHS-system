@@ -1,0 +1,89 @@
+{
+  "timestamp": "2026-01-23T16:06:13.011Z",
+  "config": {
+    "TEST_ROUNDS": 10,
+    "CONCURRENT_USERS": 50,
+    "PAGE_SIZE": 20,
+    "DETAIL_SAMPLES": 100
+  },
+  "results": [
+    {
+      "scenario": "普通用户-我的任务",
+      "minTime": 276,
+      "maxTime": 1994,
+      "avgTime": 454.6,
+      "p50Time": 284,
+      "p95Time": 1994,
+      "p99Time": 1994,
+      "totalRequests": 10,
+      "successCount": 10,
+      "errorCount": 0,
+      "qps": 2.1997360316761987
+    },
+    {
+      "scenario": "管理员-我的任务(优化后)",
+      "minTime": 109,
+      "maxTime": 112,
+      "avgTime": 110.8,
+      "p50Time": 111,
+      "p95Time": 112,
+      "p99Time": 112,
+      "totalRequests": 10,
+      "successCount": 10,
+      "errorCount": 0,
+      "qps": 9.025270758122744
+    },
+    {
+      "scenario": "分页查询",
+      "minTime": 239,
+      "maxTime": 287,
+      "avgTime": 256,
+      "p50Time": 253,
+      "p95Time": 287,
+      "p99Time": 287,
+      "totalRequests": 6,
+      "successCount": 6,
+      "errorCount": 0,
+      "qps": 3.90625
+    },
+    {
+      "scenario": "详情查询",
+      "minTime": 0,
+      "maxTime": 2,
+      "avgTime": 0.32,
+      "p50Time": 0,
+      "p95Time": 1,
+      "p99Time": 1,
+      "totalRequests": 100,
+      "successCount": 100,
+      "errorCount": 0,
+      "qps": 3125
+    },
+    {
+      "scenario": "搜索查询",
+      "minTime": 243,
+      "maxTime": 805,
+      "avgTime": 266.36,
+      "p50Time": 250,
+      "p95Time": 314,
+      "p99Time": 805,
+      "totalRequests": 50,
+      "successCount": 50,
+      "errorCount": 0,
+      "qps": 3.7543174650848474
+    },
+    {
+      "scenario": "并发访问",
+      "minTime": 5027,
+      "maxTime": 25154,
+      "avgTime": 15119.16,
+      "p50Time": 15123,
+      "p95Time": 25154,
+      "p99Time": 25154,
+      "totalRequests": 50,
+      "successCount": 50,
+      "errorCount": 0,
+      "qps": 1.9877554265723147
+    }
+  ]
+}

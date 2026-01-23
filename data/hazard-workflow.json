@@ -31,9 +31,19 @@
       "name": "开始整改",
       "description": "指派整改责任人，默认为管理员",
       "handlerStrategy": {
-        "type": "reporter_manager",
+        "type": "fixed",
         "description": "默认：管理员角色",
-        "approvalMode": "OR"
+        "approvalMode": "OR",
+        "fixedUsers": [
+          {
+            "userId": "77010550",
+            "userName": "孙斌"
+          },
+          {
+            "userId": "33641446",
+            "userName": "杨光"
+          }
+        ]
       },
       "ccRules": [
         {

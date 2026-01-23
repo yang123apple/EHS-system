@@ -195,6 +195,7 @@ model HazardRecord {
   extensions HazardExtension[]
   candidateHandlersRel HazardCandidateHandler[] // 🟢 或签/会签候选处理人关联表
   ccUsersRel HazardCC[] // 🟢 抄送用户关联表
+  visibilityRecords HazardVisibility[] // 🚀 可见性记录（Row-Level Security）
   
   // 🟢 索引优化
   @@index([isVoided])
@@ -261,6 +262,26 @@ model HazardCC {
   @@index([hazardId])
   @@index([userId])
   @@index([hazardId, userId]) // 复合索引：查询某隐患的抄送用户
+}
+
+// 🚀 隐患可见性表（Row-Level Security 性能优化方案）
+// 用途：扁平化权限关系，将"谁可以看到哪些隐患"预计算并存储，避免复杂的 JOIN 查询
+// 适用场景：百万级数据量下，实现高性能的"我的隐患"查询
+model HazardVisibility {
+  id        String       @id @default(cuid())
+  hazardId  String       // 隐患ID
+  hazard    HazardRecord @relation(fields: [hazardId], references: [id], onDelete: Cascade)
+  userId    String       // 可见用户ID
+  role      String       // 用户在该隐患中的角色：creator, executor, cc, responsible, verifier, candidate
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  // 🔥 性能关键索引（P0修复：调整索引顺序）
+  @@unique([userId, hazardId, role]) // ✅ 修复：userId在前，匹配查询模式
+  @@index([userId, hazardId]) // 🚀 核心索引：查询某用户可见的所有隐患（覆盖索引）
+  @@index([hazardId]) // 查询某隐患的所有可见用户
+  @@index([role]) // 按角色筛选
+  @@index([userId, role]) // 查询某用户以某角色可见的隐患
 }
 
 model HazardConfig {

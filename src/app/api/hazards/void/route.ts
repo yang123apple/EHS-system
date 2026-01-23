@@ -79,6 +79,14 @@ export const POST = withErrorHandling(
         voidedAt: new Date(),
         voidedBy: voidedByInfo,
         logs: JSON.stringify([voidLog, ...currentLogs])
+      },
+      select: {
+        id: true,
+        code: true,
+        isVoided: true,
+        voidReason: true,
+        voidedAt: true,
+        voidedBy: true
       }
     });
 

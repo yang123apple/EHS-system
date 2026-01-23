@@ -23,6 +23,12 @@ export function canViewHazard(hazard: HazardRecord, user: any): boolean {
   // 整改责任人可以查看（保留，用于历史查看）
   if (hazard.responsibleId === user.id) return true;
   
+  // 🟢 候选处理人可以查看（或签/会签模式）
+  if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0) {
+    const isCandidate = hazard.candidateHandlers.some(h => h.userId === user.id);
+    if (isCandidate) return true;
+  }
+  
   // 抄送人员可以查看
   if (hazard.ccUsers?.includes(user.id)) return true;
   

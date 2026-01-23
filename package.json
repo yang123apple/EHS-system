@@ -5,6 +5,10 @@
   "scripts": {
     "predev": "node scripts/start-minio-cross-platform.js",
     "dev": "next dev -H 0.0.0.0",
+    "init:visibility": "tsx scripts/init-hazard-visibility.ts",
+    "stress-test:generate": "tsx scripts/stress-test-generate-data.ts",
+    "stress-test:performance": "tsx scripts/stress-test-performance.ts",
+    "stress-test:all": "npm run stress-test:generate && npm run stress-test:performance",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -89,6 +93,7 @@
     "supertest": "^6.3.4",
     "tailwindcss": "^4.1.17",
     "ts-jest": "^29.1.2",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

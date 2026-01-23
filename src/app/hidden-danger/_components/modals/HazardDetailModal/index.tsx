@@ -106,7 +106,7 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
           </div>
           <div className="flex items-center gap-1 lg:gap-2 shrink-0">
             {hasDeletePermission && (
-              <button onClick={() => onDelete(hazard.id)} className="text-red-500 p-1.5 lg:p-2 hover:bg-red-50 rounded-lg transition-colors">
+              <button onClick={() => onDelete(hazard)} className="text-red-500 p-1.5 lg:p-2 hover:bg-red-50 rounded-lg transition-colors">
                 <Trash2 size={16} className="lg:w-[18px] lg:h-[18px]"/>
               </button>
             )}
@@ -296,23 +296,42 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
 
           {/* Right: Action Pane */}
           <div className="w-full lg:w-1/2 bg-slate-50/50 border-t lg:border-l border-slate-200 p-4 lg:p-6 overflow-y-auto space-y-4 lg:space-y-6">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex justify-between items-center font-bold text-slate-800">
                 <span className="text-base lg:text-lg">流程处理</span>
                 <StatusBadge status={hazard.status} />
               </div>
+              
+              {/* 当前审批人圆角方框 - 始终显示 */}
               {(hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) ? (
-                <div className="text-sm text-slate-600">
-                  当前处理人（{hazard.approvalMode === 'AND' ? '会签' : '或签'}）：
-                  <span className="font-bold text-blue-600">
-                    {hazard.candidateHandlers.map((h: any) => h.userName).join('、')}
-                  </span>
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl px-4 py-2.5 shadow-sm">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-slate-600 font-medium">当前审批人（{hazard.approvalMode === 'AND' ? '会签' : '或签'}）：</span>
+                    <span className="font-bold text-blue-700">
+                      {hazard.candidateHandlers.map((h: any) => h.userName).join('、')}
+                    </span>
+                  </div>
                 </div>
               ) : hazard.dopersonal_Name ? (
-                <div className="text-sm text-slate-600">
-                  当前处理人：<span className="font-bold text-blue-600">{hazard.dopersonal_Name}</span>
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl px-4 py-2.5 shadow-sm">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-slate-600 font-medium">当前审批人：</span>
+                    <span className="font-bold text-blue-700">{hazard.dopersonal_Name}</span>
+                  </div>
                 </div>
-              ) : null}
+              ) : (
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-xl px-4 py-2.5 shadow-sm">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-slate-600 font-medium">当前审批人：</span>
+                    <span className="font-medium text-amber-700">
+                      {hazard.status === 'reported' ? '系统正在自动指派中...' : 
+                       hazard.status === 'closed' ? '流程已关闭' :
+                       hazard.isVoided ? '隐患已作废' :
+                       '暂无处理人信息'}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 🟢 已作废隐患：禁用所有业务操作 */}

@@ -18,6 +18,7 @@ import { matchHandler } from '@/app/hidden-danger/_utils/handler-matcher';
 import { matchAllCCRules } from '@/app/hidden-danger/_utils/cc-matcher';
 import type { Department } from '@/utils/departmentUtils';
 import { HazardNotificationService, NotificationData } from './hazardNotification.service';
+import { syncHazardVisibility } from './hazardVisibility.service';
 
 /**
  * 派发动作类型
@@ -58,6 +59,7 @@ export interface DispatchResult {
     stepIndex: number;
     stepId: string;
   }>;
+  shouldSyncVisibility?: boolean; // 🚀 标记是否需要同步可见性
   error?: string;
 }
 
@@ -187,6 +189,10 @@ export class HazardDispatchEngine {
         newStatus: transition.newStatus
       });
 
+      // 8. 🚀 同步可见性记录（在返回结果前异步执行，不影响主流程）
+      // 注意：这里只是标记需要同步，实际同步由API层在事务中完成
+      // 避免在派发引擎中执行数据库操作，保持职责单一
+      
       // 8. 返回派发结果（包含通知数据）
       return {
         success: true,
@@ -209,7 +215,9 @@ export class HazardDispatchEngine {
               stepIndex: transition.nextStepIndex,
               stepId: transition.nextStepId
             }))
-          : []
+          : [],
+        // 🚀 新增：标记需要同步可见性（由API层处理）
+        shouldSyncVisibility: true
       };
     } catch (error) {
       console.error('[派发引擎] 派发失败:', error);
@@ -581,6 +589,13 @@ export class HazardDispatchEngine {
     operator: { id: string; name: string },
     currentStepIndex: number
   ): Promise<string | null> {
+    // 🟢 特殊处理：隐患初始创建时跳过权限校验
+    // SUBMIT 动作是系统初始化操作，此时还没有候选处理人列表
+    if (action === DispatchAction.SUBMIT) {
+      console.log('[派发引擎] SUBMIT 动作，跳过权限校验（初始化操作）');
+      return null; // 直接通过校验
+    }
+
     // 1. 校验当前执行人（dopersonal_ID）
     if (action === DispatchAction.RECTIFY) {
       // 提交整改时，必须验证当前执行人是否匹配

@@ -161,8 +161,8 @@ export default function HiddenDangerPage({
   const handleReport = async (formData: any) => {
     try {
       // 🔒 编号由后端自动生成，确保唯一性（不再在前端生成）
-      // 1. 保存隐患基础数据（状态为 reported）
-      const newHazard = await hazardService.createHazard({
+      // 保存隐患基础数据并自动初始化工作流（后端会自动设置处理人）
+      await hazardService.createHazard({
         ...formData,
         // 不传入 code，由后端自动生成
         reporterId: user?.id,
@@ -172,9 +172,8 @@ export default function HiddenDangerPage({
         currentStepId: 'report',  // 初始化步骤ID
       });
 
-      // 2. 自动执行工作流步骤1（上报并指派）
-      // 步骤1的执行人强制为上报人，系统自动执行
-      await processAction('submit', newHazard, {}, user);
+      // ✅ 修复：删除多余的 processAction('submit') 调用
+      // 后端在创建隐患时已自动初始化工作流并设置处理人，前端无需再次调用
 
       setShowReportModal(false);
       refresh();
@@ -200,7 +199,8 @@ export default function HiddenDangerPage({
           const deadline = addDays(new Date(), item.deadlineDays || 7, true);
 
           // 🔒 创建隐患记录（编号由后端自动生成，确保唯一性）
-          const newHazard = await hazardService.createHazard({
+          // 后端会自动初始化工作流并设置处理人
+          await hazardService.createHazard({
             type: item.type,
             location: item.location,
             desc: item.desc,
@@ -214,8 +214,9 @@ export default function HiddenDangerPage({
             photos: [],
           });
 
-          // 自动执行工作流步骤1
-          await processAction('submit', newHazard, {}, user);
+          // ✅ 修复：删除多余的 processAction('submit') 调用
+          // 后端在创建隐患时已自动初始化工作流并设置处理人，前端无需再次调用
+
           successCount++;
         } catch (error) {
           console.error(`第 ${i + 1} 条上传失败:`, error);
@@ -246,6 +247,22 @@ export default function HiddenDangerPage({
     
     const isVoided = showDeleteConfirm.isVoided;
     
+    // ✅ 验证隐患ID是否存在
+    console.log('[删除隐患] 验证参数:', {
+      hazardId: showDeleteConfirm.id,
+      idType: typeof showDeleteConfirm.id,
+      idExists: !!showDeleteConfirm.id,
+      voidReason: voidReason,
+      reasonTrimmed: voidReason?.trim(),
+      isVoided: showDeleteConfirm.isVoided
+    });
+    
+    if (!showDeleteConfirm.id) {
+      console.error('[删除隐患] 隐患ID不存在，完整对象:', showDeleteConfirm);
+      toast.error('隐患ID不存在，无法执行删除操作');
+      return;
+    }
+    
     // 如果是未作废的隐患，验证作废原因
     if (!isVoided && (!voidReason || voidReason.trim() === '')) {
       toast.error('请填写作废原因');
@@ -255,11 +272,14 @@ export default function HiddenDangerPage({
     try {
       if (isVoided) {
         // 已作废的隐患 → 硬删除（彻底删除）
+        console.log('[删除隐患] 执行硬删除，隐患ID:', showDeleteConfirm.id);
         await hazardService.destroyHazard(showDeleteConfirm.id);
         toast.success('隐患已彻底删除');
       } else {
         // 未作废的隐患 → 软删除（作废）
-        await hazardService.voidHazard(showDeleteConfirm.id, voidReason);
+        const trimmedReason = voidReason.trim();
+        console.log('[删除隐患] 执行软删除，隐患ID:', showDeleteConfirm.id, '原因:', trimmedReason);
+        await hazardService.voidHazard(showDeleteConfirm.id, trimmedReason);
         toast.success('隐患已作废');
       }
       

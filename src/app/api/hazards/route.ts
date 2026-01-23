@@ -25,6 +25,7 @@ import { safeJsonParse, safeJsonParseArray } from '@/utils/jsonUtils';
 import { maskUserSensitiveFields } from '@/utils/dataMasking';
 import { logError, extractErrorContext } from '@/utils/errorLogger';
 import { canViewHazard } from '@/app/hidden-danger/_utils/permissions';
+import { syncHazardVisibility } from '@/services/hazardVisibility.service';
 
 // 辅助：生成变更描述
 const generateChanges = (oldData: HazardRecord, newData: Partial<HazardRecord>) => {
@@ -419,11 +420,8 @@ export const GET = withErrorHandling(
       const candidateHazardIds = candidateHazards.map(h => h.hazardId);
 
       // 构建"我的任务"的特定查询条件
-      // ✅ 只包含当前用户需要操作的隐患：
-      // 1. responsibleId = 当前用户（责任人需要整改）
-      // 2. verifierId = 当前用户（验收人需要验收）
-      // 3. dopersonal_ID = 当前用户（当前执行人需要操作）
-      // 4. 候选处理人列表中包含当前用户且未操作（或签/会签模式）
+      // ✅ 修复：不仅检查候选处理人表，也要检查 dopersonal_ID 字段
+      // 因为某些情况下可能只设置了 dopersonal_ID 而没有创建候选处理人记录
       const myTasksConditions: Prisma.HazardRecordWhereInput[] = [
         { 
           responsibleId: actualUserId,
@@ -435,13 +433,17 @@ export const GET = withErrorHandling(
         },
         { 
           dopersonal_ID: actualUserId,
-          status: { not: 'closed' } // 当前执行人且未关闭
-        },
-        ...(candidateHazardIds.length > 0 ? [{ 
+          status: { not: 'closed' } // ✅ 当前执行人且未关闭（这是最重要的条件）
+        }
+      ];
+
+      // 如果有候选处理人记录，也加入条件（或签/会签模式）
+      if (candidateHazardIds.length > 0) {
+        myTasksConditions.push({ 
           id: { in: candidateHazardIds },
           status: { not: 'closed' } // 候选人且未关闭
-        }] : [])
-      ];
+        });
+      }
 
       // 与现有权限条件合并
       if (where.OR) {
@@ -458,9 +460,13 @@ export const GET = withErrorHandling(
       console.log('[Hazard GET] 我的任务模式筛选条件:', {
         userId: actualUserId,
         candidateHazardsCount: candidateHazardIds.length,
-        conditionsCount: myTasksConditions.length
+        conditionsCount: myTasksConditions.length,
+        conditions: myTasksConditions.map(c => Object.keys(c))
       });
     }
+
+    // 🔍 诊断日志：输出完整的where条件
+    console.log('[Hazard GET - 诊断] 完整查询条件:', JSON.stringify(where, null, 2));
 
     if (isPaginated) {
       try {
@@ -482,11 +488,37 @@ export const GET = withErrorHandling(
           prisma.hazardRecord.count({ where })
         ]);
 
+        // 🔍 诊断日志：输出查询结果
+        console.log('[Hazard GET - 诊断] 数据库查询返回:', {
+          hazardsCount: hazards.length,
+          totalCount: total,
+          viewMode,
+          userId: viewMode === 'my_tasks' ? user.id : undefined,
+          sampleHazard: hazards[0] ? {
+            id: hazards[0].id,
+            code: hazards[0].code,
+            status: hazards[0].status,
+            dopersonal_ID: hazards[0].dopersonal_ID,
+            dopersonal_Name: hazards[0].dopersonal_Name,
+            responsibleId: hazards[0].responsibleId,
+            verifierId: hazards[0].verifierId
+          } : null
+        });
+
         // ✅ 修复问题7：在返回数据前再次进行权限校验（双重保障）
         const mappedHazards = await Promise.all(hazards.map(mapHazard));
         const filteredHazards = isAdmin 
           ? mappedHazards 
           : mappedHazards.filter(h => canViewHazard(h, user));
+
+        // 🔍 诊断日志：输出权限过滤结果
+        console.log('[Hazard GET - 诊断] 权限过滤后结果:', {
+          mappedCount: mappedHazards.length,
+          filteredCount: filteredHazards.length,
+          isAdmin,
+          userId: user.id,
+          droppedCount: mappedHazards.length - filteredHazards.length
+        });
 
         return NextResponse.json({
           data: filteredHazards,
@@ -738,9 +770,189 @@ export const POST = withErrorHandling(
     }
 
     try {
+      // 🔄 Step 1: 创建隐患记录
       const res = await prisma.hazardRecord.create({
         data: processedData
       });
+
+      console.log(`✅ [隐患创建] 隐患记录创建成功: ${res.code}`);
+
+      // 🔄 Step 2: 初始化工作流 - 加载工作流配置并调用派发引擎
+      try {
+        // 加载工作流配置（直接从文件读取）
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const WORKFLOW_FILE = path.join(process.cwd(), 'data', 'hazard-workflow.json');
+        
+        let workflowConfig: any = null;
+        try {
+          const data = await fs.readFile(WORKFLOW_FILE, 'utf-8');
+          workflowConfig = JSON.parse(data);
+        } catch (fileError) {
+          console.warn('⚠️ [隐患创建] 无法读取工作流配置文件:', fileError);
+        }
+        
+        if (!workflowConfig || !workflowConfig.steps || workflowConfig.steps.length === 0) {
+          console.warn('⚠️ [隐患创建] 未找到工作流配置，跳过初始化');
+        } else {
+          // 加载所有用户和部门数据
+          const [allUsers, departments] = await Promise.all([
+            prisma.user.findMany({
+              where: { isActive: true },
+              select: {
+                id: true,
+                name: true,
+                jobTitle: true,
+                departmentId: true  // ✅ 只查询 departmentId，不查询 department 关联对象
+              }
+            }),
+            prisma.department.findMany({
+              select: {
+                id: true,
+                name: true,
+                parentId: true,
+                level: true,
+                managerId: true
+              }
+            })
+          ]);
+
+          console.log('[隐患创建] 已加载用户和部门数据:', {
+            usersCount: allUsers.length,
+            departmentsCount: departments.length,
+            sampleUser: allUsers[0] ? {
+              id: allUsers[0].id,
+              name: allUsers[0].name,
+              departmentId: allUsers[0].departmentId
+            } : null
+          });
+
+          // 调用派发引擎初始化工作流（第一步：上报并指派）
+          const { HazardDispatchEngine, DispatchAction } = await import('@/services/hazardDispatchEngine');
+          
+          const dispatchResult = await HazardDispatchEngine.dispatch({
+            hazard: await mapHazard(res),
+            action: DispatchAction.SUBMIT,
+            operator: {
+              id: user.id,
+              name: user.name
+            },
+            workflowSteps: workflowConfig.steps,
+            allUsers: allUsers as any[],
+            departments: departments as any[],
+            currentStepIndex: 0 // 初始化为第一步
+          });
+
+          console.log(`🎯 [隐患创建] 工作流初始化结果:`, {
+            success: dispatchResult.success,
+            newStatus: dispatchResult.newStatus,
+            nextStepIndex: dispatchResult.nextStepIndex,
+            handlers: dispatchResult.handlers.userNames,
+            ccUsers: dispatchResult.ccUsers.userNames
+          });
+
+          if (dispatchResult.success) {
+            // 更新隐患记录的工作流字段
+            const workflowUpdates: any = {
+              status: dispatchResult.newStatus,
+              currentStepIndex: dispatchResult.nextStepIndex,
+              currentStepId: dispatchResult.currentStep,
+              dopersonal_ID: dispatchResult.handlers.userIds[0] || null,
+              dopersonal_Name: dispatchResult.handlers.userNames[0] || null,
+              // 更新日志
+              logs: JSON.stringify([
+                ...safeJsonParseArray(res.logs),
+                dispatchResult.log
+              ])
+            };
+
+            // 如果有审批模式，保存
+            const firstStep = workflowConfig.steps[dispatchResult.nextStepIndex || 0];
+            if (firstStep?.handlerStrategy?.approvalMode) {
+              workflowUpdates.approvalMode = firstStep.handlerStrategy.approvalMode;
+            }
+
+            // 如果有候选处理人，保存到 JSON 字段（同时会创建关联表记录）
+            if (dispatchResult.candidateHandlers && dispatchResult.candidateHandlers.length > 0) {
+              workflowUpdates.candidateHandlers = JSON.stringify(
+                dispatchResult.candidateHandlers.map(ch => ({
+                  userId: ch.userId,
+                  userName: ch.userName,
+                  hasOperated: false
+                }))
+              );
+            }
+
+            // 更新抄送用户（JSON 字段，同时会创建关联表记录）
+            if (dispatchResult.ccUsers.userIds.length > 0) {
+              workflowUpdates.ccUsers = JSON.stringify(dispatchResult.ccUsers.userIds);
+            }
+
+            // 在事务中更新隐患记录和创建关联表记录
+            await prisma.$transaction(async (tx) => {
+              // 更新隐患记录
+              await tx.hazardRecord.update({
+                where: { id: res.id },
+                data: workflowUpdates
+              });
+
+              // ✅ P1修复：在同一事务中同步可见性表
+              await syncHazardVisibility(res.id, tx);
+
+              // 创建候选处理人关联表记录
+              if (dispatchResult.candidateHandlers && dispatchResult.candidateHandlers.length > 0) {
+                await tx.hazardCandidateHandler.createMany({
+                  data: dispatchResult.candidateHandlers.map(ch => ({
+                    hazardId: res.id,
+                    userId: ch.userId,
+                    userName: ch.userName,
+                    stepIndex: ch.stepIndex,
+                    stepId: ch.stepId,
+                    hasOperated: false
+                  }))
+                });
+              }
+
+              // 创建抄送用户关联表记录
+              if (dispatchResult.ccUsers.userIds.length > 0) {
+                await tx.hazardCC.createMany({
+                  data: dispatchResult.ccUsers.userIds.map((userId, idx) => ({
+                    hazardId: res.id,
+                    userId,
+                    userName: dispatchResult.ccUsers.userNames[idx] || null
+                  }))
+                });
+              }
+
+              // 创建通知
+              if (dispatchResult.notifications && dispatchResult.notifications.length > 0) {
+                await tx.notification.createMany({
+                  data: dispatchResult.notifications.map(n => ({
+                    userId: n.userId,
+                    type: n.type,
+                    title: n.title,
+                    content: n.content,
+                    relatedType: n.relatedType || 'hazard',
+                    relatedId: n.relatedId || res.id,
+                    isRead: false
+                  }))
+                });
+              }
+            });
+
+            console.log(`✅ [隐患创建] 工作流初始化完成，已设置处理人: ${dispatchResult.handlers.userNames.join('、')}`);
+          } else {
+            console.error(`❌ [隐患创建] 工作流初始化失败:`, dispatchResult.error);
+          }
+        }
+      } catch (workflowError) {
+        console.error('❌ [隐患创建] 工作流初始化异常:', workflowError);
+        // 不影响隐患创建，继续返回
+      }
+
+      // 🚀 Step 3: 同步可见性表（✅ P1修复：在工作流初始化的事务中执行）
+      // 注意：这里不需要额外调用，因为工作流初始化已经在事务中处理了
+      // 如果需要额外同步，应该在工作流事务中调用
 
       // 记录操作日志 - 保存完整的隐患信息快照
       await logApiOperation(user, 'hidden_danger', 'report', {
@@ -765,7 +977,20 @@ export const POST = withErrorHandling(
         status: res.status                       // 状态
       });
 
-      return NextResponse.json(await mapHazard(res));
+      // 重新读取更新后的隐患记录（包含工作流字段）
+      const updatedHazard = await prisma.hazardRecord.findUnique({
+        where: { id: res.id },
+        include: {
+          reporter: true,
+          responsible: {
+            include: {
+              department: true
+            }
+          }
+        }
+      });
+
+      return NextResponse.json(await mapHazard(updatedHazard || res));
     } catch (error: any) {
       console.error('[Hazard POST] 创建隐患记录失败:', error);
       console.error('[Hazard POST] 错误详情:', {
@@ -1113,6 +1338,21 @@ export const PATCH = withErrorHandling(
           console.log(`✅ [事务] 已创建 ${notifications.length} 条通知（事务内）`);
         }
 
+        // ✅ P1修复：在同一事务中同步可见性表（如果需要）
+        // ✅ P2修复：检测关键字段变化，触发可见性同步
+        const needsVisibilitySync = 
+          finalUpdates.responsibleId !== undefined ||
+          finalUpdates.verifierId !== undefined ||
+          finalUpdates.dopersonal_ID !== undefined ||
+          finalUpdates.status !== undefined ||
+          ccUsersInput !== undefined ||
+          candidateHandlersInput !== undefined;
+
+        if (needsVisibilitySync) {
+          console.log('[Hazard PATCH] 检测到关键字段变化，同步可见性表');
+          await syncHazardVisibility(id, tx);
+        }
+
         console.log('[Hazard PATCH] 事务即将提交');
         return updatedRecord;
       } catch (txError) {
@@ -1129,6 +1369,8 @@ export const PATCH = withErrorHandling(
     });
 
     console.log('[Hazard PATCH] 事务提交成功');
+
+    // ✅ P1修复：可见性同步已在事务中完成，这里不再需要
 
     // 🔐 处理电子签名：如果是验收通过操作且提供了签名数据，创建签名记录
     // 判断条件：1. actionName 是验收相关 2. 状态变为 closed 且提供了签名 3. 提供了签名数据
