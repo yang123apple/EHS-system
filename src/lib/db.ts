@@ -141,6 +141,22 @@ export const db = {
 
   deleteUser: async (id: string): Promise<{ success: boolean; error?: string }> => {
     try {
+      // 🆕 步骤0: 在删除用户前，自动驳回该用户作为执行人的隐患
+      try {
+        const { autoRejectHazardsByExecutor } = await import('@/services/hazardAutoReject.service');
+        const rejectResult = await autoRejectHazardsByExecutor(
+          id,
+          '执行人账户已删除'
+        );
+        console.log(`[用户删除] 自动驳回隐患结果: 成功 ${rejectResult.rejectedCount} 条，失败 ${rejectResult.errors.length} 条`);
+        if (rejectResult.errors.length > 0) {
+          console.warn('[用户删除] 部分隐患驳回失败:', rejectResult.errors);
+        }
+      } catch (rejectError) {
+        console.error('[用户删除] 自动驳回隐患失败（不影响用户删除）:', rejectError);
+        // 不阻断用户删除流程，只记录错误
+      }
+
       // 使用事务处理所有相关数据的清理和用户删除
       await prisma.$transaction(async (tx) => {
         // 1. 清除该用户上报的隐患记录中的关联（设置为null而非删除记录）
@@ -155,35 +171,52 @@ export const db = {
           data: { responsibleId: null, responsibleName: null }
         });
 
-        // 3. 删除培训分配记录
+        // 🆕 3. 清除该用户作为当前执行人的隐患记录（执行人已在步骤0中处理，这里只清理字段）
+        await tx.hazardRecord.updateMany({
+          where: { dopersonal_ID: id },
+          data: { dopersonal_ID: null, dopersonal_Name: null }
+        });
+
+        // 🆕 4. 清除该用户作为验收人的隐患记录
+        await tx.hazardRecord.updateMany({
+          where: { verifierId: id },
+          data: { verifierId: null, verifierName: null }
+        });
+
+        // 5. 删除培训分配记录
         await tx.trainingAssignment.deleteMany({
           where: { userId: id }
         });
 
-        // 4. 删除学习记录
+        // 6. 删除学习记录
         await tx.materialLearnedRecord.deleteMany({
           where: { userId: id }
         });
 
-        // 5. 清除上传的培训资料关联
+        // 7. 清除上传的培训资料关联
         await tx.trainingMaterial.updateMany({
           where: { uploaderId: id },
           data: { uploaderId: 'DELETED_USER' }
         });
 
-        // 6. 清除发布的培训任务关联
+        // 8. 清除发布的培训任务关联
         await tx.trainingTask.updateMany({
           where: { publisherId: id },
           data: { publisherId: 'DELETED_USER' }
         });
 
-        // 7. 清除文件上传者关联
+        // 9. 清除文件上传者关联
         await tx.fileMetadata.updateMany({
           where: { uploaderId: id },
           data: { uploaderId: null }
         });
 
-        // 8. 最后删除用户
+        // 10. 清理可见性表中的该用户记录
+        await tx.hazardVisibility.deleteMany({
+          where: { userId: id }
+        });
+
+        // 11. 最后删除用户
         await tx.user.delete({ where: { id } });
       });
 

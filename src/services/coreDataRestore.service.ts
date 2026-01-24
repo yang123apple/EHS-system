@@ -297,20 +297,47 @@ export class CoreDataRestoreService {
 
     for (const logData of recentLogs) {
       try {
+        // 构建客户端环境信息
+        const clientInfo: any = {};
+        if (logData.ipAddress || logData.ip) {
+          clientInfo.ip = logData.ipAddress || logData.ip;
+        }
+        if (logData.userAgent) {
+          clientInfo.userAgent = logData.userAgent;
+        }
+
         const data: any = {
           id: logData.id,
+          // 操作人身份信息
           userId: logData.userId || null,
           userName: logData.userName || 'System',
-          action: logData.action,
-          actionLabel: logData.actionLabel || logData.action,
+          userRole: logData.userRole || null,
+          userDepartment: logData.userDepartment || null,
+          userDepartmentId: logData.userDepartmentId || null,
+          userJobTitle: logData.userJobTitle || null,
+          userRoleInAction: logData.userRoleInAction || null,
+          // 操作信息（必需字段）
           module: logData.module || 'SYSTEM',
+          action: logData.action || 'UNKNOWN',
+          actionLabel: logData.actionLabel || logData.action || '未知操作',
+          businessCode: logData.businessCode || null,
+          // 操作对象
           targetType: logData.targetType || null,
           targetId: logData.targetId || null,
           targetLabel: logData.targetLabel || null,
-          details: logData.details ? JSON.stringify(logData.details) : null,
-          ipAddress: logData.ipAddress || null,
-          userAgent: logData.userAgent || null,
-          snapshot: logData.snapshot ? JSON.stringify(logData.snapshot) : null,
+          targetLink: logData.targetLink || null,
+          // 审计细节
+          snapshot: logData.snapshot ? (typeof logData.snapshot === 'string' ? logData.snapshot : JSON.stringify(logData.snapshot)) : null,
+          diff: logData.diff ? (typeof logData.diff === 'string' ? logData.diff : JSON.stringify(logData.diff)) : null,
+          changes: logData.changes || null,
+          beforeData: logData.beforeData || null,
+          afterData: logData.afterData || null,
+          // 客户端环境信息
+          clientInfo: Object.keys(clientInfo).length > 0 ? JSON.stringify(clientInfo) : null,
+          ip: logData.ipAddress || logData.ip || null, // 向下兼容
+          userAgent: logData.userAgent || null, // 向下兼容
+          // 其他信息
+          details: logData.details ? (typeof logData.details === 'string' ? logData.details : JSON.stringify(logData.details)) : null,
         };
 
         if (logData.createdAt) {
@@ -329,6 +356,10 @@ export class CoreDataRestoreService {
       } catch (error: any) {
         skipped++;
         console.warn(`[CoreDataRestore] 恢复系统日志失败 ${logData.id}: ${error.message}`);
+        // 打印更详细的错误信息用于调试
+        if (error.meta) {
+          console.warn(`[CoreDataRestore] 错误详情:`, error.meta);
+        }
       }
     }
 

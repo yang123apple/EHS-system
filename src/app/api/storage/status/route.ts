@@ -12,12 +12,34 @@ export async function GET() {
     const initialized = isMinIOInitialized();
     
     if (!initialized) {
+      // 检测是否为本地 MinIO
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      const projectRoot = process.cwd();
+      const binMinio = path.join(projectRoot, 'bin', 'minio');
+      const binMinioExe = path.join(projectRoot, 'bin', 'minio.exe');
+      const hasLocalMinio = fs.existsSync(binMinio) || fs.existsSync(binMinioExe);
+      const isWindows = os.platform() === 'win32';
+      
+      let suggestion = '';
+      if (hasLocalMinio) {
+        if (isWindows) {
+          suggestion = '请检查本地 MinIO 服务是否运行: .\\start-minio-local.bat 或 .\\bin\\minio.exe server .\\data\\minio-data --console-address ":9001"';
+        } else {
+          suggestion = '请检查本地 MinIO 服务是否运行: ./start-minio-local.sh 或 ./bin/minio server ./data/minio-data --console-address ":9001"';
+        }
+      } else {
+        suggestion = '请检查 MinIO 服务是否运行: docker-compose -f docker-compose.minio.yml up -d';
+      }
+      
       return NextResponse.json({
         success: false,
         initialized: false,
         message: 'MinIO 未初始化',
         error: 'MinIO 服务未启动或配置不正确',
-        suggestion: '请检查 MinIO 服务是否运行: docker-compose -f docker-compose.minio.yml up -d',
+        suggestion,
+        deploymentType: hasLocalMinio ? '本地二进制（bin 文件夹）' : 'Docker 容器',
       });
     }
 

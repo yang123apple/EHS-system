@@ -213,8 +213,9 @@ export class ApiClient {
       error = { error: '无法读取错误响应', details: '未知错误' };
     }
 
-    // 提取错误信息：优先使用 error.error，其次是 error.message，最后是 error
-    const errorMessage = error.error || error.message || (typeof error === 'string' ? error : '请求失败');
+    // 提取错误信息：优先使用 error.details（详细错误信息），其次是 error.error，再次是 error.message
+    // ✅ 修复：优先显示 details 字段，因为它通常包含更具体的错误信息
+    const errorMessage = error.details || error.error || error.message || (typeof error === 'string' ? error : '请求失败');
 
     // 保留完整的错误信息，包括 details 和 code（用于数据库错误等）
     throw new ApiError(errorMessage, response.status, error);

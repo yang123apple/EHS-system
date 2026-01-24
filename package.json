@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "node scripts/start-minio-cross-platform.js",
+    "predev": "node scripts/update-env-local.js && node scripts/start-minio-cross-platform.js",
     "dev": "next dev -H 0.0.0.0",
     "init:visibility": "tsx scripts/init-hazard-visibility.ts",
     "stress-test:generate": "tsx scripts/stress-test-generate-data.ts",

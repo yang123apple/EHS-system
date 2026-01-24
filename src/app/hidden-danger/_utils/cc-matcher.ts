@@ -99,7 +99,25 @@ export async function matchAllCCRules(
       handler,
     };
 
+    console.log(`🔍 [matchAllCCRules] 开始匹配抄送规则:`, {
+      ruleId: ccRule.id,
+      ruleType: ccRule.type,
+      ruleDescription: ccRule.description,
+      hasReporter: !!reporter,
+      hasHandler: !!handler,
+    });
+
     const result = await matchCCUsers(context);
+    
+    console.log(`📋 [matchAllCCRules] 规则匹配结果:`, {
+      ruleId: ccRule.id,
+      ruleType: ccRule.type,
+      success: result.success,
+      userIds: result.userIds,
+      userNames: result.userNames,
+      matchedBy: result.matchedBy,
+      error: result.error,
+    });
     
     if (result.success && result.userIds.length > 0) {
       result.userIds.forEach(id => allUserIds.add(id));
@@ -109,10 +127,20 @@ export async function matchAllCCRules(
         ruleId: ccRule.id,
         ruleDescription: ccRule.description,
         matchedBy: result.matchedBy,
-        users: result.userNames,
+        userIds: result.userIds,  // 添加用户ID数组
+        userNames: result.userNames,  // 添加用户名数组（保持一致性）
+        users: result.userNames,  // 保留原有字段以兼容旧代码
       });
     }
   }
+
+  console.log(`✅ [matchAllCCRules] 最终合并结果:`, {
+    totalRules: ccRules.length,
+    matchedRules: details.length,
+    allUserIds: Array.from(allUserIds),
+    allUserNames: Array.from(allUserNames),
+    details: details.map(d => ({ ruleId: d.ruleId, matchedBy: d.matchedBy, userNames: d.userNames })),
+  });
 
   return {
     userIds: Array.from(allUserIds),

@@ -146,11 +146,33 @@ export const PUT = withAdmin<{ params: Promise<{ id: string }> }>(async (req, co
       updateData = await req.json();
     }
 
+    // 🆕 检查用户是否从在职变为离职（isActive: true -> false）
+    const wasActive = existingUser.isActive !== false; // 默认为 true
+    const willBeActive = updateData.isActive !== false; // 如果未提供，默认为 true
+    
     // 🟢 使用 db 方法更新
     const updatedUser = await db.updateUser(id, updateData);
 
     if (!updatedUser) {
       return NextResponse.json({ error: '更新失败' }, { status: 500 });
+    }
+
+    // 🆕 如果用户从在职变为离职，自动驳回该用户作为执行人的隐患
+    if (wasActive && !willBeActive) {
+      try {
+        const { autoRejectHazardsByExecutor } = await import('@/services/hazardAutoReject.service');
+        const rejectResult = await autoRejectHazardsByExecutor(
+          id,
+          '执行人已离职'
+        );
+        console.log(`[用户更新] 用户 ${id} 离职，自动驳回隐患结果: 成功 ${rejectResult.rejectedCount} 条，失败 ${rejectResult.errors.length} 条`);
+        if (rejectResult.errors.length > 0) {
+          console.warn('[用户更新] 部分隐患驳回失败:', rejectResult.errors);
+        }
+      } catch (rejectError) {
+        console.error('[用户更新] 自动驳回隐患失败（不影响用户更新）:', rejectError);
+        // 不阻断用户更新流程，只记录错误
+      }
     }
 
     // 触发调岗（job change）事件：若职位发生变化则入队，由 worker 处理

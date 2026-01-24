@@ -4,8 +4,7 @@ import { X, Camera, ChevronRight, User, GitBranch, Mail, CheckCircle, ChevronDow
 import { HazardConfig, RiskLevel } from '@/types/hidden-danger';
 import { RISK_LEVEL_MAP, STRATEGY_NAME_MAP } from '@/constants/hazard';
 import PeopleSelector from '@/components/common/PeopleSelector';
-import { matchHandler } from '../../_utils/handler-matcher';
-import { matchAllCCRules } from '../../_utils/cc-matcher';
+import { HazardHandlerResolverService } from '@/services/hazardHandlerResolver.service';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/apiClient';
 import { useMinioUpload } from '@/hooks/useMinioUpload';
@@ -331,7 +330,7 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
     }
   }, [formData.rectificationType]);
 
-  // 预测流程
+  // 预测流程（使用统一解析服务，确保与实际流转一致）
   const predictWorkflow = async () => {
     if (!workflowConfig || !formData.type || !formData.location) {
       setWorkflowPreview(null);
@@ -340,7 +339,7 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
     }
 
     try {
-      console.log('🔍 开始流程预测:', {
+      console.log('🔍 [流程预览] 开始流程预测:', {
         workflowConfig,
         formData,
         currentUser: user,
@@ -348,23 +347,22 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
         departmentsCount: departments?.length
       });
 
-      // 确保 mockHazard 包含完整的上报人信息和责任人信息（用于流程预测）
-      const mockHazard = {
-        ...formData,
-        reporterId: user?.id || 'current-user',
-        reporterName: user?.name || '当前用户',
-        reporterDepartment: user?.department,
-        reporterDepartmentId: user?.departmentId,
-        // 添加责任人信息（如果用户选择了的话，用于某些匹配策略）
-        responsibleId: formData.responsibleId || undefined,
-        responsibleName: formData.responsibleName || undefined,
-        responsibleDeptId: formData.responsibleDeptId || undefined,
-        assignedDepartmentId: formData.responsibleDeptId || undefined, // 用于责任部门主管匹配
-        status: 'assigned' as any,
-      };
+      // 使用统一服务创建模拟隐患数据
+      const mockHazard = HazardHandlerResolverService.createMockHazard(
+        formData,
+        user || { id: 'current-user', name: '当前用户' }
+      );
 
-      console.log('📋 模拟隐患对象:', mockHazard);
-      console.log('👤 当前用户信息:', {
+      // 添加额外的责任人信息（如果用户选择了的话）
+      if (formData.responsibleId) {
+        mockHazard.responsibleId = formData.responsibleId;
+        mockHazard.responsibleName = formData.responsibleName;
+        mockHazard.responsibleDeptId = formData.responsibleDeptId;
+        mockHazard.assignedDepartmentId = formData.responsibleDeptId;
+      }
+
+      console.log('📋 [流程预览] 模拟隐患对象:', mockHazard);
+      console.log('👤 [流程预览] 当前用户信息:', {
         id: user?.id,
         name: user?.name,
         department: user?.department,
@@ -372,88 +370,73 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
         jobTitle: user?.jobTitle
       });
 
-      const steps = workflowConfig.steps || [];
-      console.log('📝 工作流步骤数量:', steps.length);
-      
-      const stepPredictions = await Promise.all(
-        steps.map(async (step: any, index: number) => {
-          console.log(`🔄 预测步骤 ${index + 1}: ${step.name} (策略: ${step.handlerStrategy?.type})`);
-          
-          // 为步骤配置添加上下文信息，以便 matchFixed 可以自动推断
-          const enrichedStep = {
-            ...step,
-            handlerStrategy: {
-              ...step.handlerStrategy,
-              config: {
-                ...step.handlerStrategy.config,
-                fixedUsers: step.handlerStrategy.fixedUsers, // 传递 fixedUsers
-                _stepContext: {
-                  id: step.id,
-                  name: step.name
-                }
-              }
-            }
-          };
-          
-          const result = await matchHandler({
-            hazard: mockHazard as any,
-            step: enrichedStep,
-            allUsers: allUsers || [],
-            departments: departments,  // 使用 state 中扁平化后的部门数组
-          });
-          
-          console.log(`✅ 步骤 ${index + 1} 匹配结果:`, result);
-          
-          // 匹配该步骤的抄送人员
-          let stepCCUsers: string[] = [];
-          let stepCCDetails: any[] = [];
-          
-          if (step.ccRules && step.ccRules.length > 0) {
-            console.log(`📧 步骤 ${index + 1} 抄送规则数量:`, step.ccRules.length);
-            console.log(`📧 步骤 ${index + 1} 抄送规则详情:`, step.ccRules.map((r: any) => ({ type: r.type, config: r.config })));
-            
-            const ccResult = await matchAllCCRules(
-              mockHazard as any,
-              step.ccRules,
-              allUsers || [],
-              departments  // 使用 state 中扁平化后的部门数组
-            );
-            
-            stepCCUsers = ccResult.userNames;
-            stepCCDetails = ccResult.details;
-            
-            console.log(`📧 步骤 ${index + 1} 抄送匹配结果:`, {
-              成功规则数: ccResult.details.length,
-              抄送人员: stepCCUsers,
-              详情: ccResult.details
-            });
-          }
-          
-          return {
-            stepName: step.name,
-            stepKey: step.id,
-            success: result.success,
-            handlers: result.userNames || [],
-            matchedBy: result.matchedBy,
-            error: result.error,
-            ccUsers: stepCCUsers,
-            ccDetails: stepCCDetails,
-          };
-        })
-      );
+      // 获取上报人对象（用于抄送规则匹配）
+      const reporter = user ? (allUsers?.find(u => u.id === user.id) || {
+        id: user.id,
+        name: user.name,
+        departmentId: user.departmentId,
+        jobTitle: user.jobTitle
+      }) : undefined;
 
-      console.log('📊 所有步骤预测完成:', stepPredictions);
+      // 使用统一服务解析整个工作流
+      const result = await HazardHandlerResolverService.resolveWorkflow({
+        hazard: mockHazard,
+        workflowSteps: workflowConfig.steps || [],
+        allUsers: allUsers || [],
+        departments: departments || [],
+        reporter
+      });
 
+      if (!result.success) {
+        console.warn('⚠️ [流程预览] 工作流解析失败:', result.error);
+      }
+
+      console.log('✅ [流程预览] 工作流解析完成:', {
+        success: result.success,
+        stepsCount: result.steps.length,
+        successfulSteps: result.steps.filter(s => s.success).length
+      });
+
+      // 转换结果格式以适配前端预览显示
       const preview = {
-        steps: stepPredictions,
+        steps: result.steps.map(step => ({
+          stepName: step.stepName,
+          stepKey: step.stepId,
+          success: step.success,
+          handlers: step.handlers.userNames || [],
+          matchedBy: step.handlers.matchedBy,
+          error: step.error,
+          ccUsers: step.ccUsers.userNames || [],
+          ccUserIds: step.ccUsers.userIds || [],
+          ccDetails: step.ccUsers.details || [],
+          // 保留候选处理人和审批模式信息（用于后续扩展）
+          candidateHandlers: step.candidateHandlers,
+          approvalMode: step.approvalMode
+        }))
       };
 
-      console.log('🎯 最终流程预览:', preview);
+      // 验证每个步骤的数据
+      preview.steps.forEach((step: any, idx: number) => {
+        console.log(`🔍 [流程预览] 步骤 ${idx + 1} (${step.stepName}) 最终数据:`, {
+          处理人: step.handlers,
+          抄送人员: step.ccUsers,
+          抄送人员ID: step.ccUserIds,
+          抄送规则详情: step.ccDetails?.map((d: any) => ({
+            规则ID: d.ruleId,
+            匹配方式: d.matchedBy,
+            匹配到的用户: d.userNames,
+          })),
+          审批模式: step.approvalMode,
+          候选处理人: step.candidateHandlers
+        });
+      });
+
+      console.log('🎯 [流程预览] 最终流程预览:', preview);
 
       setWorkflowPreview(preview);
       setShowWorkflowPreview(true);
     } catch (error) {
-      console.error('❌ 流程预测失败:', error);
+      console.error('❌ [流程预览] 流程预测失败:', error);
       setWorkflowPreview(null);
       setShowWorkflowPreview(false);
     }
@@ -507,7 +490,8 @@ export function HazardReportModal({ config, allUsers = [], departments: propDepa
 
     // 收集第一步的抄送人ID（步骤1：上报并指派）
     const firstStep = workflowPreview.steps[0];
-    const firstStepCCUserIds = firstStep?.ccDetails?.map((d: any) => d.userId).filter(Boolean) || [];
+    // 优先使用 ccUserIds，如果没有则从 ccDetails 中提取（兼容旧数据）
+    const firstStepCCUserIds = firstStep?.ccUserIds || firstStep?.ccDetails?.map((d: any) => d.userId).filter(Boolean) || [];
     const firstStepCCUserNames = firstStep?.ccUsers || [];
 
     // 提交数据：保留用户填写的责任部门和责任人作为业务数据

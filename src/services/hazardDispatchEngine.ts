@@ -14,8 +14,7 @@ import {
   SimpleUser,
   HazardStatus 
 } from '@/types/hidden-danger';
-import { matchHandler } from '@/app/hidden-danger/_utils/handler-matcher';
-import { matchAllCCRules } from '@/app/hidden-danger/_utils/cc-matcher';
+import { HazardHandlerResolverService } from './hazardHandlerResolver.service';
 import type { Department } from '@/utils/departmentUtils';
 import { HazardNotificationService, NotificationData } from './hazardNotification.service';
 import { syncHazardVisibility } from './hazardVisibility.service';
@@ -129,41 +128,41 @@ export class HazardDispatchEngine {
       // 3. 创建更新后的隐患数据（用于处理人和抄送人匹配）
       const updatedHazard = this.getUpdatedHazard(hazard, action, additionalData);
 
-      // 4. 匹配处理人（针对下一步骤）
-      const handlerResult = await matchHandler({
+      // 4. 使用统一服务解析下一步骤的处理人和抄送人（确保与流程预览一致）
+      const reporter = allUsers.find(u => u.id === updatedHazard.reporterId);
+      
+      const stepResult = await HazardHandlerResolverService.resolveStepHandlers({
         hazard: updatedHazard,
         step: nextStep,
+        stepIndex: transition.nextStepIndex,
         allUsers,
-        departments
+        departments,
+        reporter
       });
 
-      if (!handlerResult.success || handlerResult.userNames.length === 0) {
-        console.warn('[派发引擎] 处理人匹配失败:', handlerResult.error);
+      if (!stepResult.success) {
+        console.warn('[派发引擎] 步骤解析失败:', stepResult.error);
         // 不抛出错误，允许继续（某些步骤可能不需要处理人）
       }
       
-      console.log('🎯 [派发引擎] 匹配到的处理人:', {
-        count: handlerResult.userIds?.length || 0,
-        userIds: handlerResult.userIds,
-        userNames: handlerResult.userNames,
-        approvalMode: nextStep.handlerStrategy.approvalMode || 'OR'
+      console.log('🎯 [派发引擎] 步骤解析结果:', {
+        stepName: stepResult.stepName,
+        handlersCount: stepResult.handlers.userIds?.length || 0,
+        userIds: stepResult.handlers.userIds,
+        userNames: stepResult.handlers.userNames,
+        ccUsersCount: stepResult.ccUsers.userIds?.length || 0,
+        approvalMode: stepResult.approvalMode || nextStep.handlerStrategy?.approvalMode || 'OR'
       });
 
-      // 5. 匹配抄送人
-      const reporter = allUsers.find(u => u.id === updatedHazard.reporterId);
-      // 修复：直接使用返回的 userIds，而不是通过用户名查找
-      const handler = handlerResult.success && handlerResult.userIds.length > 0
-        ? allUsers.find(u => u.id === handlerResult.userIds[0])
-        : undefined;
-
-      const ccResult = await matchAllCCRules(
-        updatedHazard,
-        nextStep.ccRules || [],
-        allUsers,
-        departments,
-        reporter,
-        handler
-      );
+      // 使用统一服务返回的结果
+      const handlerResult = {
+        success: stepResult.success,
+        userIds: stepResult.handlers.userIds || [],
+        userNames: stepResult.handlers.userNames || [],
+        matchedBy: stepResult.handlers.matchedBy
+      };
+      
+      const ccResult = stepResult.ccUsers;
 
       // 6. 生成操作日志
       const log = this.createLog(
@@ -207,11 +206,11 @@ export class HazardDispatchEngine {
         ccUsers: ccResult,
         log,
         notifications,
-        // 🟢 新增：候选处理人信息（用于创建关联表记录）
-        candidateHandlers: handlerResult.success && handlerResult.userIds.length > 0
-          ? handlerResult.userIds.map((userId, idx) => ({
-              userId,
-              userName: handlerResult.userNames[idx] || '',
+        // 🟢 新增：候选处理人信息（用于创建关联表记录，使用统一服务返回的结果）
+        candidateHandlers: stepResult.candidateHandlers && stepResult.candidateHandlers.length > 0
+          ? stepResult.candidateHandlers.map(candidate => ({
+              userId: candidate.userId,
+              userName: candidate.userName,
               stepIndex: transition.nextStepIndex,
               stepId: transition.nextStepId
             }))
@@ -281,41 +280,56 @@ export class HazardDispatchEngine {
 
     // 驳回操作：特殊处理
     if (action === DispatchAction.REJECT) {
-      // 根据当前步骤决定驳回到哪一步
-      const currentStep = workflowSteps[currentStepIndex];
-      
-      if (currentStep?.id === 'verify') {
-        // 从验收驳回 -> 回到整改步骤
-        const rectifyIndex = workflowSteps.findIndex(s => s.id === 'rectify');
-        if (rectifyIndex >= 0) {
-          return {
-            success: true,
-            newStatus: 'rectifying',
-            nextStepId: workflowSteps[rectifyIndex].id,
-            nextStepIndex: rectifyIndex
-          };
-        }
-      } else if (currentStep?.id === 'rectify') {
-        // 从整改驳回 -> 回到指派步骤
-        const assignIndex = workflowSteps.findIndex(s => s.id === 'assign');
-        if (assignIndex >= 0) {
-          return {
-            success: true,
-            newStatus: 'assigned',
-            nextStepId: workflowSteps[assignIndex].id,
-            nextStepIndex: assignIndex
-          };
-        }
-      } else {
-        // 其他中间步骤驳回 -> 回到上一步
-        const prevIndex = Math.max(0, currentStepIndex - 1);
+      // 🔄 修复：基于步骤索引驳回，而不是硬编码步骤ID查找
+      // 这样可以支持任意数量的自定义步骤
+      if (currentStepIndex <= 0) {
+        // 已经是第一步，无法驳回
         return {
-          success: true,
-          newStatus: this.getStatusByStepId(workflowSteps[prevIndex]?.id),
-          nextStepId: workflowSteps[prevIndex]?.id || 'report',
-          nextStepIndex: prevIndex
+          success: false,
+          newStatus: currentStatus,
+          nextStepId: currentStep.id,
+          nextStepIndex: currentStepIndex,
+          error: '已经是第一步，无法驳回'
         };
       }
+      
+      // 驳回：回到上一步（基于步骤索引，而不是步骤ID）
+      const prevIndex = currentStepIndex - 1;
+      const prevStep = workflowSteps[prevIndex];
+      
+      if (!prevStep) {
+        return {
+          success: false,
+          newStatus: currentStatus,
+          nextStepId: '',
+          nextStepIndex: currentStepIndex,
+          error: `未找到上一步骤配置: 索引=${prevIndex}`
+        };
+      }
+      
+      // 根据上一步骤的位置和ID推断状态
+      const prevStatus = this.getStatusByStepId(prevStep.id, prevIndex, workflowSteps);
+      
+      console.log('🔄 [派发引擎] 驳回流转:', {
+        from: {
+          index: currentStepIndex,
+          id: currentStep.id,
+          name: currentStep.name
+        },
+        to: {
+          index: prevIndex,
+          id: prevStep.id,
+          name: prevStep.name,
+          status: prevStatus
+        }
+      });
+      
+      return {
+        success: true,
+        newStatus: prevStatus,
+        nextStepId: prevStep.id,
+        nextStepIndex: prevIndex
+      };
     }
 
     // 正常流转：前进到下一步
@@ -352,7 +366,8 @@ export class HazardDispatchEngine {
         error: `未找到下一步骤配置: 索引=${nextStepIndex}`
       };
     }
-    const newStatus = this.getStatusByStepId(nextStep.id);
+    // 🔄 修复：传入步骤索引和完整流程配置，以便更准确地推断状态
+    const newStatus = this.getStatusByStepId(nextStep.id, nextStepIndex, workflowSteps);
 
     console.log('🔄 [派发引擎] 动态流转:', {
       from: currentStepIndex,
@@ -371,17 +386,56 @@ export class HazardDispatchEngine {
   }
 
   /**
-   * 根据步骤ID推断对应的隐患状态
+   * 根据步骤ID和位置推断对应的隐患状态
+   * @param stepId 步骤ID
+   * @param stepIndex 步骤索引（可选，用于更准确的状态推断）
+   * @param workflowSteps 完整的工作流步骤配置（可选，用于上下文推断）
    */
-  private static getStatusByStepId(stepId: string): HazardStatus {
+  private static getStatusByStepId(
+    stepId: string, 
+    stepIndex?: number, 
+    workflowSteps?: HazardWorkflowStep[]
+  ): HazardStatus {
+    // 标准步骤：直接映射
     if (stepId === 'report') return 'reported';
     if (stepId === 'assign') return 'assigned';
     if (stepId === 'rectify') return 'rectifying';
     if (stepId === 'verify') return 'verified';
     
-    // 自定义步骤：根据位置推断状态
-    // report -> assigned -> [自定义步骤] -> rectifying -> verified
-    // 自定义步骤默认使用 'assigned' 状态
+    // 自定义步骤：根据在流程中的位置推断状态
+    if (stepIndex !== undefined && workflowSteps && workflowSteps.length > 0) {
+      // 查找标准步骤的位置作为参考点
+      const reportIndex = workflowSteps.findIndex(s => s.id === 'report');
+      const assignIndex = workflowSteps.findIndex(s => s.id === 'assign');
+      const rectifyIndex = workflowSteps.findIndex(s => s.id === 'rectify');
+      const verifyIndex = workflowSteps.findIndex(s => s.id === 'verify');
+      
+      // 根据位置推断状态（基于标准步骤的位置）
+      // report -> assigned -> [自定义步骤] -> rectifying -> verified
+      if (reportIndex >= 0 && stepIndex <= reportIndex) {
+        return 'reported';
+      } else if (assignIndex >= 0 && stepIndex <= assignIndex) {
+        // 在 assign 步骤或之前（但已过 report）
+        return 'assigned';
+      } else if (rectifyIndex >= 0 && stepIndex < rectifyIndex) {
+        // 在 assign 之后、rectify 之前（包括自定义步骤）
+        return 'assigned';
+      } else if (rectifyIndex >= 0 && stepIndex <= rectifyIndex) {
+        // 在 rectify 步骤
+        return 'rectifying';
+      } else if (verifyIndex >= 0 && stepIndex < verifyIndex) {
+        // 在 rectify 之后、verify 之前
+        return 'rectifying';
+      } else if (verifyIndex >= 0 && stepIndex <= verifyIndex) {
+        // 在 verify 步骤
+        return 'verified';
+      } else if (verifyIndex >= 0 && stepIndex > verifyIndex) {
+        // 在 verify 之后（不应该发生，但作为兜底）
+        return 'verified';
+      }
+    }
+    
+    // 默认：自定义步骤使用 'assigned' 状态
     return 'assigned';
   }
 

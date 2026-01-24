@@ -195,6 +195,7 @@ model HazardRecord {
   extensions HazardExtension[]
   candidateHandlersRel HazardCandidateHandler[] // 🟢 或签/会签候选处理人关联表
   ccUsersRel HazardCC[] // 🟢 抄送用户关联表
+  workflowStepsRel HazardWorkflowStep[] // 🟢 工作流步骤关联表（存储每个步骤的执行人和抄送人）
   visibilityRecords HazardVisibility[] // 🚀 可见性记录（Row-Level Security）
   
   // 🟢 索引优化
@@ -262,6 +263,33 @@ model HazardCC {
   @@index([hazardId])
   @@index([userId])
   @@index([hazardId, userId]) // 复合索引：查询某隐患的抄送用户
+}
+
+// 🟢 隐患工作流步骤表（存储每个隐患的每个步骤的执行人和抄送人信息）
+// 用途：在创建隐患时，通过 HazardHandlerResolverService 解析所有步骤并保存，后续操作从数据库读取
+model HazardWorkflowStep {
+  id              String       @id @default(cuid())
+  hazardId        String       // 隐患ID
+  hazard          HazardRecord @relation(fields: [hazardId], references: [id], onDelete: Cascade)
+  stepIndex       Int          // 步骤索引（0, 1, 2...）
+  stepId          String       // 步骤ID（如：report, assign, rectify, verify）
+  stepName        String       // 步骤名称（如：上报并指派、指派整改、提交整改、验收闭环）
+  handlerUserIds  String       // 执行人ID列表（JSON数组）
+  handlerUserNames String      // 执行人姓名列表（JSON数组）
+  matchedBy       String?      // 匹配策略（如：fixed, department_manager等）
+  ccUserIds       String?      // 抄送人ID列表（JSON数组）
+  ccUserNames     String?      // 抄送人姓名列表（JSON数组）
+  approvalMode    String?      // 审批模式（OR=或签，AND=会签）
+  success         Boolean      @default(true) // 是否成功匹配
+  error            String?     // 匹配失败时的错误信息
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // 索引
+  @@unique([hazardId, stepIndex]) // 确保同一隐患、同一步骤只有一条记录
+  @@index([hazardId])
+  @@index([stepIndex])
+  @@index([hazardId, stepIndex]) // 复合索引：查询某隐患的某步骤
 }
 
 // 🚀 隐患可见性表（Row-Level Security 性能优化方案）

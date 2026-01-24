@@ -369,6 +369,19 @@ export function useHazardWorkflow(onSuccess: () => void) {
         updatePayload.notifications = result.notifications;
       }
 
+      // 🟢 修复：将 candidateHandlers 传递到 dispatchResult 中，以便 API 更新关联表
+      if (dispatchedHandlers.candidateHandlers && Array.isArray(dispatchedHandlers.candidateHandlers) && dispatchedHandlers.candidateHandlers.length > 0) {
+        updatePayload.dispatchResult = {
+          candidateHandlers: dispatchedHandlers.candidateHandlers.map((ch: any) => ({
+            userId: ch.userId,
+            userName: ch.userName,
+            stepIndex: dispatchedHandlers.currentStepIndex ?? nextStepIndex,
+            stepId: dispatchedHandlers.currentStepId || undefined
+          }))
+        };
+        console.log('🟢 已添加 dispatchResult.candidateHandlers 到更新载荷:', updatePayload.dispatchResult);
+      }
+
       // 更新隐患状态（包含通知创建，在同一事务中）
       await hazardService.updateHazard(updatePayload);
 

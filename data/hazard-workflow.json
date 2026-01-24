@@ -1,6 +1,6 @@
 {
-  "version": 8,
-  "updatedAt": "2026-01-02T15:14:58.936Z",
+  "version": 11,
+  "updatedAt": "2026-01-23T19:22:43.914Z",
   "updatedBy": "超级管理员",
   "steps": [
     {
@@ -29,21 +29,11 @@
     {
       "id": "assign",
       "name": "开始整改",
-      "description": "指派整改责任人，默认为管理员",
+      "description": "上报人所在部门主管确认",
       "handlerStrategy": {
-        "type": "fixed",
+        "type": "reporter_manager",
         "description": "默认：管理员角色",
-        "approvalMode": "OR",
-        "fixedUsers": [
-          {
-            "userId": "77010550",
-            "userName": "孙斌"
-          },
-          {
-            "userId": "33641446",
-            "userName": "杨光"
-          }
-        ]
+        "approvalMode": "OR"
       },
       "ccRules": [
         {
@@ -73,7 +63,18 @@
           }
         ]
       },
-      "ccRules": []
+      "ccRules": [
+        {
+          "id": "cc_1769196149607",
+          "type": "fixed_users",
+          "config": {
+            "userIds": [
+              "85381206"
+            ]
+          },
+          "description": ""
+        }
+      ]
     },
     {
       "id": "rectify",

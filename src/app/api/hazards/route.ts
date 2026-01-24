@@ -176,11 +176,17 @@ async function mapHazard(pHazard: PrismaHazardWithRelations | PrismaHazardRecord
       rectificationType: (pHazard as any).rectificationType ?? undefined,
       reporterId: pHazard.reporterId,
       reporterName: pHazard.reporterName,
+      // 🟢 新增：上报人部门ID（用于处理人匹配，如"上报人主管"策略）
+      reporterDepartmentId: ('reporter' in pHazard && pHazard.reporter?.departmentId) ?? undefined,
       responsibleId: pHazard.responsibleId ?? undefined,
       responsibleName: pHazard.responsibleName ?? undefined,
       // ✅ 优先从关联的User.department获取部门名称，回退到responsibleDept字段
       responsibleDept: ('responsible' in pHazard && pHazard.responsible?.department?.name) ?? pHazard.responsibleDept ?? undefined,
       responsibleDeptName: ('responsible' in pHazard && pHazard.responsible?.department?.name) ?? pHazard.responsibleDept ?? undefined,
+      // 🟢 新增：责任部门ID（用于处理人匹配，确保与流程预览一致）
+      responsibleDeptId: ('responsible' in pHazard && pHazard.responsible?.departmentId) ?? undefined,
+      // 🟢 新增：指派部门ID（用于处理人匹配，如"责任部门主管"策略）
+      assignedDepartmentId: ('responsible' in pHazard && pHazard.responsible?.departmentId) ?? undefined,
       verifierId: pHazard.verifierId ?? undefined,
       verifierName: pHazard.verifierName ?? undefined,
       rectifyDesc: pHazard.rectifyDesc ?? undefined,
@@ -827,11 +833,62 @@ export const POST = withErrorHandling(
             } : null
           });
 
-          // 调用派发引擎初始化工作流（第一步：上报并指派）
+          // 🟢 在调用派发引擎之前，先加载隐患的关联数据（确保 assignedDepartmentId 等字段可用）
+          const hazardWithRelations = await prisma.hazardRecord.findUnique({
+            where: { id: res.id },
+            include: {
+              reporter: true,
+              responsible: {
+                include: {
+                  department: true
+                }
+              }
+            }
+          });
+
+          const mappedHazard = await mapHazard(hazardWithRelations || res);
+
+          // 🟢 第一步：使用统一服务解析所有步骤的执行人和抄送人，并保存到数据库
+          const { HazardHandlerResolverService } = await import('@/services/hazardHandlerResolver.service');
+          const { saveWorkflowSteps } = await import('@/services/hazardWorkflowStep.service');
+          
+          const reporterUser = allUsers.find(u => u.id === mappedHazard.reporterId);
+          const reporter = reporterUser ? {
+            id: reporterUser.id,
+            name: reporterUser.name,
+            departmentId: reporterUser.departmentId ?? undefined,
+            jobTitle: reporterUser.jobTitle ?? undefined
+          } as any : undefined;
+          
+          const workflowResolution = await HazardHandlerResolverService.resolveWorkflow({
+            hazard: mappedHazard,
+            workflowSteps: workflowConfig.steps,
+            allUsers: allUsers as any[],
+            departments: departments as any[],
+            reporter
+          });
+
+          // 保存所有步骤信息到数据库（即使部分步骤解析失败，也要保存所有步骤，包括失败的）
+          if (workflowResolution.steps.length > 0) {
+            await saveWorkflowSteps(res.id, workflowResolution.steps);
+            console.log(`✅ [隐患创建] 已保存所有步骤信息到数据库:`, {
+              hazardId: res.id,
+              stepsCount: workflowResolution.steps.length,
+              successfulSteps: workflowResolution.steps.filter(s => s.success).length,
+              failedSteps: workflowResolution.steps.filter(s => !s.success).length
+            });
+          } else {
+            console.warn(`⚠️ [隐患创建] 没有步骤需要保存:`, {
+              hazardId: res.id,
+              workflowStepsCount: workflowConfig.steps.length
+            });
+          }
+
+          // 🟢 第二步：调用派发引擎初始化工作流（第一步：上报并指派）
           const { HazardDispatchEngine, DispatchAction } = await import('@/services/hazardDispatchEngine');
           
           const dispatchResult = await HazardDispatchEngine.dispatch({
-            hazard: await mapHazard(res),
+            hazard: mappedHazard,
             action: DispatchAction.SUBMIT,
             operator: {
               id: user.id,
@@ -941,6 +998,33 @@ export const POST = withErrorHandling(
             });
 
             console.log(`✅ [隐患创建] 工作流初始化完成，已设置处理人: ${dispatchResult.handlers.userNames.join('、')}`);
+            
+            // 🔄 修复：派发引擎执行后，更新步骤信息中当前步骤的处理人信息
+            // 因为派发引擎解析的是下一步骤的处理人，需要更新到步骤信息中
+            if (dispatchResult.nextStepIndex !== undefined && dispatchResult.nextStepIndex >= 0) {
+              try {
+                const workflowStepService = await import('@/services/hazardWorkflowStep.service') as any;
+                const currentStepInfo = await workflowStepService.getWorkflowStep(res.id, dispatchResult.nextStepIndex);
+                
+                if (currentStepInfo && workflowStepService.updateWorkflowStep) {
+                  // 更新当前步骤的处理人信息（使用派发引擎解析的结果）
+                  await workflowStepService.updateWorkflowStep(res.id, dispatchResult.nextStepIndex, {
+                    handlers: {
+                      userIds: dispatchResult.handlers.userIds,
+                      userNames: dispatchResult.handlers.userNames,
+                      matchedBy: dispatchResult.handlers.matchedBy
+                    },
+                    success: dispatchResult.handlers.userIds.length > 0,
+                    error: dispatchResult.handlers.userIds.length === 0 ? '派发引擎解析处理人失败' : undefined
+                  });
+                  
+                  console.log(`✅ [隐患创建] 已更新步骤 ${dispatchResult.nextStepIndex} 的处理人信息`);
+                }
+              } catch (stepUpdateError) {
+                console.error('❌ [隐患创建] 更新步骤信息失败:', stepUpdateError);
+                // 不影响主流程，继续执行
+              }
+            }
           } else {
             console.error(`❌ [隐患创建] 工作流初始化失败:`, dispatchResult.error);
           }
@@ -1229,7 +1313,9 @@ export const PATCH = withErrorHandling(
         }
 
         // 🟢 5. 在同一事务中更新候选处理人操作状态（如果用户执行了操作）
-        if (operatorId && (actionName === '提交整改' || actionName === '验收通过' || actionName === '驳回')) {
+        // 扩展支持的操作类型：包括审批通过、提交整改、验收通过、驳回等
+        const supportedActions = ['提交整改', '验收通过', '驳回', '指派整改', '提交上报', '审批通过', '通过'];
+        if (operatorId && (supportedActions.includes(actionName) || actionName?.includes('审批') || actionName?.includes('通过'))) {
           const stepIndex = finalUpdates.currentStepIndex ?? oldRecord.currentStepIndex ?? 0;
           const approvalMode = finalUpdates.approvalMode ?? oldRecord.approvalMode;
           
@@ -1251,7 +1337,7 @@ export const PATCH = withErrorHandling(
               data: {
                 hasOperated: true,
                 operatedAt: new Date(),
-                opinion: actionName === '驳回' ? rejectReason || null : null
+                opinion: (actionName === '驳回' || actionName?.includes('驳回')) ? rejectReason || null : null
               }
             });
             console.log('[Hazard PATCH] 已更新候选人操作状态，影响行数:', updateResult.count);
@@ -1359,13 +1445,32 @@ export const PATCH = withErrorHandling(
         console.error('[Hazard PATCH] 事务执行失败:', {
           error: txError,
           message: txError instanceof Error ? txError.message : String(txError),
-          stack: txError instanceof Error ? txError.stack : undefined
+          stack: txError instanceof Error ? txError.stack : undefined,
+          hazardId: id,
+          actionName
         });
+        // ✅ 确保错误消息被正确传递，如果是已知错误类型，保持原消息；否则添加上下文
+        if (txError instanceof Error) {
+          // 如果错误消息已经足够详细，直接抛出
+          if (txError.message && txError.message.length > 0) {
+            throw txError;
+          }
+          // 否则创建一个包含上下文的新错误
+          throw new Error(`更新隐患记录失败: ${txError.message || '未知错误'}`);
+        }
         throw txError;
       }
     }).catch(txError => {
-      console.error('[Hazard PATCH] 事务回滚:', txError);
-      throw txError;
+      console.error('[Hazard PATCH] 事务回滚:', {
+        error: txError,
+        message: txError instanceof Error ? txError.message : String(txError),
+        hazardId: id
+      });
+      // ✅ 确保错误消息被正确传递
+      if (txError instanceof Error && txError.message) {
+        throw txError;
+      }
+      throw new Error(`事务执行失败: ${txError instanceof Error ? txError.message : String(txError)}`);
     });
 
     console.log('[Hazard PATCH] 事务提交成功');

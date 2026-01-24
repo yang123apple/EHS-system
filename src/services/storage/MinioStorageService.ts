@@ -177,8 +177,7 @@ class MinioStorageService {
     expiresIn: number = this.PRIVATE_ACCESS_EXPIRES
   ): Promise<FileAccessUrl> {
     if (bucket === 'public') {
-      // 公开文件：返回永久 URL
-      const config = minioService.getClient();
+      // 公开文件：返回永久 URL（不需要 Client 连接，只需要配置信息）
       const bucketName = minioService.getBucketName('public');
       const endpoint = process.env.MINIO_ENDPOINT || 'localhost';
       const port = process.env.MINIO_PORT || '9000';
@@ -190,7 +189,9 @@ class MinioStorageService {
         isPublic: true,
       };
     } else {
-      // 私有文件：返回预签名 URL
+      // 私有文件：返回预签名 URL（需要 Client 连接）
+      // 确保 MinIO 已初始化
+      await minioService.initialize();
       const url = await minioService.generatePresignedGetUrl(
         'private',
         objectName,

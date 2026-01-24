@@ -526,10 +526,16 @@ export function withErrorHandling<T extends { params: Promise<any> } = { params:
       }
       
       // 处理其他错误
+      // ✅ 优先使用错误消息作为主要错误信息，而不是通用的"服务器内部错误"
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      
       return NextResponse.json(
         { 
-          error: '服务器内部错误',
-          details: error instanceof Error ? error.message : String(error),
+          error: errorMessage || '服务器内部错误',
+          details: errorMessage,
+          // 开发环境下包含堆栈信息
+          ...(isDevelopment && error instanceof Error && error.stack ? { stack: error.stack } : {}),
         },
         { status: 500 }
       );

@@ -115,15 +115,14 @@ export async function syncHazardVisibility(
   const client = tx || prisma;
 
   // 1. 查询隐患完整数据（包含所有关联）
+  // ✅ 修复：使用正确的关系字段名 ccUsersRel 和 candidateHandlersRel
   const hazard = await client.hazardRecord.findUnique({
     where: { id: hazardId },
     include: {
-      ccUsers: {
-        where: { deletedAt: null },
+      ccUsersRel: {
         select: { userId: true }
       },
-      candidateHandlers: {
-        where: { deletedAt: null },
+      candidateHandlersRel: {
         select: { userId: true }
       }
     }
@@ -133,8 +132,21 @@ export async function syncHazardVisibility(
     throw new Error(`隐患记录不存在: ${hazardId}`);
   }
 
-  // 2. 计算可见性角色
-  const roles = calculateVisibilityRoles(hazard);
+  // 2. 转换关系数据为 calculateVisibilityRoles 期望的格式
+  const ccUsers = hazard.ccUsersRel ? hazard.ccUsersRel.map((cc: { userId: string }) => ({ userId: cc.userId })) : [];
+  const candidateHandlers = hazard.candidateHandlersRel ? hazard.candidateHandlersRel.map((ch: { userId: string }) => ({ userId: ch.userId })) : [];
+  
+  const hazardForCalculation = {
+    reporterId: hazard.reporterId,
+    dopersonal_ID: hazard.dopersonal_ID,
+    ccUsers,
+    responsibleId: hazard.responsibleId,
+    verifierId: hazard.verifierId,
+    candidateHandlers
+  };
+
+  // 3. 计算可见性角色
+  const roles = calculateVisibilityRoles(hazardForCalculation);
 
   // 3. ✅ P1修复：直接在当前事务中执行，不创建嵌套事务
   // 删除旧记录
@@ -143,15 +155,26 @@ export async function syncHazardVisibility(
   });
 
   // 批量插入新记录
+  // ✅ 修复：移除 skipDuplicates 参数（Prisma createMany 不支持此参数）
+  // 由于已经先删除了所有旧记录，理论上不会有重复数据
   if (roles.length > 0) {
-    await client.hazardVisibility.createMany({
-      data: roles.map(r => ({
-        hazardId,
-        userId: r.userId,
-        role: r.role
-      })),
-      skipDuplicates: true // 防止重复键错误
-    });
+    try {
+      await client.hazardVisibility.createMany({
+        data: roles.map(r => ({
+          hazardId,
+          userId: r.userId,
+          role: r.role
+        }))
+      });
+    } catch (error: any) {
+      // 如果出现唯一约束冲突（P2002），说明有并发问题，记录日志但不抛出错误
+      // 因为可见性记录已经存在，不影响功能
+      if (error.code === 'P2002') {
+        console.warn(`[syncHazardVisibility] 唯一约束冲突（可能由并发导致）: ${hazardId}`, error);
+      } else {
+        throw error;
+      }
+    }
   }
 }
 

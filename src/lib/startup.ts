@@ -47,14 +47,30 @@ async function initializeMinIO(): Promise<boolean> {
     
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-    // 初始化 MinIO（开发环境增加重试，避免 predev 刚启动服务尚未就绪）
-    const maxAttempts = isProd ? 1 : 3;
+    // 初始化 MinIO（开发环境减少重试次数，快速失败）
+    // 开发环境：最多尝试 2 次（快速失败，避免长时间等待）
+    const maxAttempts = isProd ? 1 : 2;
     let lastError: any = null;
+    let triedAutoStart = false;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         if (attempt > 1) {
-          console.log(`⏳ MinIO 初始化重试 (${attempt}/${maxAttempts})...`);
+          console.log(`⏳ MinIO 初始化重试 (${attempt}/${maxAttempts})，等待 3 秒...`);
+          await sleep(3000);
+        }
+
+        // 如果第一次尝试失败，且是开发环境，尝试自动启动 MinIO
+        if (attempt === 1 && !isProd && !triedAutoStart) {
+          const { checkMinIOHealth, tryStartMinIO } = await import('./minio-auto-start');
+          const isHealthy = await checkMinIOHealth();
+          if (!isHealthy) {
+            console.log('🔄 MinIO 未运行，尝试自动启动...');
+            triedAutoStart = true;
+            await tryStartMinIO();
+            // 等待 MinIO 启动
+            await sleep(3000);
+          }
         }
 
         await minioService.initialize();
@@ -316,6 +332,56 @@ export async function initializeApp() {
     console.log(`  ${initResults.minio ? '✅' : '⚠️ '} MinIO 对象存储: ${initResults.minio ? '已启动' : '未启动'}`);
     console.log('');
     
+    // 显示局域网访问信息
+    if (initResults.minio) {
+      try {
+        const os = require('os');
+        const interfaces = os.networkInterfaces();
+        let localIP: string | null = null;
+        
+        // 查找局域网 IP
+        for (const name of Object.keys(interfaces)) {
+          const iface = interfaces[name];
+          if (!iface) continue;
+          
+          for (const addr of iface) {
+            if (addr.family === 'IPv4' && 
+                addr.address !== '127.0.0.1' && 
+                !addr.address.startsWith('169.254.')) {
+              localIP = addr.address;
+              break;
+            }
+          }
+          if (localIP) break;
+        }
+        
+        if (localIP) {
+          const minioEndpoint = process.env.MINIO_ENDPOINT || localIP;
+          const minioPort = process.env.MINIO_PORT || '9000';
+          const nextjsPort = process.env.PORT || '3000';
+          
+          console.log('========================================');
+          console.log('  🌐 局域网访问信息');
+          console.log('========================================');
+          console.log(`📍 本机 IP 地址: ${localIP}`);
+          console.log('');
+          console.log('局域网内其他设备可通过以下地址访问：');
+          console.log(`  • Web 应用:     http://${localIP}:${nextjsPort}`);
+          console.log(`  • MinIO API:    http://${minioEndpoint}:${minioPort}`);
+          console.log(`  • MinIO Console: http://${localIP}:9001`);
+          console.log('');
+          console.log('提示：');
+          console.log('  - 确保防火墙允许相关端口访问');
+          console.log('  - 确保设备在同一局域网内');
+          console.log('  - 如果无法访问，请检查防火墙设置');
+          console.log('========================================');
+          console.log('');
+        }
+      } catch (error) {
+        // 忽略错误，不影响启动
+      }
+    }
+    
     if (initResults.backup) {
       console.log('备份调度计划:');
       console.log('  • 日志归档: 每15天（归档过去15天的日志，保留10年）');
@@ -334,7 +400,47 @@ export async function initializeApp() {
     
     if (!initResults.minio) {
       console.log('⚠️  MinIO 未启动，文件上传功能可能不可用');
-      console.log('   启动 MinIO: docker-compose -f docker-compose.minio.yml up -d');
+      
+      // 检测是否为本地 MinIO（bin 文件夹）
+      const fs = require('fs');
+      const path = require('path');
+      const projectRoot = process.cwd();
+      const binMinio = path.join(projectRoot, 'bin', 'minio');
+      const binMinioExe = path.join(projectRoot, 'bin', 'minio.exe');
+      const hasLocalMinio = fs.existsSync(binMinio) || fs.existsSync(binMinioExe);
+      
+      if (hasLocalMinio) {
+        // 本地 MinIO（bin 文件夹）
+        console.log('   检测到本地 MinIO（bin 文件夹），启动方式：');
+        const os = require('os');
+        const isWindows = os.platform() === 'win32';
+        if (isWindows) {
+          console.log('   Windows:');
+          console.log('     - .\\start-minio-local.bat');
+          console.log('     - .\\start-minio.ps1');
+          console.log('     - .\\bin\\minio.exe server .\\data\\minio-data --console-address ":9001"');
+        } else {
+          console.log('   Mac/Linux:');
+          console.log('     - ./start-minio-local.sh');
+          console.log('     - ./bin/minio server ./data/minio-data --console-address ":9001"');
+        }
+        console.log('');
+        console.log('   或者使用 Docker:');
+        console.log('     - docker-compose -f docker-compose.minio.yml up -d');
+      } else {
+        // Docker MinIO
+        console.log('   启动 MinIO:');
+        console.log('     - docker-compose -f docker-compose.minio.yml up -d');
+        console.log('');
+        console.log('   或者使用本地 MinIO（需要先下载到 bin 文件夹）:');
+        const os = require('os');
+        const isWindows = os.platform() === 'win32';
+        if (isWindows) {
+          console.log('     - .\\start-minio-local.bat');
+        } else {
+          console.log('     - ./start-minio-local.sh');
+        }
+      }
       console.log('');
     }
     

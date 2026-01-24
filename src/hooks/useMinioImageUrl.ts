@@ -119,24 +119,68 @@ export function useMinioImageUrls(
             );
 
             if (!response.ok) {
-              const errorText = await response.text();
-              console.error(`[useMinioImageUrls] API失败 [${index}]:`, {
-                objectName,
-                status: response.status,
-                statusText: response.statusText,
-                error: errorText
-              });
+              // 尝试获取错误信息
+              let errorMessage = '';
+              let errorDetails: any = null;
+              
+              try {
+                const contentType = response.headers.get('content-type');
+                if (contentType?.includes('application/json')) {
+                  const jsonData = await response.json();
+                  errorDetails = jsonData;
+                  // 提取错误消息
+                  if (typeof jsonData === 'string') {
+                    errorMessage = jsonData;
+                  } else if (jsonData.error) {
+                    errorMessage = typeof jsonData.error === 'string' ? jsonData.error : JSON.stringify(jsonData.error);
+                  } else if (jsonData.message) {
+                    errorMessage = jsonData.message;
+                  } else {
+                    errorMessage = JSON.stringify(jsonData);
+                  }
+                } else {
+                  const errorText = await response.text();
+                  errorMessage = errorText || '';
+                  errorDetails = errorText ? { raw: errorText } : null;
+                }
+              } catch (parseError: any) {
+                // 如果解析失败，记录解析错误
+                errorMessage = `无法解析错误响应: ${parseError?.message || String(parseError)}`;
+                errorDetails = { parseError: parseError?.message || String(parseError) };
+              }
+              
+              // 构建完整的错误日志对象（确保所有字段都有值）
+              const errorLog = {
+                index,
+                objectName: objectName || '(空)',
+                status: response.status || 0,
+                statusText: response.statusText || 'Unknown',
+                error: errorMessage || `HTTP ${response.status || 0} 错误（无响应体）`,
+                ...(errorDetails && { details: errorDetails })
+              };
+              
+              // 使用 JSON.stringify 确保错误信息可见（即使控制台不展开对象）
+              console.error(`[useMinioImageUrls] API失败 [${index}]:`, JSON.stringify(errorLog, null, 2));
+              // 同时也输出对象形式（方便调试）
+              console.error(`[useMinioImageUrls] API失败详情 [${index}]:`, errorLog);
               return '';
             }
 
             const data = await response.json();
             console.log(`[useMinioImageUrls] 成功获取URL [${index}]:`, data.url?.substring(0, 50));
             return data.url;
-          } catch (fetchError) {
-            console.error(`[useMinioImageUrls] 请求异常 [${index}]:`, {
-              objectName,
-              error: fetchError
-            });
+          } catch (fetchError: any) {
+            // 网络错误或其他异常
+            const errorLog = {
+              index,
+              objectName: objectName || '(空)',
+              error: fetchError?.message || String(fetchError) || '网络请求失败',
+              errorType: fetchError?.name || 'FetchError',
+              ...(fetchError?.stack && { stack: fetchError.stack })
+            };
+            // 使用 JSON.stringify 确保错误信息可见
+            console.error(`[useMinioImageUrls] 请求异常 [${index}]:`, JSON.stringify(errorLog, null, 2));
+            console.error(`[useMinioImageUrls] 请求异常详情 [${index}]:`, errorLog);
             return '';
           }
         });
