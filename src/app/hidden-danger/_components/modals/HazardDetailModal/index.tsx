@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import { X, Trash2, Siren, ZoomIn, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 import { StatusBadge, RiskBadge } from '../../Badges';
-import { ProcessingFlow } from './ProcessingFlow';
 import { WorkflowSteps } from './WorkflowSteps';
 import { AssignForm } from './ActionForms/AssignForm';
 import { RectifyForm } from './ActionForms/RectifyForm';
@@ -295,8 +294,6 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
             <div className="space-y-4">
               <div className="text-sm font-bold text-slate-800 mb-2">工作流步骤</div>
               <WorkflowSteps hazardId={hazard.id} currentStepIndex={hazard.currentStepIndex} />
-              <div className="text-sm font-bold text-slate-800 mb-2 mt-4">流转记录</div>
-              <ProcessingFlow logs={hazard.logs} />
             </div>
           </div>
 
