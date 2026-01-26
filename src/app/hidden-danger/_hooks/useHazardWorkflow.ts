@@ -79,7 +79,12 @@ export function useHazardWorkflow(onSuccess: () => void) {
         dispatchAction,
         hazardId: hazard.id,
         currentStepIndex: hazard.currentStepIndex,
-        operator: user?.name
+        operator: {
+          id: user?.id,
+          name: user?.name,
+          role: user?.role,
+          roles: user?.roles // 尝试打印 roles，有些系统使用数组
+        }
       });
 
       const result = await HazardDispatchEngine.dispatch({
@@ -87,7 +92,8 @@ export function useHazardWorkflow(onSuccess: () => void) {
         action: dispatchAction,
         operator: {
           id: user?.id || 'system',
-          name: user?.name || '系统'
+          name: user?.name || '系统',
+          role: user?.role || (Array.isArray(user?.roles) ? user.roles.join(',') : '') // 兼容 roles 数组
         },
         workflowSteps: workflowConfig.steps,
         allUsers,
@@ -172,11 +178,22 @@ export function useHazardWorkflow(onSuccess: () => void) {
       dispatchedHandlers.currentStepIndex = nextStepIndex;
       dispatchedHandlers.currentStepId = workflowConfig.steps[nextStepIndex]?.id;
 
+      // 🔧 修复：当「提交整改」时，如果当前步骤是「整改」且 dopersonal_ID 未设置，则设置为责任人
+      // 处理「开始整改」时 dopersonal_ID 未正确设置的情况
+      if (action === 'finish_rectify' && hazard.status === 'rectifying') {
+        const currentStep = workflowConfig.steps[hazard.currentStepIndex ?? 0];
+        if (currentStep?.id === 'rectify' && !hazard.dopersonal_ID && hazard.responsibleId) {
+          dispatchedHandlers.dopersonal_ID = hazard.responsibleId;
+          dispatchedHandlers.dopersonal_Name = hazard.responsibleName;
+          console.log('🔧 提交整改时发现 dopersonal_ID 未设置，已设置为责任人:', hazard.responsibleName);
+        }
+      }
+      
       // 🟢 会签模式未完成：保持当前处理人不变，只更新candidateHandlers
       if (shouldStayAtCurrentStep) {
         // 保持当前处理人
-        dispatchedHandlers.dopersonal_ID = hazard.dopersonal_ID;
-        dispatchedHandlers.dopersonal_Name = hazard.dopersonal_Name;
+        dispatchedHandlers.dopersonal_ID = hazard.dopersonal_ID || dispatchedHandlers.dopersonal_ID;
+        dispatchedHandlers.dopersonal_Name = hazard.dopersonal_Name || dispatchedHandlers.dopersonal_Name;
         dispatchedHandlers.approvalMode = hazard.approvalMode;
         // candidateHandlers会在后面统一更新
         

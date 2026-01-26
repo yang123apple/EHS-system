@@ -1123,6 +1123,7 @@ export const PATCH = withErrorHandling(
       photos: photosInput,
       ccDepts: ccDeptsInput,
       ccUsers: ccUsersInput,
+      rectifyPhotos: rectifyPhotosInput, // 🟢 新增：整改照片
       logs: logsInput,
       old_personal_ID: oldPersonalIdInput,
       ccUserNames,
@@ -1171,6 +1172,182 @@ export const PATCH = withErrorHandling(
           currentStepIndex: oldRecord.currentStepIndex,
           dopersonal_ID: oldRecord.dopersonal_ID
         });
+
+        // 🚀 权限检查：从 HazardWorkflowStep 表读取当前步骤信息并验证权限
+        if (actionName && ['提交整改', 'rectify', '验收通过', 'verify_pass', '验收驳回', 'verify_reject', '驳回', 'reject'].includes(actionName)) {
+          const { getWorkflowStep } = await import('@/services/hazardWorkflowStep.service');
+          const currentStepIndex = oldRecord.currentStepIndex ?? 0;
+          const currentStepInfo = await getWorkflowStep(id, currentStepIndex);
+          
+          console.log('[Hazard PATCH] 权限检查开始:', {
+            userId: user.id,
+            userName: user.name,
+            actionName,
+            currentStepIndex,
+            hasStepInfo: !!currentStepInfo,
+            dopersonal_ID: oldRecord.dopersonal_ID,
+            responsibleId: oldRecord.responsibleId
+          });
+          
+          if (currentStepInfo) {
+            // 使用步骤信息进行权限检查
+            const { handlers, candidateHandlers, approvalMode, stepName } = currentStepInfo;
+            let hasPermission = false;
+            
+            console.log('[Hazard PATCH] 步骤信息详情:', {
+              stepName,
+              handlerUserIds: handlers.userIds,
+              handlerUserNames: handlers.userNames,
+              candidateHandlers: candidateHandlers?.map(h => ({ userId: h.userId, userName: h.userName })),
+              approvalMode,
+              candidateHandlersCount: candidateHandlers?.length || 0
+            });
+            
+            // Admin 总是有权限
+            if (user.role === 'admin') {
+              hasPermission = true;
+              console.log('[Hazard PATCH] Admin 用户，权限检查通过');
+            } else {
+              // 多人模式：检查是否在候选处理人列表中
+              if (candidateHandlers && candidateHandlers.length > 0 && approvalMode) {
+                console.log('[Hazard PATCH] 进入多人模式权限检查');
+                // 检查是否在候选人列表中
+                const isCandidate = candidateHandlers.some(h => h.userId === user.id);
+                console.log('[Hazard PATCH] 是否在候选人列表中:', isCandidate);
+                
+                if (isCandidate) {
+                  // 对于或签模式，检查是否已有人操作
+                  if (approvalMode === 'OR') {
+                    // 需要从 HazardCandidateHandler 表读取 hasOperated 状态
+                    const candidateHandlerRecord = await tx.hazardCandidateHandler.findFirst({
+                      where: {
+                        hazardId: id,
+                        stepIndex: currentStepIndex,
+                        userId: user.id
+                      }
+                    });
+                    // 如果当前用户已操作，则无权限
+                    if (candidateHandlerRecord?.hasOperated) {
+                      hasPermission = false;
+                      console.log('[Hazard PATCH] 或签模式：当前用户已操作，无权限');
+                    } else {
+                      // 检查是否有其他人已操作（或签模式）
+                      const someoneOperated = await tx.hazardCandidateHandler.findFirst({
+                        where: {
+                          hazardId: id,
+                          stepIndex: currentStepIndex,
+                          hasOperated: true
+                        }
+                      });
+                      hasPermission = !someoneOperated;
+                      console.log('[Hazard PATCH] 或签模式：其他人是否已操作:', !!someoneOperated, '权限:', hasPermission);
+                    }
+                  } else if (approvalMode === 'AND') {
+                    // 会签模式：检查当前用户是否已操作
+                    const candidateHandlerRecord = await tx.hazardCandidateHandler.findFirst({
+                      where: {
+                        hazardId: id,
+                        stepIndex: currentStepIndex,
+                        userId: user.id
+                      }
+                    });
+                    hasPermission = !candidateHandlerRecord?.hasOperated;
+                    console.log('[Hazard PATCH] 会签模式：当前用户是否已操作:', !!candidateHandlerRecord?.hasOperated, '权限:', hasPermission);
+                  } else {
+                    hasPermission = isCandidate;
+                    console.log('[Hazard PATCH] 其他审批模式，权限:', hasPermission);
+                  }
+                } else {
+                  console.log('[Hazard PATCH] 用户不在候选人列表中');
+                }
+              } else {
+                // 单人模式：检查当前用户是否在处理人列表中
+                console.log('[Hazard PATCH] 进入单人模式权限检查');
+                if (handlers.userIds && handlers.userIds.length > 0) {
+                  hasPermission = handlers.userIds.includes(user.id);
+                  console.log('[Hazard PATCH] 单人模式：检查处理人列表', {
+                    handlerUserIds: handlers.userIds,
+                    userId: user.id,
+                    hasPermission
+                  });
+                  
+                  // 🔧 如果处理人列表中没有，但用户是责任人，也应该授予权限（修复匹配逻辑错误的情况）
+                  if (!hasPermission && oldRecord.responsibleId === user.id) {
+                    hasPermission = true;
+                    console.log('[Hazard PATCH] 单人模式：处理人列表中不包含用户，但用户是责任人，授予权限');
+                  }
+                } else {
+                  // 向后兼容：从 hazard 对象读取
+                  hasPermission = oldRecord.dopersonal_ID === user.id;
+                  console.log('[Hazard PATCH] 单人模式：handlers.userIds 为空，回退到检查 dopersonal_ID', {
+                    dopersonal_ID: oldRecord.dopersonal_ID,
+                    userId: user.id,
+                    hasPermission
+                  });
+                  
+                  // 🔧 额外检查：如果 dopersonal_ID 也不匹配，检查是否是责任人
+                  if (!hasPermission && oldRecord.responsibleId === user.id) {
+                    hasPermission = true;
+                    console.log('[Hazard PATCH] 单人模式：dopersonal_ID 不匹配，但用户是责任人，授予权限');
+                  }
+                }
+              }
+            }
+            
+            if (!hasPermission) {
+              console.warn('[Hazard PATCH] 权限检查失败:', {
+                userId: user.id,
+                userName: user.name,
+                actionName,
+                currentStepIndex,
+                stepName,
+                handlerUserIds: handlers.userIds,
+                handlerUserNames: handlers.userNames,
+                candidateUserIds: candidateHandlers?.map(h => h.userId),
+                candidateUserNames: candidateHandlers?.map(h => h.userName),
+                approvalMode,
+                dopersonal_ID: oldRecord.dopersonal_ID,
+                responsibleId: oldRecord.responsibleId
+              });
+              throw new Error('权限不足：您没有权限执行此操作');
+            }
+            
+            console.log('[Hazard PATCH] 权限检查通过:', {
+              userId: user.id,
+              actionName,
+              currentStepIndex,
+              stepName
+            });
+          } else {
+            // 如果没有步骤信息，使用向后兼容的权限检查
+            console.log('[Hazard PATCH] 未找到步骤信息，使用向后兼容的权限检查');
+            if (user.role !== 'admin' && oldRecord.dopersonal_ID !== user.id) {
+              // 检查是否是候选处理人
+              const isCandidate = await tx.hazardCandidateHandler.findFirst({
+                where: {
+                  hazardId: id,
+                  userId: user.id,
+                  stepIndex: currentStepIndex
+                }
+              });
+              
+              if (!isCandidate) {
+                // 🔧 额外检查：如果都不是，检查是否是责任人
+                if (oldRecord.responsibleId === user.id) {
+                  console.log('[Hazard PATCH] 向后兼容：用户是责任人，授予权限');
+                } else {
+                  console.warn('[Hazard PATCH] 向后兼容权限检查失败:', {
+                    userId: user.id,
+                    dopersonal_ID: oldRecord.dopersonal_ID,
+                    responsibleId: oldRecord.responsibleId,
+                    isCandidate: !!isCandidate
+                  });
+                  throw new Error('权限不足：您没有权限执行此操作');
+                }
+              }
+            }
+          }
+        }
 
       // 2. 并发一致性校验：检查关键字段是否被其他操作修改
       if (updates.status !== undefined && oldRecord.status !== updates.status) {
@@ -1238,6 +1415,9 @@ export const PATCH = withErrorHandling(
       }
       if (oldPersonalIdInput !== undefined) {
         finalUpdates.old_personal_ID = Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput;
+      }
+      if (rectifyPhotosInput !== undefined) {
+        finalUpdates.rectifyPhotos = Array.isArray(rectifyPhotosInput) ? JSON.stringify(rectifyPhotosInput) : rectifyPhotosInput;
       }
       // 🔐 处理验收相关字段
       if (verifyDesc !== undefined) {

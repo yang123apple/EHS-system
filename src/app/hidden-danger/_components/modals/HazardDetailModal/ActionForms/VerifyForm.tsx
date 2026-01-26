@@ -5,7 +5,6 @@ import { CheckCircle, Ban, Wand2, Loader2, Info, Upload, X } from 'lucide-react'
 import { matchHandler } from '@/app/hidden-danger/_utils/handler-matcher';
 import { apiFetch } from '@/lib/apiClient';
 import { ROOT_CAUSE_OPTIONS } from '@/constants/hazard';
-import SignatureManager from '@/components/common/SignatureManager';
 import { useAuth } from '@/context/AuthContext';
 
 interface VerifyFormProps {
@@ -20,7 +19,6 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
   const [rootCause, setRootCause] = useState<string>('');
   const [verifyDesc, setVerifyDesc] = useState('');
   const [verifyPhotos, setVerifyPhotos] = useState<string[]>([]);
-  const [signature, setSignature] = useState<string>(''); // 电子签名（单个签名）
   const [workflowConfig, setWorkflowConfig] = useState<HazardWorkflowConfig | null>(null);
   const [isMatching, setIsMatching] = useState(false);
   const [matchResult, setMatchResult] = useState<string>('');
@@ -278,49 +276,19 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
         )}
       </div>
 
-      {/* 电子签名 */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-2">
-          电子签名 <span className="text-red-500">*</span>
-          <span className="text-xs text-slate-500 ml-2">（隐患验收人）</span>
-        </label>
-        <SignatureManager
-          value={signature}
-          onChange={(value) => setSignature(value as string)}
-          allowMultiple={false}
-          maxWidth={300}
-          maxHeight={120}
-          canvasWidth={600}
-          canvasHeight={300}
-          className="border border-slate-300 rounded-lg p-3 bg-white"
-        />
-      </div>
-
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 pt-2">
         <button 
           onClick={() => {
-            // 验证签名
-            if (!signature || !signature.trim()) {
-              alert('请完成电子签名后再提交验收');
-              return;
-            }
-
             const payload: any = {};
             if (rootCause) payload.rootCause = rootCause;
             if (verifyDesc) payload.verifyDesc = verifyDesc;
             if (verifyPhotos.length > 0) payload.verifyPhotos = verifyPhotos;
-            // 传递签名数据
-            payload.signature = signature;
+            
             payload.signerId = user?.id;
             payload.signerName = user?.name;
             onProcess('verify_pass', hazard, payload);
           }}
-          disabled={!signature || !signature.trim()}
-          className={`w-full py-2 rounded text-sm font-bold shadow transition-colors flex items-center justify-center gap-2 ${
-            !signature || !signature.trim()
-              ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-              : 'bg-green-600 text-white hover:bg-green-700'
-          }`}
+          className="w-full py-2 rounded text-sm font-bold shadow transition-colors flex items-center justify-center gap-2 bg-green-600 text-white hover:bg-green-700"
         >
           <CheckCircle size={16}/> 验收通过
         </button>

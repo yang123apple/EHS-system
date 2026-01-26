@@ -165,8 +165,8 @@ function matchFixed(
   }
 
   // 4. 自动匹配：如果是"责任人"，返回责任人
-  if (config?.userId === 'auto_assigned' && hazard.assignedTo) {
-    const assigned = allUsers.find(u => u.id === hazard.assignedTo);
+  if (config?.userId === 'auto_assigned' && hazard.responsibleId) {
+    const assigned = allUsers.find(u => u.id === hazard.responsibleId);
     if (assigned) {
       console.log('[handler-matcher] 自动匹配责任人:', assigned.name);
       return [assigned];

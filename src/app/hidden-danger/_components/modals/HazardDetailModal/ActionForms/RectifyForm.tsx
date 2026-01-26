@@ -3,7 +3,7 @@ import { useState, useRef } from 'react';
 import { Camera, Image as ImageIcon, Send, XCircle, Upload, X } from 'lucide-react';
 
 export function RectifyForm({ hazard, onProcess, user }: any) {
-  const [data, setData] = useState({ rectifyDesc: '', photos: [] as string[] });
+  const [data, setData] = useState({ rectifyDesc: '', rectifyPhotos: [] as string[] });
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -34,7 +34,7 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
     const reader = new FileReader();
     reader.onload = (evt) => {
       const result = evt.target?.result as string;
-      setData(prev => ({ ...prev, photos: [...prev.photos, result] }));
+      setData(prev => ({ ...prev, rectifyPhotos: [...prev.rectifyPhotos, result] }));
     };
     reader.readAsDataURL(file);
 
@@ -47,7 +47,7 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
   const handleRemovePhoto = (index: number) => {
     setData(prev => ({
       ...prev,
-      photos: prev.photos.filter((_, i) => i !== index)
+      rectifyPhotos: prev.rectifyPhotos.filter((_, i) => i !== index)
     }));
   };
 
@@ -74,9 +74,9 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
           </label>
           
           {/* 已有照片预览 */}
-          {data.photos.length > 0 && (
+          {data.rectifyPhotos.length > 0 && (
             <div className="grid grid-cols-4 gap-2 mb-2">
-              {data.photos.map((p, i) => (
+              {data.rectifyPhotos.map((p, i) => (
                 <div key={i} className="relative group">
                   <img 
                     src={p} 

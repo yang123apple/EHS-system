@@ -1,7 +1,7 @@
 // src/app/api/archives/config/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { withAdmin, logApiOperation } from '@/middleware/auth';
+import { withAdmin, withAuth, logApiOperation } from '@/middleware/auth';
 
 // 默认配置值
 const DEFAULT_CONFIG = {
@@ -39,7 +39,7 @@ const DEFAULT_CONFIG = {
 };
 
 // GET: 获取所有配置
-export const GET = withAdmin(async () => {
+export const GET = withAuth(async () => {
     const configs = await prisma.archiveConfig.findMany();
 
     const result: Record<string, any> = { ...DEFAULT_CONFIG };

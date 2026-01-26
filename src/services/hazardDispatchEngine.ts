@@ -71,6 +71,7 @@ export interface DispatchContext {
   operator: {
     id: string;
     name: string;
+    role?: string;
   };
   workflowSteps: HazardWorkflowStep[];
   allUsers: SimpleUser[];
@@ -637,12 +638,34 @@ export class HazardDispatchEngine {
    * 状态流转前校验必要字段
    * 确保当前执行人、整改提交时间等关键字段符合流转条件
    */
+  /**
+   * 判断操作人是否为管理员
+   */
+  private static isOperatorAdmin(operator: { id: string; name: string; role?: string }): boolean {
+    if (!operator.role) return false;
+    
+    const roleStr = String(operator.role).toLowerCase();
+    return (
+      roleStr.includes('管理员') || 
+      roleStr.includes('admin') || 
+      roleStr.includes('super') ||
+      roleStr.includes('主管') // 通常主管也拥有较高权限
+    );
+  }
+
   private static async validateBeforeTransition(
     hazard: HazardRecord,
     action: DispatchAction,
-    operator: { id: string; name: string },
+    operator: { id: string; name: string; role?: string },
     currentStepIndex: number
   ): Promise<string | null> {
+    console.log('🔍 [派发引擎] 权限校验开始:', {
+      action,
+      operator: { id: operator.id, name: operator.name, role: operator.role },
+      hazardStatus: hazard.status,
+      currentStepIndex
+    });
+
     // 🟢 特殊处理：隐患初始创建时跳过权限校验
     // SUBMIT 动作是系统初始化操作，此时还没有候选处理人列表
     if (action === DispatchAction.SUBMIT) {
@@ -654,16 +677,37 @@ export class HazardDispatchEngine {
     if (action === DispatchAction.RECTIFY) {
       // 提交整改时，必须验证当前执行人是否匹配
       if (!hazard.dopersonal_ID) {
-        return '当前步骤执行人未设置，无法提交整改';
-      }
-      // 检查操作人是否为当前执行人（或签/会签模式下允许候选处理人操作）
-      const isCurrentHandler = hazard.dopersonal_ID === operator.id;
-      const isCandidateHandler = hazard.candidateHandlers?.some(
-        candidate => candidate.userId === operator.id && !candidate.hasOperated
-      );
-      
-      if (!isCurrentHandler && !isCandidateHandler) {
-        return `当前操作人（${operator.name}）不是当前步骤的执行人，无法提交整改`;
+        // 🔧 责任人/管理员兜底：
+        // 1. 如果 dopersonal_ID 未设置，但当前状态为整改中且操作人是责任人
+        // 2. 如果操作人是管理员，允许修复数据并继续
+        const isAdmin = this.isOperatorAdmin(operator);
+        const isResponsible = hazard.responsibleId === operator.id;
+        
+        if ((hazard.status === 'rectifying' && isResponsible) || isAdmin) {
+          console.log(`[派发引擎] dopersonal_ID 未设置，但操作人具有权限（责任人=${isResponsible}, 管理员=${isAdmin}），允许提交整改`);
+          // 允许操作，但会在后续更新时设置 dopersonal_ID
+        } else {
+          return '当前步骤执行人未设置，无法提交整改';
+        }
+      } else {
+        // 检查操作人是否为当前执行人（或签/会签模式下允许候选处理人操作）
+        const isCurrentHandler = hazard.dopersonal_ID === operator.id;
+        const isCandidateHandler = hazard.candidateHandlers?.some(
+          candidate => candidate.userId === operator.id && !candidate.hasOperated
+        );
+        const isAdmin = this.isOperatorAdmin(operator);
+        
+        if (!isCurrentHandler && !isCandidateHandler) {
+          // 🔧 责任人/管理员兜底：即使不是当前执行人，但如果是责任人或管理员，也允许操作
+          const isResponsible = hazard.responsibleId === operator.id;
+          
+          if ((hazard.status === 'rectifying' && isResponsible) || isAdmin) {
+            console.log(`[派发引擎] 操作人不是当前执行人，但具有权限（责任人=${isResponsible}, 管理员=${isAdmin}），允许提交整改`);
+            // 允许操作
+          } else {
+            return `当前操作人（${operator.name}）不是当前步骤的执行人，无法提交整改`;
+          }
+        }
       }
     }
 
@@ -692,50 +736,64 @@ export class HazardDispatchEngine {
     }
 
       // 5. 校验会签/或签模式下的操作权限
-      // 优先使用传入的 candidateHandlers 数据（如果已从关联表加载）
-      if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) {
-        const approvalMode = hazard.approvalMode;
-        
-        // 🔒 安全校验：首先检查当前用户是否在候选处理人列表中
-        const isCandidate = hazard.candidateHandlers.some(h => String(h.userId) === String(operator.id));
-        if (!isCandidate) {
-          return `您不是当前步骤的候选处理人，无法执行此操作`;
-        }
-        
-        if (approvalMode === 'AND') {
-          // 会签模式下，已操作过的用户不能重复操作
-          const currentUserHandler = hazard.candidateHandlers.find(h => String(h.userId) === String(operator.id));
-          if (currentUserHandler && currentUserHandler.hasOperated) {
+      // 🟢 特殊处理：验收操作（VERIFY）不应受当前步骤（通常是整改步骤）候选处理人限制
+      // 验收人通常是管理员或上报人主管，而当前步骤候选人通常是整改责任人
+      const isVerifying = action === DispatchAction.VERIFY;
+
+      if (isVerifying) {
+        console.log('[派发引擎] 验收操作，跳过当前步骤候选处理人校验');
+      } else {
+        // 优先使用传入的 candidateHandlers 数据（如果已从关联表加载）
+        if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) {
+          const approvalMode = hazard.approvalMode;
+          const isAdmin = this.isOperatorAdmin(operator);
+          
+          // 🔒 安全校验：首先检查当前用户是否在候选处理人列表中
+          const isCandidate = hazard.candidateHandlers.some(h => String(h.userId) === String(operator.id));
+          
+          // 🔧 管理员特权：如果是管理员，允许跳过候选人检查
+          if (!isCandidate && !isAdmin) {
+            return `您不是当前步骤的候选处理人，无法执行此操作`;
+          }
+          
+          if (approvalMode === 'AND') {
+            // 会签模式下，已操作过的用户不能重复操作
+            const currentUserHandler = hazard.candidateHandlers.find(h => String(h.userId) === String(operator.id));
+            if (currentUserHandler && currentUserHandler.hasOperated) {
+              return '您已完成本次会签，无法重复操作';
+            }
+          } else if (approvalMode === 'OR') {
+            // 或签模式下，已有人操作后，其他人不能再操作
+            const someoneOperated = hazard.candidateHandlers.some(h => h.hasOperated);
+            if (someoneOperated) {
+              return '或签已完成，无法重复操作';
+            }
+          }
+        } else if (hazard.approvalMode && (hazard.approvalMode === 'OR' || hazard.approvalMode === 'AND')) {
+          // 如果 candidateHandlers 未加载，尝试从关联表查询（异步）
+          const { hasUserOperated, isUserCandidate } = await import('./hazardCandidateHandler.service');
+          const stepIndex = currentStepIndex ?? hazard.currentStepIndex ?? 0;
+          const isAdmin = this.isOperatorAdmin(operator);
+          
+          // 🔒 安全校验：首先检查当前用户是否在候选处理人列表中
+          const isCandidate = await isUserCandidate(hazard.id, operator.id, stepIndex);
+          
+          // 🔧 管理员特权：如果是管理员，允许跳过候选人检查
+          if (!isCandidate && !isAdmin) {
+            return `您不是当前步骤的候选处理人，无法执行此操作`;
+          }
+          
+          const hasOperated = await hasUserOperated(hazard.id, operator.id, stepIndex);
+          
+          if (hazard.approvalMode === 'AND' && hasOperated) {
+            // 会签模式下，已操作过的用户不能重复操作
             return '您已完成本次会签，无法重复操作';
           }
-        } else if (approvalMode === 'OR') {
-          // 或签模式下，已有人操作后，其他人不能再操作
-          const someoneOperated = hazard.candidateHandlers.some(h => h.hasOperated);
-          if (someoneOperated) {
+          
+          if (hazard.approvalMode === 'OR' && hasOperated) {
+            // 或签模式下，已有人操作后，其他人不能再操作
             return '或签已完成，无法重复操作';
           }
-        }
-      } else if (hazard.approvalMode && (hazard.approvalMode === 'OR' || hazard.approvalMode === 'AND')) {
-        // 如果 candidateHandlers 未加载，尝试从关联表查询（异步）
-        const { hasUserOperated, isUserCandidate } = await import('./hazardCandidateHandler.service');
-        const stepIndex = currentStepIndex ?? hazard.currentStepIndex ?? 0;
-        
-        // 🔒 安全校验：首先检查当前用户是否在候选处理人列表中
-        const isCandidate = await isUserCandidate(hazard.id, operator.id, stepIndex);
-        if (!isCandidate) {
-          return `您不是当前步骤的候选处理人，无法执行此操作`;
-        }
-        
-        const hasOperated = await hasUserOperated(hazard.id, operator.id, stepIndex);
-        
-        if (hazard.approvalMode === 'AND' && hasOperated) {
-          // 会签模式下，已操作过的用户不能重复操作
-          return '您已完成本次会签，无法重复操作';
-        }
-        
-        if (hazard.approvalMode === 'OR' && hasOperated) {
-          // 或签模式下，已有人操作后，其他人不能再操作
-          return '或签已完成，无法重复操作';
         }
       }
 

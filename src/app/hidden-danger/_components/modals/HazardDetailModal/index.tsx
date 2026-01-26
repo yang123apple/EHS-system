@@ -15,24 +15,46 @@ import {
   canVerifyHazard,
   canDeleteHazard,
   canRequestExtension,
-  canApproveExtension
+  canApproveExtension,
+  getCurrentStepInfoForPermission
 } from '../../../_utils/permissions';
+import type { StepHandlerResult } from '@/services/hazardHandlerResolver.service';
 import { getCheckTypeName } from '@/utils/checkTypeMapping';
 import { useMinioImageUrls } from '@/hooks/useMinioImageUrl';
 
 export default function HazardDetailModal({ hazard, onClose, user, allUsers, onProcess, onDelete }: any) {
   const [checkTypeName, setCheckTypeName] = useState<string>(hazard.checkType || '');
-  // 权限检查
-  const hasViewPermission = canViewHazard(hazard, user);
-  const hasAssignPermission = canAssignHazard(hazard, user);
-  const hasRectifyPermission = canRectifyHazard(hazard, user);
-  const hasVerifyPermission = canVerifyHazard(hazard, user);
-  const hasDeletePermission = canDeleteHazard(hazard, user);
-  const hasRequestExtensionPermission = canRequestExtension(hazard, user);
-  const hasApproveExtensionPermission = canApproveExtension(hazard, user);
+  const [currentStepInfo, setCurrentStepInfo] = useState<StepHandlerResult | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  
+  // 🚀 优化：从 HazardWorkflowStep 表读取当前步骤信息（用于权限检查）
+  useEffect(() => {
+    const loadCurrentStepInfo = async () => {
+      if (hazard.id && (hazard.currentStepIndex !== undefined && hazard.currentStepIndex !== null)) {
+        try {
+          const stepInfo = await getCurrentStepInfoForPermission(hazard.id, hazard.currentStepIndex);
+          setCurrentStepInfo(stepInfo);
+        } catch (error) {
+          console.error('[HazardDetailModal] 加载步骤信息失败:', error);
+          // 如果加载失败，使用 null，权限检查会回退到从 hazard 对象读取
+          setCurrentStepInfo(null);
+        }
+      }
+    };
+    
+    loadCurrentStepInfo();
+  }, [hazard.id, hazard.currentStepIndex]);
+  
+  // 权限检查（使用从表读取的步骤信息）
+  const hasViewPermission = canViewHazard(hazard, user);
+  const hasAssignPermission = canAssignHazard(hazard, user);
+  const hasRectifyPermission = canRectifyHazard(hazard, user, currentStepInfo);
+  const hasVerifyPermission = canVerifyHazard(hazard, user, currentStepInfo);
+  const hasDeletePermission = canDeleteHazard(hazard, user);
+  const hasRequestExtensionPermission = canRequestExtension(hazard, user);
+  const hasApproveExtensionPermission = canApproveExtension(hazard, user);
 
   // 确保三类照片始终是数组
   const photos = Array.isArray(hazard.photos) ? hazard.photos : (hazard.photos ? [hazard.photos] : []);
