@@ -9,11 +9,29 @@ export type Project = {
   code: string;
   name: string;
   location: string;
+  /** @deprecated 使用 contractorName 替代 */
   supplierName: string;
   contractNo?: string;
+  /** @deprecated 使用 requestorDept 替代 */
   requestDept: string;
   startDate: string; // ISO Date string YYYY-MM-DD
   endDate: string; // ISO Date string YYYY-MM-DD
+
+  // ✅ 新字段：申请方（推荐使用）
+  requestorDept?: string; // 申请部门
+  requestorHead?: string; // 申请人
+  requestorContact?: string; // 申请人联系方式
+
+  // ✅ 新字段：监管方（推荐使用）
+  supervisorDept?: string; // 监管部门
+  supervisorHead?: string; // 监管负责人
+  supervisorContact?: string; // 监管联系方式
+
+  // ✅ 新字段：承包商（推荐使用）
+  contractorName?: string; // 承包商名称
+  contractorHead?: string; // 承包商负责人
+  contractorContact?: string; // 承包商联系方式
+
   // 允许额外的动态字段，保持与原代码兼容
   [key: string]: any;
 };

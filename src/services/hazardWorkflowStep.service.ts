@@ -77,7 +77,7 @@ export async function getWorkflowSteps(hazardId: string): Promise<StepHandlerRes
       handlers: {
         userIds: JSON.parse(step.handlerUserIds || '[]'),
         userNames: JSON.parse(step.handlerUserNames || '[]'),
-        matchedBy: step.matchedBy
+        matchedBy: step.matchedBy === null ? undefined : step.matchedBy
       },
       ccUsers: {
         userIds: step.ccUserIds ? JSON.parse(step.ccUserIds) : [],
@@ -133,7 +133,7 @@ export async function getWorkflowStep(
       handlers: {
         userIds: JSON.parse(step.handlerUserIds || '[]'),
         userNames: JSON.parse(step.handlerUserNames || '[]'),
-        matchedBy: step.matchedBy
+        matchedBy: step.matchedBy === null ? undefined : step.matchedBy
       },
       ccUsers: {
         userIds: step.ccUserIds ? JSON.parse(step.ccUserIds) : [],

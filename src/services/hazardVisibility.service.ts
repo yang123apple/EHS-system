@@ -28,11 +28,14 @@ export interface VisibilityRole {
  */
 export function calculateVisibilityRoles(hazard: {
   reporterId: string;  // ✅ 修复：使用正确的字段名
-  dopersonal_ID?: string | null;
+  currentExecutorId?: string | null; // 新字段名
+  dopersonal_ID?: string | null; // 旧字段名（向后兼容）
   ccUsers?: Array<{ userId: string }>;
   responsibleId?: string | null;  // ✅ 修复：使用正确的字段名
   verifierId?: string | null;     // ✅ 修复：使用正确的字段名
   candidateHandlers?: Array<{ userId: string }>;
+  historicalHandlerIds?: string | null; // 🟢 新增：历史处理人ID列表（JSON字符串）
+  old_personal_ID?: string | null; // 🟢 旧字段（向后兼容）
 }): VisibilityRole[] {
   const roles: VisibilityRole[] = [];
   const addedUsers = new Set<string>(); // 去重
@@ -43,12 +46,34 @@ export function calculateVisibilityRoles(hazard: {
     addedUsers.add(`${hazard.reporterId}-creator`);
   }
 
-  // 2. 当前执行人
-  if (hazard.dopersonal_ID) {
-    const key = `${hazard.dopersonal_ID}-executor`;
+  // 2. 当前执行人（优先使用新字段名，向后兼容旧字段名）
+  const currentExecutorId = hazard.currentExecutorId || hazard.dopersonal_ID;
+  if (currentExecutorId) {
+    const key = `${currentExecutorId}-executor`;
     if (!addedUsers.has(key)) {
-      roles.push({ userId: hazard.dopersonal_ID, role: 'executor' });
+      roles.push({ userId: currentExecutorId, role: 'executor' });
       addedUsers.add(key);
+    }
+  }
+
+  // 🟢 2.5. 历史处理人（关键修复：确保历史参与人始终可见）
+  const historicalIdsJson = hazard.historicalHandlerIds || hazard.old_personal_ID;
+  if (historicalIdsJson) {
+    try {
+      const historicalIds: string[] = JSON.parse(historicalIdsJson);
+      if (Array.isArray(historicalIds)) {
+        historicalIds.forEach(userId => {
+          if (userId) {
+            const key = `${userId}-executor`;
+            if (!addedUsers.has(key)) {
+              roles.push({ userId, role: 'executor' });
+              addedUsers.add(key);
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('[calculateVisibilityRoles] 解析历史处理人ID失败:', error);
     }
   }
 
@@ -116,6 +141,7 @@ export async function syncHazardVisibility(
 
   // 1. 查询隐患完整数据（包含所有关联）
   // ✅ 修复：使用正确的关系字段名 ccUsersRel 和 candidateHandlersRel
+  // 🟢 新增：包含历史处理人ID字段
   const hazard = await client.hazardRecord.findUnique({
     where: { id: hazardId },
     include: {
@@ -135,18 +161,32 @@ export async function syncHazardVisibility(
   // 2. 转换关系数据为 calculateVisibilityRoles 期望的格式
   const ccUsers = hazard.ccUsersRel ? hazard.ccUsersRel.map((cc: { userId: string }) => ({ userId: cc.userId })) : [];
   const candidateHandlers = hazard.candidateHandlersRel ? hazard.candidateHandlersRel.map((ch: { userId: string }) => ({ userId: ch.userId })) : [];
-  
+
   const hazardForCalculation = {
     reporterId: hazard.reporterId,
-    dopersonal_ID: hazard.dopersonal_ID,
+    currentExecutorId: hazard.currentExecutorId,
+    dopersonal_ID: hazard.dopersonal_ID, // 向后兼容
     ccUsers,
     responsibleId: hazard.responsibleId,
     verifierId: hazard.verifierId,
-    candidateHandlers
+    candidateHandlers,
+    // 🟢 新增：传递历史处理人ID（关键修复）
+    historicalHandlerIds: (hazard as any).historicalHandlerIds,
+    old_personal_ID: (hazard as any).old_personal_ID
   };
 
   // 3. 计算可见性角色
   const roles = calculateVisibilityRoles(hazardForCalculation);
+
+  console.log('[syncHazardVisibility] 计算可见性角色:', {
+    hazardId,
+    totalRoles: roles.length,
+    uniqueUsers: new Set(roles.map(r => r.userId)).size,
+    roleBreakdown: roles.reduce((acc, r) => {
+      acc[r.role] = (acc[r.role] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>)
+  });
 
   // 3. ✅ P1修复：直接在当前事务中执行，不创建嵌套事务
   // 删除旧记录
@@ -166,6 +206,10 @@ export async function syncHazardVisibility(
           role: r.role
         }))
       });
+      console.log('[syncHazardVisibility] 成功创建可见性记录:', {
+        hazardId,
+        recordCount: roles.length
+      });
     } catch (error: any) {
       // 如果出现唯一约束冲突（P2002），说明有并发问题，记录日志但不抛出错误
       // 因为可见性记录已经存在，不影响功能
@@ -175,6 +219,14 @@ export async function syncHazardVisibility(
         throw error;
       }
     }
+  } else {
+    console.warn('[syncHazardVisibility] 未计算到任何可见性角色:', {
+      hazardId,
+      reporterId: hazard.reporterId,
+      currentExecutorId: hazard.currentExecutorId,
+      responsibleId: hazard.responsibleId,
+      verifierId: hazard.verifierId
+    });
   }
 }
 

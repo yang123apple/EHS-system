@@ -102,22 +102,20 @@ export function getBusinessCode(
  * @param userName 操作人姓名
  * @param module 模块
  * @param action 操作类型
- * @param targetLabel 操作对象描述
- * @returns 自然语言描述，如："张三 审批通过了 作业票 [JOB-2024-001]"
+ * @param _targetLabel 操作对象描述（已弃用，仅保留参数兼容性，不再在输出中使用）
+ * @returns 自然语言描述（纯中文），如："张三 审批通过了 作业票"
  */
 export function generateActionDescription(
   userName: string,
   module: LogModule,
   action: LogAction,
-  targetLabel?: string
+  _targetLabel?: string
 ): string {
   const moduleLabel = ModuleLabels[module];
   const actionLabel = ActionLabels[action];
-  
-  if (targetLabel) {
-    return `${userName} ${actionLabel}了 ${moduleLabel} [${targetLabel}]`;
-  }
-  
+
+  // 注：_targetLabel 参数已弃用，仅保留以支持现有代码
+  // 现在只返回纯中文描述，不包含英文编号
   return `${userName} ${actionLabel}了 ${moduleLabel}`;
 }
 

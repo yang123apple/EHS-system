@@ -8,11 +8,15 @@ import { Prisma } from '@prisma/client';
 // Prisma 类型定义 - 包含关联数据
 type PrismaHazardWithRelations = Prisma.HazardRecordGetPayload<{
   include: {
-    reporter: true;
+    reporter: {
+      include: {
+        department: true
+      }
+    };
     responsible: {
       include: {
-        department: true;
-      };
+        department: true
+      }
     };
   };
 }>;
@@ -176,8 +180,12 @@ async function mapHazard(pHazard: PrismaHazardWithRelations | PrismaHazardRecord
       rectificationType: (pHazard as any).rectificationType ?? undefined,
       reporterId: pHazard.reporterId,
       reporterName: pHazard.reporterName,
+      reporterDeptName: ('reporter' in pHazard && pHazard.reporter?.department?.name) ?? undefined, // ✅ 新字段
       // 🟢 新增：上报人部门ID（用于处理人匹配，如"上报人主管"策略）
       reporterDepartmentId: ('reporter' in pHazard && pHazard.reporter?.departmentId) ?? undefined,
+
+      // ============ 整改责任人信息（保留旧字段，添加新字段） ============
+      // ⚠️ 旧字段（保持兼容）
       responsibleId: pHazard.responsibleId ?? undefined,
       responsibleName: pHazard.responsibleName ?? undefined,
       // ✅ 优先从关联的User.department获取部门名称，回退到responsibleDept字段
@@ -185,31 +193,77 @@ async function mapHazard(pHazard: PrismaHazardWithRelations | PrismaHazardRecord
       responsibleDeptName: ('responsible' in pHazard && pHazard.responsible?.department?.name) ?? pHazard.responsibleDept ?? undefined,
       // 🟢 新增：责任部门ID（用于处理人匹配，确保与流程预览一致）
       responsibleDeptId: ('responsible' in pHazard && pHazard.responsible?.departmentId) ?? undefined,
+
+      // ✅ 新字段（推荐使用）- 从数据库中优先读取新字段
+      rectificationLeaderId: (pHazard as any).rectificationLeaderId ?? pHazard.responsibleId ?? undefined,
+      rectificationLeaderName: (pHazard as any).rectificationLeaderName ?? pHazard.responsibleName ?? undefined,
+      rectificationDeptId: (pHazard as any).rectificationDeptId ?? ('responsible' in pHazard && pHazard.responsible?.departmentId) ?? undefined,
+      rectificationDeptName: (pHazard as any).rectificationDeptName ?? ('responsible' in pHazard && pHazard.responsible?.department?.name) ?? pHazard.responsibleDept ?? undefined,
+
       // 🟢 新增：指派部门ID（用于处理人匹配，如"责任部门主管"策略）
       assignedDepartmentId: ('responsible' in pHazard && pHazard.responsible?.departmentId) ?? undefined,
+
       verifierId: pHazard.verifierId ?? undefined,
       verifierName: pHazard.verifierName ?? undefined,
+
+      // ============ 整改过程（保留旧字段，添加新字段） ============
+      // ⚠️ 旧字段（保持兼容）
       rectifyDesc: pHazard.rectifyDesc ?? undefined,
       rectifyRequirement: pHazard.rectifyRequirement ?? undefined,
+      rectifyPhotos: parseJsonField(pHazard.rectifyPhotos),
+      rectifyTime: normalizeDate(pHazard.rectifyTime) ?? undefined,
+
+      // ✅ 新字段（推荐使用）
+      rectificationNotes: (pHazard as any).rectificationNotes ?? pHazard.rectifyDesc ?? undefined,
+      rectificationRequirements: (pHazard as any).rectificationRequirements ?? pHazard.rectifyRequirement ?? undefined,
+      rectificationPhotos: parseJsonField((pHazard as any).rectificationPhotos) || parseJsonField(pHazard.rectifyPhotos),
+      rectificationTime: normalizeDate((pHazard as any).rectificationTime) ?? normalizeDate(pHazard.rectifyTime) ?? undefined,
+
+      // ============ 验收过程（保留旧字段，添加新字段） ============
+      // ⚠️ 旧字段（保持兼容）
+      verifyPhotos: parseJsonField(pHazard.verifyPhotos),
+      verifyDesc: pHazard.verifyDesc ?? undefined,
+      verifyTime: normalizeDate(pHazard.verifyTime) ?? undefined,
+
+      // ✅ 新字段（推荐使用）
+      verificationPhotos: parseJsonField((pHazard as any).verificationPhotos) || parseJsonField(pHazard.verifyPhotos),
+      verificationNotes: (pHazard as any).verificationNotes ?? pHazard.verifyDesc ?? undefined,
+      verificationTime: normalizeDate((pHazard as any).verificationTime) ?? normalizeDate(pHazard.verifyTime) ?? undefined,
+
       requireEmergencyPlan: pHazard.requireEmergencyPlan ?? false,
       emergencyPlanContent: pHazard.emergencyPlanContent ?? undefined,
       approvalMode: pHazard.approvalMode ?? undefined,
       currentStepIndex: pHazard.currentStepIndex ?? undefined,
       currentStepId: pHazard.currentStepId ?? undefined,
+
       photos: parseJsonField(pHazard.photos),
-      rectifyPhotos: parseJsonField(pHazard.rectifyPhotos),
-      verifyPhotos: parseJsonField(pHazard.verifyPhotos),
-      verifyDesc: pHazard.verifyDesc ?? undefined,
       rootCause: pHazard.rootCause ?? undefined,
       logs: safeJsonParseArray(pHazard.logs),
+
+      // ============ 抄送信息（保留旧字段，添加新字段） ============
+      // ⚠️ 旧字段（保持兼容）
       ccDepts: parseJsonField(pHazard.ccDepts),
       ccUsers: ccUserIds.length > 0 ? ccUserIds : parseJsonField(pHazard.ccUsers), // 🟢 优先使用关联表数据
       ccUserNames: ccUserNames.length > 0 ? ccUserNames : (parseJsonField(pHazard.ccUsers).length > 0 ? undefined : undefined),
+
+      // ✅ 新字段（推荐使用）
+      ccDeptIds: parseJsonField((pHazard as any).ccDeptIds) || parseJsonField(pHazard.ccDepts),
+      ccUserIds: parseJsonField((pHazard as any).ccUserIds) || (ccUserIds.length > 0 ? ccUserIds : parseJsonField(pHazard.ccUsers)),
+
+      // ============ 当前执行人信息（保留旧字段，添加新字段） ============
+      // ⚠️ 旧字段（保持兼容）
+      dopersonal_ID: (pHazard as any).dopersonal_ID ?? undefined,
+      dopersonal_Name: (pHazard as any).dopersonal_Name ?? undefined,
       old_personal_ID: parseJsonField(pHazard.old_personal_ID),
+
+      // ✅ 新字段（推荐使用）
+      currentExecutorId: (pHazard as any).currentExecutorId ?? (pHazard as any).dopersonal_ID ?? undefined,
+      currentExecutorName: (pHazard as any).currentExecutorName ?? (pHazard as any).dopersonal_Name ?? undefined,
+      historicalHandlerIds: parseJsonField((pHazard as any).historicalHandlerIds) || parseJsonField(pHazard.old_personal_ID),
+
       candidateHandlers, // 🟢 使用关联表数据
+
       reportTime: normalizeDate(pHazard.reportTime) ?? new Date().toISOString(),
-      rectifyTime: normalizeDate(pHazard.rectifyTime) ?? undefined,
-      verifyTime: normalizeDate(pHazard.verifyTime) ?? undefined,
       deadline: normalizeDate(pHazard.deadline) ?? undefined,
       emergencyPlanDeadline: normalizeDate(pHazard.emergencyPlanDeadline) ?? undefined,
       emergencyPlanSubmitTime: normalizeDate(pHazard.emergencyPlanSubmitTime) ?? undefined,
@@ -385,9 +439,17 @@ export const GET = withErrorHandling(
       // 构建权限过滤条件：用户必须是上报人、责任人、验收人、当前执行人、抄送人或候选处理人
       const permissionConditions: Prisma.HazardRecordWhereInput[] = [
         { reporterId: user.id },
-        { responsibleId: user.id },
+        // ✅ 整改责任人：同时检查新旧字段
+        { OR: [
+          { responsibleId: user.id },
+          { rectificationLeaderId: user.id }
+        ]},
         { verifierId: user.id },
-        { dopersonal_ID: user.id },
+        // ✅ 当前执行人：同时检查新旧字段
+        { OR: [
+          { dopersonal_ID: user.id },
+          { currentExecutorId: user.id }
+        ]},
       ];
 
       // 如果有关联的隐患ID，添加ID过滤条件
@@ -426,19 +488,24 @@ export const GET = withErrorHandling(
       const candidateHazardIds = candidateHazards.map(h => h.hazardId);
 
       // 构建"我的任务"的特定查询条件
-      // ✅ 修复：不仅检查候选处理人表，也要检查 dopersonal_ID 字段
-      // 因为某些情况下可能只设置了 dopersonal_ID 而没有创建候选处理人记录
+      // ✅ 修复：同时检查新旧字段，兼容新旧数据
       const myTasksConditions: Prisma.HazardRecordWhereInput[] = [
-        { 
-          responsibleId: actualUserId,
+        {
+          OR: [
+            { responsibleId: actualUserId },
+            { rectificationLeaderId: actualUserId }
+          ],
           status: { in: ['reported', 'rectifying'] } // 只显示需要整改的状态
         },
-        { 
+        {
           verifierId: actualUserId,
           status: { in: ['rectified', 'accepted'] } // 只显示需要验收的状态
         },
-        { 
-          dopersonal_ID: actualUserId,
+        {
+          OR: [
+            { dopersonal_ID: actualUserId },
+            { currentExecutorId: actualUserId }
+          ],
           status: { not: 'closed' } // ✅ 当前执行人且未关闭（这是最重要的条件）
         }
       ];
@@ -482,8 +549,12 @@ export const GET = withErrorHandling(
             skip,
             take: limit,
             orderBy: { createdAt: 'desc' },
-            include: { 
-              reporter: true, 
+            include: {
+              reporter: {
+                include: {
+                  department: true
+                }
+              },
               responsible: {
                 include: {
                   department: true
@@ -742,12 +813,17 @@ export const POST = withErrorHandling(
     const processedData: any = {
       ...validData,
       photos: photosInput ? (Array.isArray(photosInput) ? JSON.stringify(photosInput) : photosInput) : null,
+      // ⚠️ 旧字段（保持兼容）
       ccDepts: ccDeptsInput ? (Array.isArray(ccDeptsInput) ? JSON.stringify(ccDeptsInput) : ccDeptsInput) : null,
       ccUsers: ccUsersInput ? (Array.isArray(ccUsersInput) ? JSON.stringify(ccUsersInput) : ccUsersInput) : null,
-      logs: logsInput && Array.isArray(logsInput) && logsInput.length > 0 
+      old_personal_ID: oldPersonalIdInput ? (Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput) : null,
+      // ✅ 新字段（推荐使用）- 同时初始化
+      ccDeptIds: ccDeptsInput ? (Array.isArray(ccDeptsInput) ? JSON.stringify(ccDeptsInput) : ccDeptsInput) : null,
+      ccUserIds: ccUsersInput ? (Array.isArray(ccUsersInput) ? JSON.stringify(ccUsersInput) : ccUsersInput) : null,
+      historicalHandlerIds: oldPersonalIdInput ? (Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput) : null,
+      logs: logsInput && Array.isArray(logsInput) && logsInput.length > 0
         ? JSON.stringify([initialLog, ...logsInput])  // 如果有传入日志，添加初始日志到前面
         : JSON.stringify([initialLog]),  // 否则只包含初始日志
-      old_personal_ID: oldPersonalIdInput ? (Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput) : null,
     };
 
     // 处理日期字段
@@ -914,8 +990,12 @@ export const POST = withErrorHandling(
               status: dispatchResult.newStatus,
               currentStepIndex: dispatchResult.nextStepIndex,
               currentStepId: dispatchResult.currentStep,
+              // ⚠️ 旧字段（保持兼容）
               dopersonal_ID: dispatchResult.handlers.userIds[0] || null,
               dopersonal_Name: dispatchResult.handlers.userNames[0] || null,
+              // ✅ 新字段（推荐使用）
+              currentExecutorId: dispatchResult.handlers.userIds[0] || null,
+              currentExecutorName: dispatchResult.handlers.userNames[0] || null,
               // 更新日志
               logs: JSON.stringify([
                 ...safeJsonParseArray(res.logs),
@@ -942,7 +1022,11 @@ export const POST = withErrorHandling(
 
             // 更新抄送用户（JSON 字段，同时会创建关联表记录）
             if (dispatchResult.ccUsers.userIds.length > 0) {
-              workflowUpdates.ccUsers = JSON.stringify(dispatchResult.ccUsers.userIds);
+              const ccUsersJson = JSON.stringify(dispatchResult.ccUsers.userIds);
+              // ⚠️ 旧字段（保持兼容）
+              workflowUpdates.ccUsers = ccUsersJson;
+              // ✅ 新字段（推荐使用）
+              workflowUpdates.ccUserIds = ccUsersJson;
             }
 
             // 在事务中更新隐患记录和创建关联表记录
@@ -1123,7 +1207,9 @@ export const PATCH = withErrorHandling(
       photos: photosInput,
       ccDepts: ccDeptsInput,
       ccUsers: ccUsersInput,
-      rectifyPhotos: rectifyPhotosInput, // 🟢 新增：整改照片
+      rectifyPhotos: rectifyPhotosInput, // 🟢 整改照片（旧字段）
+      rectificationPhotos: rectificationPhotosInput, // 🟢 整改照片（新字段）
+      rectificationNotes: rectificationNotesInput, // 🟢 整改备注（新字段）
       logs: logsInput,
       old_personal_ID: oldPersonalIdInput,
       ccUserNames,
@@ -1144,14 +1230,16 @@ export const PATCH = withErrorHandling(
 
     // ✅ 立即进行类型转换，确保类型安全
     if (dopersonal_ID_raw !== undefined) {
-      updates.dopersonal_ID = dopersonal_ID_raw === null 
-        ? null 
-        : String(dopersonal_ID_raw);
+      const value = dopersonal_ID_raw === null ? null : String(dopersonal_ID_raw);
+      updates.dopersonal_ID = value;
+      // ✅ 同时更新新字段
+      updates.currentExecutorId = value;
     }
     if (dopersonal_Name_raw !== undefined) {
-      updates.dopersonal_Name = dopersonal_Name_raw === null 
-        ? null 
-        : String(dopersonal_Name_raw);
+      const value = dopersonal_Name_raw === null ? null : String(dopersonal_Name_raw);
+      updates.dopersonal_Name = value;
+      // ✅ 同时更新新字段
+      updates.currentExecutorName = value;
     }
 
     // 🔒 使用事务保护，避免并发覆盖
@@ -1408,23 +1496,47 @@ export const PATCH = withErrorHandling(
         finalUpdates.photos = Array.isArray(photosInput) ? JSON.stringify(photosInput) : photosInput;
       }
       if (ccDeptsInput !== undefined) {
-        finalUpdates.ccDepts = Array.isArray(ccDeptsInput) ? JSON.stringify(ccDeptsInput) : ccDeptsInput;
+        const jsonValue = Array.isArray(ccDeptsInput) ? JSON.stringify(ccDeptsInput) : ccDeptsInput;
+        finalUpdates.ccDepts = jsonValue;
+        // ✅ 同时更新新字段
+        finalUpdates.ccDeptIds = jsonValue;
       }
       if (ccUsersInput !== undefined) {
-        finalUpdates.ccUsers = Array.isArray(ccUsersInput) ? JSON.stringify(ccUsersInput) : ccUsersInput;
+        const jsonValue = Array.isArray(ccUsersInput) ? JSON.stringify(ccUsersInput) : ccUsersInput;
+        finalUpdates.ccUsers = jsonValue;
+        // ✅ 同时更新新字段
+        finalUpdates.ccUserIds = jsonValue;
       }
       if (oldPersonalIdInput !== undefined) {
-        finalUpdates.old_personal_ID = Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput;
+        const jsonValue = Array.isArray(oldPersonalIdInput) ? JSON.stringify(oldPersonalIdInput) : oldPersonalIdInput;
+        finalUpdates.old_personal_ID = jsonValue;
+        // ✅ 同时更新新字段
+        finalUpdates.historicalHandlerIds = jsonValue;
       }
-      if (rectifyPhotosInput !== undefined) {
-        finalUpdates.rectifyPhotos = Array.isArray(rectifyPhotosInput) ? JSON.stringify(rectifyPhotosInput) : rectifyPhotosInput;
+      // ✅ 处理整改照片：同时支持旧字段(rectifyPhotos)和新字段(rectificationPhotos)
+      if (rectifyPhotosInput !== undefined || rectificationPhotosInput !== undefined) {
+        // 优先使用新字段，回退到旧字段
+        const photosValue = rectificationPhotosInput !== undefined ? rectificationPhotosInput : rectifyPhotosInput;
+        const jsonValue = Array.isArray(photosValue) ? JSON.stringify(photosValue) : photosValue;
+        finalUpdates.rectifyPhotos = jsonValue;
+        finalUpdates.rectificationPhotos = jsonValue;
+      }
+      // ✅ 处理整改备注：新字段
+      if (rectificationNotesInput !== undefined) {
+        finalUpdates.rectificationNotes = rectificationNotesInput;
+        finalUpdates.rectifyDesc = rectificationNotesInput; // 同时更新旧字段以保持兼容
       }
       // 🔐 处理验收相关字段
       if (verifyDesc !== undefined) {
         finalUpdates.verifyDesc = verifyDesc;
+        // ✅ 同时更新新字段
+        finalUpdates.verificationNotes = verifyDesc;
       }
       if (verifyPhotos !== undefined) {
-        finalUpdates.verifyPhotos = Array.isArray(verifyPhotos) ? JSON.stringify(verifyPhotos) : verifyPhotos;
+        const jsonValue = Array.isArray(verifyPhotos) ? JSON.stringify(verifyPhotos) : verifyPhotos;
+        finalUpdates.verifyPhotos = jsonValue;
+        // ✅ 同时更新新字段
+        finalUpdates.verificationPhotos = jsonValue;
       }
       if (rootCause !== undefined) {
         finalUpdates.rootCause = rootCause;
@@ -1606,16 +1718,32 @@ export const PATCH = withErrorHandling(
 
         // ✅ P1修复：在同一事务中同步可见性表（如果需要）
         // ✅ P2修复：检测关键字段变化，触发可见性同步
-        const needsVisibilitySync = 
+        // 🟢 关键修复：添加 historicalHandlerIds/old_personal_ID 变化检测，确保历史参与人被正确同步
+        const needsVisibilitySync =
           finalUpdates.responsibleId !== undefined ||
           finalUpdates.verifierId !== undefined ||
           finalUpdates.dopersonal_ID !== undefined ||
+          finalUpdates.currentExecutorId !== undefined ||
           finalUpdates.status !== undefined ||
+          finalUpdates.historicalHandlerIds !== undefined ||
+          finalUpdates.old_personal_ID !== undefined ||
           ccUsersInput !== undefined ||
           candidateHandlersInput !== undefined;
 
         if (needsVisibilitySync) {
-          console.log('[Hazard PATCH] 检测到关键字段变化，同步可见性表');
+          console.log('[Hazard PATCH] 检测到关键字段变化，同步可见性表', {
+            fields: {
+              responsibleId: finalUpdates.responsibleId !== undefined,
+              verifierId: finalUpdates.verifierId !== undefined,
+              dopersonal_ID: finalUpdates.dopersonal_ID !== undefined,
+              currentExecutorId: finalUpdates.currentExecutorId !== undefined,
+              status: finalUpdates.status !== undefined,
+              historicalHandlerIds: finalUpdates.historicalHandlerIds !== undefined,
+              old_personal_ID: finalUpdates.old_personal_ID !== undefined,
+              ccUsers: ccUsersInput !== undefined,
+              candidateHandlers: candidateHandlersInput !== undefined
+            }
+          });
           await syncHazardVisibility(id, tx);
         }
 

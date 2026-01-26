@@ -3,7 +3,7 @@ import { useState, useRef } from 'react';
 import { Camera, Image as ImageIcon, Send, XCircle, Upload, X } from 'lucide-react';
 
 export function RectifyForm({ hazard, onProcess, user }: any) {
-  const [data, setData] = useState({ rectifyDesc: '', rectifyPhotos: [] as string[] });
+  const [data, setData] = useState({ rectificationNotes: '', rectificationPhotos: [] as string[] });
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -34,7 +34,7 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
     const reader = new FileReader();
     reader.onload = (evt) => {
       const result = evt.target?.result as string;
-      setData(prev => ({ ...prev, rectifyPhotos: [...prev.rectifyPhotos, result] }));
+      setData(prev => ({ ...prev, rectificationPhotos: [...prev.rectificationPhotos, result] }));
     };
     reader.readAsDataURL(file);
 
@@ -47,7 +47,7 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
   const handleRemovePhoto = (index: number) => {
     setData(prev => ({
       ...prev,
-      rectifyPhotos: prev.rectifyPhotos.filter((_, i) => i !== index)
+      rectificationPhotos: prev.rectificationPhotos.filter((_, i) => i !== index)
     }));
   };
 
@@ -74,9 +74,9 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
           </label>
           
           {/* 已有照片预览 */}
-          {data.rectifyPhotos.length > 0 && (
+          {data.rectificationPhotos.length > 0 && (
             <div className="grid grid-cols-4 gap-2 mb-2">
-              {data.rectifyPhotos.map((p, i) => (
+              {data.rectificationPhotos.map((p, i) => (
                 <div key={i} className="relative group">
                   <img 
                     src={p} 
@@ -114,10 +114,10 @@ export function RectifyForm({ hazard, onProcess, user }: any) {
           />
         </div>
 
-        <textarea 
-          className="w-full border p-2 text-sm h-24 rounded focus:ring-2 focus:ring-blue-200 outline-none" 
-          placeholder="请详细描述已采取的整改措施..." 
-          onChange={e => setData({...data, rectifyDesc: e.target.value})}
+        <textarea
+          className="w-full border p-2 text-sm h-24 rounded focus:ring-2 focus:ring-blue-200 outline-none"
+          placeholder="请详细描述已采取的整改措施..."
+          onChange={e => setData({...data, rectificationNotes: e.target.value})}
         />
 
         <div className="flex gap-2">

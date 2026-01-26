@@ -474,10 +474,13 @@ export class HazardDispatchEngine {
 
       case DispatchAction.RECTIFY:
         // 提交整改时，更新整改信息
-        if (additionalData?.rectifyDesc) {
-          updated.rectifyDesc = additionalData.rectifyDesc;
-          updated.rectifyPhotos = additionalData.rectifyPhotos || [];
-          updated.rectifyTime = new Date().toISOString();
+        if (additionalData?.rectificationNotes || additionalData?.rectifyDesc) {
+          updated.rectificationNotes = additionalData.rectificationNotes || additionalData.rectifyDesc;
+          updated.rectifyDesc = additionalData.rectificationNotes || additionalData.rectifyDesc; // 向后兼容
+          updated.rectificationPhotos = additionalData.rectificationPhotos || additionalData.rectifyPhotos || [];
+          updated.rectifyPhotos = additionalData.rectificationPhotos || additionalData.rectifyPhotos || []; // 向后兼容
+          updated.rectificationTime = new Date().toISOString();
+          updated.rectifyTime = new Date().toISOString(); // 向后兼容
         }
         break;
 
@@ -486,7 +489,8 @@ export class HazardDispatchEngine {
         if (additionalData?.verifierId) {
           updated.verifierId = additionalData.verifierId;
           updated.verifierName = additionalData.verifierName;
-          updated.verifyTime = new Date().toISOString();
+          updated.verificationTime = new Date().toISOString();
+          updated.verifyTime = new Date().toISOString(); // 向后兼容
         }
         break;
     }
@@ -713,17 +717,19 @@ export class HazardDispatchEngine {
 
     // 2. 校验整改提交时间（提交整改时必须有整改描述）
     if (action === DispatchAction.RECTIFY) {
-      // 注意：这里不直接检查 rectifyTime，因为这是本次操作要设置的
+      // 注意：这里不直接检查 rectificationTime，因为这是本次操作要设置的
       // 但可以检查是否已有整改描述（如果之前已提交过）
       // 实际校验会在API层进行
     }
 
     // 3. 校验验收操作（验收时必须已有整改提交）
     if (action === DispatchAction.VERIFY && hazard.status === 'rectifying') {
-      if (!hazard.rectifyTime) {
+      const rectifyTime = hazard.rectificationTime || hazard.rectifyTime; // 优先使用新字段名
+      if (!rectifyTime) {
         return '整改尚未提交，无法进行验收';
       }
-      if (!hazard.rectifyDesc) {
+      const rectifyDesc = hazard.rectificationNotes || hazard.rectifyDesc; // 优先使用新字段名
+      if (!rectifyDesc) {
         return '整改描述为空，无法进行验收';
       }
     }

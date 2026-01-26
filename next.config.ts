@@ -38,6 +38,12 @@ const nextConfig: NextConfig = {
       aggregateTimeout: 300,
     };
 
+    // 配置 PDF.js worker 文件处理
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'pdfjs-dist/build/pdf.worker.min.mjs': 'pdfjs-dist/build/pdf.worker.min.mjs',
+    };
+
     return config;
   },
 };

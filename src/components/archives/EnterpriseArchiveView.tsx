@@ -5,6 +5,7 @@ import { Plus } from 'lucide-react';
 import ArchiveFileCard from './ArchiveFileCard';
 import FileUploadModal from './FileUploadModal';
 import FileEditModal from './FileEditModal';
+import SecurePDFViewer from './SecurePDFViewer';
 import Pagination from './Pagination';
 import { apiFetch } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
@@ -37,6 +38,8 @@ export default function EnterpriseArchiveView() {
     const [totalPages, setTotalPages] = React.useState(1);
     const [total, setTotal] = React.useState(0);
     const [searchQuery, setSearchQuery] = React.useState('');
+    const [pdfViewerOpen, setPdfViewerOpen] = React.useState(false);
+    const [pdfFile, setPdfFile] = React.useState<ArchiveFile | null>(null);
 
     // 权限检查
     const canView = PermissionManager.hasPermission(user, 'archives', 'enterprise_view') || 
@@ -147,6 +150,15 @@ export default function EnterpriseArchiveView() {
         setEditingFile(null);
     };
 
+    const handlePreview = (file: ArchiveFile) => {
+        if (file.mimeType.includes('pdf')) {
+            setPdfFile(file);
+            setPdfViewerOpen(true);
+        } else if (file.accessUrl) {
+            window.open(file.accessUrl, '_blank');
+        }
+    };
+
     return (
         <div className="p-6 h-full flex flex-col">
             <div className="flex items-center justify-between mb-6">
@@ -196,6 +208,7 @@ export default function EnterpriseArchiveView() {
                                     file={file}
                                     onDelete={canDelete ? handleDelete : undefined}
                                     onEdit={canEdit ? handleEdit : undefined}
+                                    onPreview={handlePreview}
                                 />
                             ))}
                         </div>
@@ -230,6 +243,16 @@ export default function EnterpriseArchiveView() {
                 fileTypes={fileTypes}
                 onSuccess={handleEditSuccess}
                 title="编辑企业档案文件"
+            />
+
+            <SecurePDFViewer
+                isOpen={pdfViewerOpen}
+                onClose={() => {
+                    setPdfViewerOpen(false);
+                    setPdfFile(null);
+                }}
+                pdfUrl={pdfFile?.accessUrl || ''}
+                fileName={pdfFile?.name || 'PDF文档'}
             />
         </div>
     );

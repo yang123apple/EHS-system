@@ -131,12 +131,12 @@ export function HazardDataTable({
           '责任部门': h.responsibleDeptName || '-',
           '责任人': h.responsibleName || '-',
           '整改期限': h.deadline ? h.deadline.split('T')[0] : '-',
-          '整改描述': h.rectifyDesc || '-',
-          '整改时间': h.rectifyTime ? h.rectifyTime.split('T')[0] : '-',
-          '整改措施要求': h.rectifyRequirement || '-',
+          '整改描述': h.rectificationNotes || h.rectifyDesc || '-',
+          '整改时间': h.rectificationTime ? h.rectificationTime.split('T')[0] : (h.rectifyTime ? h.rectifyTime.split('T')[0] : '-'),
+          '整改措施要求': h.rectificationRequirements || h.rectifyRequirement || '-',
           '验收人': h.verifierName || '-',
-          '验收时间': h.verifyTime ? h.verifyTime.split('T')[0] : '-',
-          '验收描述': h.verifyDesc || '-',
+          '验收时间': h.verificationTime ? h.verificationTime.split('T')[0] : (h.verifyTime ? h.verifyTime.split('T')[0] : '-'),
+          '验收描述': h.verificationNotes || h.verifyDesc || '-',
         };
 
         // 管理员额外字段（作废相关）
@@ -403,7 +403,7 @@ export function HazardDataTable({
 
                   {/* 整改措施要求 - 带Tooltip（移动到责任人后面） */}
                   <td className="p-3 align-middle text-center">
-                    {h.rectifyRequirement ? (
+                    {h.rectificationRequirements || h.rectifyRequirement ? (
                       <TooltipProvider delayDuration={300}>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -411,11 +411,11 @@ export function HazardDataTable({
                               "text-sm line-clamp-2 cursor-help",
                               isVoided ? "text-gray-500" : "text-slate-700"
                             )}>
-                              {h.rectifyRequirement}
+                              {h.rectificationRequirements || h.rectifyRequirement}
                             </div>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-md">
-                            <p className="text-sm whitespace-pre-wrap">{h.rectifyRequirement}</p>
+                            <p className="text-sm whitespace-pre-wrap">{h.rectificationRequirements || h.rectifyRequirement}</p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -447,7 +447,7 @@ export function HazardDataTable({
 
                   {/* 整改描述 - 带Tooltip */}
                   <td className="p-3 align-middle text-center">
-                    {h.rectifyDesc ? (
+                    {h.rectificationNotes || h.rectifyDesc ? (
                       <TooltipProvider delayDuration={300}>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -455,11 +455,11 @@ export function HazardDataTable({
                               "text-sm line-clamp-2 cursor-help",
                               isVoided ? "text-gray-500" : "text-slate-700"
                             )}>
-                              {h.rectifyDesc}
+                              {h.rectificationNotes || h.rectifyDesc}
                             </div>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-md">
-                            <p className="text-sm whitespace-pre-wrap">{h.rectifyDesc}</p>
+                            <p className="text-sm whitespace-pre-wrap">{h.rectificationNotes || h.rectifyDesc}</p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -474,7 +474,7 @@ export function HazardDataTable({
                       "text-xs font-mono",
                       isVoided ? "text-gray-500" : "text-slate-600"
                     )}>
-                      {h.rectifyTime ? h.rectifyTime.split('T')[0] : '-'}
+                      {h.rectificationTime ? h.rectificationTime.split('T')[0] : (h.rectifyTime ? h.rectifyTime.split('T')[0] : '-')}
                     </span>
                   </td>
 

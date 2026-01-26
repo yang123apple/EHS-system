@@ -42,18 +42,8 @@ export async function autoRejectHazardsByExecutor(
     const hazards = await prisma.hazardRecord.findMany({
       where: {
         dopersonal_ID: userId,
-        deletedAt: null,
+        isVoided: false,
         status: { not: 'closed' } // 只处理未闭环的隐患
-      },
-      include: {
-        ccUsers: {
-          where: { deletedAt: null },
-          select: { userId: true }
-        },
-        candidateHandlers: {
-          where: { deletedAt: null },
-          select: { userId: true }
-        }
       }
     });
 
@@ -65,32 +55,33 @@ export async function autoRejectHazardsByExecutor(
     console.log(`[自动驳回] 发现 ${hazards.length} 条隐患需要自动驳回（执行人：${userId}）`);
 
     // 2. 加载工作流配置
-    let workflowConfig: { steps: HazardWorkflowStep[] } | null = null;
+    let workflowConfig: { steps: HazardWorkflowStep[] } = {
+      steps: [
+        { id: 'report', name: '上报并指派' },
+        { id: 'assign', name: '开始整改' },
+        { id: 'rectify', name: '提交整改' },
+        { id: 'verify', name: '验收闭环' }
+      ] as HazardWorkflowStep[]
+    };
     try {
       const data = await fs.readFile(WORKFLOW_FILE, 'utf-8');
       workflowConfig = JSON.parse(data);
     } catch (fileError) {
       console.error('[自动驳回] 无法读取工作流配置文件:', fileError);
       // 如果无法读取配置文件，使用默认配置
-      workflowConfig = {
-        steps: [
-          { id: 'report', name: '上报并指派' },
-          { id: 'assign', name: '开始整改' },
-          { id: 'rectify', name: '提交整改' },
-          { id: 'verify', name: '验收闭环' }
-        ] as HazardWorkflowStep[]
-      };
     }
 
     // 3. 获取所有用户和部门（用于派发引擎）
     const allUsers = await prisma.user.findMany({
-      where: { deletedAt: null },
+      where: { isActive: true },
       select: {
         id: true,
         username: true,
-        realName: true,
+        name: true,
         role: true,
-        department: true
+        departmentId: true,
+        department: { select: { name: true } },
+        jobTitle: true
       }
     });
 
@@ -98,7 +89,9 @@ export async function autoRejectHazardsByExecutor(
       select: {
         id: true,
         name: true,
-        parentId: true
+        parentId: true,
+        level: true,
+        managerId: true
       }
     });
 
@@ -135,13 +128,10 @@ export async function autoRejectHazardsByExecutor(
  * 驳回单条隐患（执行人已删除/离职）
  */
 async function rejectHazardForDeletedExecutor(
-  hazard: HazardRecord & {
-    ccUsers?: Array<{ userId: string }>;
-    candidateHandlers?: Array<{ userId: string }>;
-  },
+  hazard: HazardRecord,
   workflowSteps: HazardWorkflowStep[],
-  allUsers: Array<{ id: string; username: string; realName: string; role: string | null; department: string | null }>,
-  departments: Array<{ id: string; name: string; parentId: string | null }>,
+  allUsers: Array<{ id: string; username: string; name: string; role: string | null; departmentId: string | null; department: { name: string } | null; jobTitle: string | null }>,
+  departments: Array<{ id: string; name: string; parentId: string | null; level: number; managerId: string | null }>,
   reason?: string
 ): Promise<void> {
   // 使用事务确保数据一致性
@@ -158,13 +148,18 @@ async function rejectHazardForDeletedExecutor(
       workflowSteps,
       allUsers: allUsers.map(u => ({
         id: u.id,
-        name: u.realName || u.username,
-        role: u.role || undefined
+        name: u.name || u.username,
+        role: u.role || undefined,
+        departmentId: u.departmentId || undefined,
+        department: u.department?.name,
+        jobTitle: u.jobTitle || undefined
       })),
       departments: departments.map(d => ({
         id: d.id,
         name: d.name,
-        parentId: d.parentId || undefined
+        parentId: d.parentId,
+        level: d.level,
+        managerId: d.managerId || undefined
       })),
       currentStepIndex: hazard.currentStepIndex ?? 0,
       comment: reason || `隐患当前执行人账号不存在，已自动驳回，请重新发起`
@@ -204,10 +199,10 @@ async function rejectHazardForDeletedExecutor(
       // 检查发起人是否仍然存在
       const reporter = await tx.user.findUnique({
         where: { id: hazard.reporterId },
-        select: { id: true, deletedAt: true }
+        select: { id: true, isActive: true }
       });
 
-      if (reporter && !reporter.deletedAt) {
+      if (reporter && reporter.isActive) {
         // 创建通知
         const notification = HazardNotificationService.generateCustomNotifications({
           userIds: [hazard.reporterId],

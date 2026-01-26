@@ -5,6 +5,7 @@ import { X, Plus, User } from 'lucide-react';
 import ArchiveFileCard from './ArchiveFileCard';
 import FileUploadModal from './FileUploadModal';
 import FileEditModal from './FileEditModal';
+import SecurePDFViewer from './SecurePDFViewer';
 import { apiFetch } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
 import { PermissionManager } from '@/lib/permissions';
@@ -50,6 +51,8 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
     const [fileTypes, setFileTypes] = React.useState<string[]>([]);
     const [page, setPage] = React.useState(1);
     const [totalPages, setTotalPages] = React.useState(1);
+    const [pdfViewerOpen, setPdfViewerOpen] = React.useState(false);
+    const [pdfFile, setPdfFile] = React.useState<ArchiveFile | null>(null);
 
     // 权限检查
     const canUpload = PermissionManager.hasPermission(user, 'archives', 'personnel_upload');
@@ -148,6 +151,15 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
         await loadFiles();
         setShowEditModal(false);
         setEditingFile(null);
+    };
+
+    const handlePreview = (file: ArchiveFile) => {
+        if (file.mimeType.includes('pdf')) {
+            setPdfFile(file);
+            setPdfViewerOpen(true);
+        } else if (file.accessUrl) {
+            window.open(file.accessUrl, '_blank');
+        }
     };
 
     if (!isOpen || !personnel) return null;
@@ -265,6 +277,7 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
                                         key={file.id}
                                         file={file}
                                         onDelete={canDelete ? handleDelete : undefined}
+                                        onPreview={handlePreview}
                                     />
                                 ))}
                             </div>
@@ -312,6 +325,16 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
                 fileTypes={fileTypes}
                 onSuccess={handleEditSuccess}
                 title="编辑人员档案文件"
+            />
+
+            <SecurePDFViewer
+                isOpen={pdfViewerOpen}
+                onClose={() => {
+                    setPdfViewerOpen(false);
+                    setPdfFile(null);
+                }}
+                pdfUrl={pdfFile?.accessUrl || ''}
+                fileName={pdfFile?.name || 'PDF文档'}
             />
         </>
     );

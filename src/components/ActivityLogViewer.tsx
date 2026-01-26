@@ -129,12 +129,22 @@ export default function ActivityLogViewer({
       CREATE: 'bg-green-100 text-green-700',
       UPDATE: 'bg-blue-100 text-blue-700',
       DELETE: 'bg-red-100 text-red-700',
+      DESTROY: 'bg-red-100 text-red-700',
+      VOID: 'bg-red-100 text-red-700',
       APPROVE: 'bg-purple-100 text-purple-700',
       REJECT: 'bg-orange-100 text-orange-700',
+      SUBMIT: 'bg-indigo-100 text-indigo-700',
+      ASSIGN: 'bg-cyan-100 text-cyan-700',
       EXPORT: 'bg-indigo-100 text-indigo-700',
       IMPORT: 'bg-teal-100 text-teal-700',
       LOGIN: 'bg-slate-100 text-slate-700',
       LOGOUT: 'bg-slate-100 text-slate-700',
+      VIEW: 'bg-sky-100 text-sky-700',
+      DOWNLOAD: 'bg-sky-100 text-sky-700',
+      UPLOAD: 'bg-violet-100 text-violet-700',
+      CONFIG: 'bg-amber-100 text-amber-700',
+      ARCHIVE: 'bg-stone-100 text-stone-700',
+      RESTORE: 'bg-lime-100 text-lime-700',
     };
     return colorMap[action] || 'bg-slate-100 text-slate-700';
   };

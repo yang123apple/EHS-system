@@ -58,8 +58,12 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
 
   // 确保三类照片始终是数组
   const photos = Array.isArray(hazard.photos) ? hazard.photos : (hazard.photos ? [hazard.photos] : []);
-  const rectifyPhotos = Array.isArray(hazard.rectifyPhotos) ? hazard.rectifyPhotos : (hazard.rectifyPhotos ? [hazard.rectifyPhotos] : []);
-  const verifyPhotos = Array.isArray(hazard.verifyPhotos) ? hazard.verifyPhotos : (hazard.verifyPhotos ? [hazard.verifyPhotos] : []);
+  const rectifyPhotos = Array.isArray(hazard.rectificationPhotos || hazard.rectifyPhotos)
+    ? (hazard.rectificationPhotos || hazard.rectifyPhotos)
+    : ((hazard.rectificationPhotos || hazard.rectifyPhotos) ? [hazard.rectificationPhotos || hazard.rectifyPhotos] : []);
+  const verifyPhotos = Array.isArray(hazard.verificationPhotos || hazard.verifyPhotos)
+    ? (hazard.verificationPhotos || hazard.verifyPhotos)
+    : ((hazard.verificationPhotos || hazard.verifyPhotos) ? [hazard.verificationPhotos || hazard.verifyPhotos] : []);
 
   // 🔧 使用 useMinioImageUrls hook 将 MinIO 路径转换为预签名 URL
   const { urls: photoUrls, loading: photosLoading } = useMinioImageUrls(photos);
@@ -211,11 +215,11 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                       </span>
                     </p>
                   </div>
-                ) : hazard.dopersonal_Name ? (
+                ) : hazard.dopersonal_Name || hazard.currentExecutorName ? (
                   <div className="col-span-1 lg:col-span-2">
                     <p className="text-slate-500">
                       当前处理人：
-                      <span className="text-blue-600 font-bold ml-1">{hazard.dopersonal_Name}</span>
+                      <span className="text-blue-600 font-bold ml-1">{hazard.currentExecutorName || hazard.dopersonal_Name}</span>
                     </p>
                   </div>
                 ) : null}
@@ -337,11 +341,11 @@ export default function HazardDetailModal({ hazard, onClose, user, allUsers, onP
                     </span>
                   </div>
                 </div>
-              ) : hazard.dopersonal_Name ? (
+              ) : hazard.dopersonal_Name || hazard.currentExecutorName ? (
                 <div className="bg-blue-50 border-2 border-blue-200 rounded-xl px-4 py-2.5 shadow-sm">
                   <div className="flex items-center gap-2 text-sm">
                     <span className="text-slate-600 font-medium">当前审批人：</span>
-                    <span className="font-bold text-blue-700">{hazard.dopersonal_Name}</span>
+                    <span className="font-bold text-blue-700">{hazard.currentExecutorName || hazard.dopersonal_Name}</span>
                   </div>
                 </div>
               ) : (

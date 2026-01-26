@@ -116,43 +116,94 @@ export const hazardRecordSchema = z.object({
   location: z.string(),
   desc: z.string(),
   photos: z.array(z.string()),
+  checkType: z.string().optional().nullable(),
+  rectificationType: z.string().optional().nullable(),
   reporterId: z.string(),
   reporterName: z.string(),
+  reporterDeptName: z.string().optional().nullable(), // ✅ 新字段
   reportTime: isoDateStringSchema,
+
+  // ============ 整改责任人信息（旧字段，已废弃） ============
   responsibleDept: z.string().optional().nullable(),
   responsibleDeptId: z.string().optional().nullable(),
   responsibleDeptName: z.string().optional().nullable(),
   responsibleId: z.string().optional().nullable(),
   responsibleName: z.string().optional().nullable(),
+
+  // ✅ 新字段：整改责任人（推荐使用）
+  rectificationLeaderId: z.string().optional().nullable(),
+  rectificationLeaderName: z.string().optional().nullable(),
+  rectificationDeptId: z.string().optional().nullable(),
+  rectificationDeptName: z.string().optional().nullable(),
+
+  // ============ 当前执行人信息（旧字段，已废弃） ============
   dopersonal_ID: z.string().optional().nullable(),
   dopersonal_Name: z.string().optional().nullable(),
+  old_personal_ID: z.array(z.string()).optional(),
+
+  // ✅ 新字段：当前执行人（推荐使用）
+  currentExecutorId: z.string().optional().nullable(),
+  currentExecutorName: z.string().optional().nullable(),
+  historicalHandlerIds: z.array(z.string()).optional(),
+
+  // ============ 工作流相关 ============
   candidateHandlers: z.array(candidateHandlerSchema).optional(),
   approvalMode: approvalModeSchema.optional().nullable(),
-  old_personal_ID: z.array(z.string()).optional(),
   currentStepIndex: z.number().optional().nullable(),
   currentStepId: z.string().optional().nullable(),
   deadline: isoDateStringSchema.optional().nullable(),
   isExtensionRequested: z.boolean().optional(),
   extensionReason: z.string().optional().nullable(),
+
+  // ============ 整改过程信息（旧字段，已废弃） ============
   rectifyDesc: z.string().optional().nullable(),
   rectifyPhotos: z.array(z.string()).optional(),
   rectifyTime: isoDateStringSchema.optional().nullable(),
+  rectifyRequirement: z.string().optional().nullable(),
+
+  // ✅ 新字段：整改过程（推荐使用）
+  rectificationNotes: z.string().optional().nullable(),
+  rectificationPhotos: z.array(z.string()).optional(),
+  rectificationTime: isoDateStringSchema.optional().nullable(),
+  rectificationRequirements: z.string().optional().nullable(),
+
+  // ============ 验收信息（旧字段，已废弃） ============
   verifierId: z.string().optional().nullable(),
   verifierName: z.string().optional().nullable(),
   verifyTime: isoDateStringSchema.optional().nullable(),
   verifyPhotos: z.array(z.string()).optional(),
   verifyDesc: z.string().optional().nullable(),
+
+  // ✅ 新字段：验收过程（推荐使用）
+  verificationTime: isoDateStringSchema.optional().nullable(),
+  verificationPhotos: z.array(z.string()).optional(),
+  verificationNotes: z.string().optional().nullable(),
+
+  // ============ 其他字段 ============
   rootCause: z.string().optional().nullable(),
   logs: z.array(hazardLogSchema).optional(),
-  rectifyRequirement: z.string().optional().nullable(),
   requireEmergencyPlan: z.boolean().optional(),
   emergencyPlanDeadline: isoDateStringSchema.optional().nullable(),
   emergencyPlanContent: z.string().optional().nullable(),
   emergencyPlanSubmitTime: isoDateStringSchema.optional().nullable(),
+
+  // ============ 抄送信息（旧字段，已废弃） ============
   ccDepts: z.array(z.string()).optional(),
   ccUsers: z.array(z.string()).optional(),
   ccUserNames: z.array(z.string()).optional(),
+
+  // ✅ 新字段：抄送（推荐使用）
+  ccDeptIds: z.array(z.string()).optional(),
+  ccUserIds: z.array(z.string()).optional(),
+
+  // ============ 驳回与作废 ============
   rejectReason: z.string().optional().nullable(),
+  isVoided: z.boolean().optional(), // ✅ 新字段
+  voidReason: z.string().optional().nullable(), // ✅ 新字段
+  voidedAt: isoDateStringSchema.optional().nullable(), // ✅ 新字段
+  voidedBy: z.string().optional().nullable(), // ✅ 新字段
+
+  // ============ 关联关系 ============
   extensions: z.array(hazardExtensionSchema).optional(),
 }).passthrough(); // 允许额外字段，避免严格校验阻塞现有数据
 

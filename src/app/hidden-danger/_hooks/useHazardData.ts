@@ -209,8 +209,8 @@ export function useHazardData(user: any, currentViewMode?: ViewMode) {
           h.verifierName,              // 验收人姓名
           h.riskLevel,                 // 风险等级
           h.status,                    // 状态
-          h.rectifyDesc,               // 整改描述
-          h.verifyDesc,                // 验收描述
+          h.rectificationNotes || h.rectifyDesc,  // 整改描述（优先使用新字段）
+          h.verificationNotes || h.verifyDesc,    // 验收描述（优先使用新字段）
         ].filter(Boolean); // 过滤掉 null/undefined
         
         // 检查是否有任何字段包含搜索关键词

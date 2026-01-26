@@ -32,36 +32,50 @@ export interface Incident {
   description: string;
   reporterId: string;
   reporterName: string;
+  /** @deprecated 使用 reporterDeptName 替代 */
   reporterDept: string | null;
+  reporterDeptName?: string | null; // ✅ 上报人部门名称（推荐使用）
   reportTime: string; // ISO 8601 日期字符串（原为 Date）
   departmentId: string | null;
   departmentName: string | null;
-  
+
   // 调查详情
   directCause: string | null;
   indirectCause: string | null;
   managementCause: string | null;
   rootCause: string | null;
-  
+
   // 整改措施
   correctiveActions: string | null; // JSON字符串
   preventiveActions: string | null; // JSON字符串
   actionDeadline: string | null; // ISO 8601 日期字符串（原为 Date）
+  /** @deprecated 使用 rectificationLeaderId 替代（与 HazardRecord 统一） */
   actionResponsibleId: string | null;
+  /** @deprecated 使用 rectificationLeaderName 替代（与 HazardRecord 统一） */
   actionResponsibleName: string | null;
-  
+
+  // ✅ 新字段：整改责任人（推荐使用，与 HazardRecord 统一）
+  rectificationLeaderId?: string | null; // 整改责任人ID
+  rectificationLeaderName?: string | null; // 整改责任人姓名
+
   // 附件
   photos: string | null; // JSON数组
   attachments: string | null; // JSON数组
   investigationReport: string | null;
-  
+
   // 工作流
   status: IncidentStatus;
   currentStepIndex: number | null;
   currentStepId: string | null;
   flowId: string | null;
   workflowLogs: string | null; // JSON字符串
-  
+
+  // 当前处理人（动态字段，随工作流流转更新）
+  currentHandlerId?: string | null;
+  currentHandlerName?: string | null;
+  candidateHandlers?: string | null; // 候选处理人列表（JSON格式，用于或签/会签）
+  approvalMode?: string | null; // 当前步骤的审批模式（OR=或签，AND=会签）
+
   // 审批与结案
   reviewerId: string | null;
   reviewerName: string | null;
@@ -71,7 +85,17 @@ export interface Incident {
   closerName: string | null;
   closeTime: string | null; // ISO 8601 日期字符串（原为 Date）
   closeReason: string | null;
-  
+
+  // 通知与抄送
+  /** @deprecated 使用 ccDeptIds 替代 */
+  ccDepts?: string | null; // 抄送部门（JSON数组）
+  /** @deprecated 使用 ccUserIds 替代 */
+  ccUsers?: string | null; // 抄送用户（JSON数组）
+
+  // ✅ 新字段：抄送（推荐使用）
+  ccDeptIds?: string | null; // 抄送部门ID列表（JSON数组）
+  ccUserIds?: string | null; // 抄送用户ID列表（JSON数组）
+
   createdAt: string; // ISO 8601 日期字符串（原为 Date）
   updatedAt: string; // ISO 8601 日期字符串（原为 Date）
 }

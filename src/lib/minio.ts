@@ -122,45 +122,15 @@ class MinIOService {
     // 对于本地 MinIO，确保使用正确的 endpoint
     // 如果配置是 localhost，尝试使用 127.0.0.1 以提高连接稳定性
     let effectiveEndpoint = config.endPoint;
-    const isLocalhost = config.endPoint === 'localhost' || config.endPoint === '127.0.0.1';
-    const isLocalNetworkIP = /^10\.|^172\.(1[6-9]|2[0-9]|3[01])\.|^192\.168\./.test(config.endPoint);
-    
+
     if (config.endPoint === 'localhost' && !config.useSSL) {
       // 对于本地 HTTP 连接，127.0.0.1 通常更稳定
       effectiveEndpoint = '127.0.0.1';
+      console.log(`[MinIO] 将 localhost 转换为 127.0.0.1`);
     }
-    
-    // 快速检测：如果配置的是局域网 IP，先检查 localhost 是否可连接
-    if (isLocalNetworkIP && !isLocalhost) {
-      console.log(`[MinIO] 检测到配置的 endpoint 是 ${config.endPoint}（局域网 IP），检查 localhost 是否可用...`);
-      try {
-        const http = require('http');
-        const testLocalhost = await new Promise<boolean>((resolve) => {
-          const req = http.get(`http://127.0.0.1:${config.port}/minio/health/live`, { timeout: 2000 }, (res: any) => {
-            resolve(res.statusCode === 200);
-          });
-          req.on('error', () => resolve(false));
-          req.on('timeout', () => {
-            req.destroy();
-            resolve(false);
-          });
-        });
-        
-        if (testLocalhost) {
-          console.warn(`[MinIO] ⚠ 检测到配置的 endpoint 是 ${config.endPoint}，但 MinIO 实际运行在 localhost`);
-          console.warn(`[MinIO] ⚠ 自动切换到 127.0.0.1 进行连接`);
-          console.warn(`[MinIO] ⚠ 建议：将 .env.local 中的 MINIO_ENDPOINT 设置为 localhost 或 127.0.0.1`);
-          // 使用 localhost 连接
-          effectiveEndpoint = '127.0.0.1';
-          configInfo = `${config.useSSL ? 'https' : 'http'}://127.0.0.1:${config.port}`;
-        } else {
-          console.log(`[MinIO] localhost 不可用，使用配置的 endpoint: ${config.endPoint}`);
-        }
-      } catch (e) {
-        console.log(`[MinIO] localhost 检测失败，使用配置的 endpoint: ${config.endPoint}`);
-        // 忽略检测错误，继续使用原配置
-      }
-    }
+
+    // 注意：如果是局域网IP（如10.1.65.41），不做自动转换
+    // 因为生成的预签名URL需要被客户端浏览器访问，必须使用配置的实际IP地址
     
     try {
       this.client = new Client({
@@ -200,11 +170,11 @@ class MinIOService {
           });
           
           try {
-            const result = await Promise.race([
+            await Promise.race([
               connectionPromise,
               timeoutPromise,
-            ]) as any;
-            
+            ]);
+
             // 连接成功，清除超时（防止未捕获的 rejection）
             timeoutCleared = true;
             if (retryTimeoutId) {

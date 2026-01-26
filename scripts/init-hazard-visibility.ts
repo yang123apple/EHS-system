@@ -23,7 +23,7 @@ async function main() {
     // 统计现有隐患数量
     const totalHazards = await prisma.hazardRecord.count({
       where: {
-        deletedAt: null, // 只处理未删除的隐患
+        isVoided: false, // 只处理未作废的隐患
       },
     });
 

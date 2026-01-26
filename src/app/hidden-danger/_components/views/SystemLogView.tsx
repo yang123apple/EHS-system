@@ -106,9 +106,41 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
     });
   };
 
+  // 移除详情中的英文编号（如 [HZ-2024-001]）
+  const removeEnglishCode = (text: string) => {
+    if (!text) return text;
+    // 移除形如 [任意内容] 的部分
+    return text.replace(/\s*\[.*?\]\s*/g, '').trim();
+  };
+
+  // 提取隐患编号和数据库ID
+  const extractHazardIds = (log: SystemLog) => {
+    let code: string | null = null;
+    let dbId: string | null = null;
+
+    // 从snapshot中提取
+    if (log.snapshot && typeof log.snapshot === 'object') {
+      const snapshot = log.snapshot;
+      code = snapshot.code || null;
+      dbId = snapshot.id || null;
+    }
+
+    // 从targetId补充（优先级较低）
+    if (log.targetId) {
+      if (log.targetId.startsWith('Hazard')) {
+        code = code || log.targetId;
+      } else if (log.targetId.startsWith('cm')) {
+        dbId = dbId || log.targetId;
+      }
+    }
+
+    return { code, dbId };
+  };
+
   // 获取操作类型的显示文本
   const getActionLabel = (action: string) => {
     const actionMap: Record<string, string> = {
+      // 旧版隐患操作类型（保持兼容）
       'hazard_reported': '上报隐患',
       'hazard_assigned': '指派处理',
       'hazard_rectified': '完成整改',
@@ -119,17 +151,55 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
       'hazard_updated': '更新',
       'workflow_updated': '工作流配置更新',
       'config_updated': '系统配置更新',
+
+      // 新版统一操作类型（LogAction枚举）
+      'CREATE': '创建',
+      'UPDATE': '更新',
+      'DELETE': '删除',
+      'DESTROY': '销毁',
+      'VOID': '作废',
+      'APPROVE': '审批通过',
+      'REJECT': '审批驳回',
+      'SUBMIT': '提交',
+      'ASSIGN': '分配',
+      'REPORT': '上报',
+      'RECTIFY': '整改',
+      'VERIFY': '验收',
+      'CLOSE': '关闭',
+      'EXPORT': '导出',
+      'IMPORT': '导入',
+      'LOGIN': '登录',
+      'LOGOUT': '登出',
+      'VIEW': '查看',
+      'DOWNLOAD': '下载',
+      'UPLOAD': '上传',
+      'CONFIG': '配置',
+      'ARCHIVE': '归档',
+      'RESTORE': '恢复',
+      'BACKUP_FAILED': '备份失败',
+      'BACKUP_ERROR': '备份错误',
+      'BACKUP_TIMEOUT': '备份超时',
     };
     return actionMap[action] || action;
   };
 
   // 获取操作类型的颜色
   const getActionColor = (action: string) => {
-    if (action.includes('reported') || action.includes('assigned')) return 'text-blue-600 bg-blue-50';
-    if (action.includes('rectified') || action.includes('verified')) return 'text-green-600 bg-green-50';
-    if (action.includes('rejected')) return 'text-orange-600 bg-orange-50';
-    if (action.includes('deleted')) return 'text-red-600 bg-red-50';
-    if (action.includes('updated') || action.includes('config')) return 'text-purple-600 bg-purple-50';
+    if (action.includes('reported') || action.includes('assigned') || action.includes('REPORT') || action.includes('ASSIGN')) {
+      return 'text-blue-600 bg-blue-50';
+    }
+    if (action.includes('rectified') || action.includes('verified') || action.includes('RECTIFY') || action.includes('VERIFY')) {
+      return 'text-green-600 bg-green-50';
+    }
+    if (action.includes('rejected') || action.includes('REJECT')) {
+      return 'text-orange-600 bg-orange-50';
+    }
+    if (action.includes('deleted') || action.includes('DELETE') || action.includes('DESTROY') || action.includes('VOID')) {
+      return 'text-red-600 bg-red-50';
+    }
+    if (action.includes('updated') || action.includes('config') || action.includes('UPDATE') || action.includes('CONFIG')) {
+      return 'text-purple-600 bg-purple-50';
+    }
     return 'text-slate-600 bg-slate-50';
   };
 
@@ -256,6 +326,9 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
                   操作
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">
+                  对象
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">
                   操作人
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">
@@ -269,7 +342,7 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
             <tbody className="divide-y divide-slate-200">
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                       加载中...
@@ -278,7 +351,7 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                     <div className="flex flex-col items-center gap-2">
                       <AlertCircle size={24} className="text-slate-400" />
                       暂无日志记录
@@ -300,6 +373,28 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
                       </span>
                     </td>
                     <td className="px-4 py-3">
+                      {(() => {
+                        const { code, dbId } = extractHazardIds(log);
+                        return (
+                          <div className="space-y-1">
+                            {code && (
+                              <div className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                {code}
+                              </div>
+                            )}
+                            {dbId && (
+                              <div className="text-xs text-slate-600 bg-slate-50 px-2 py-1 rounded font-mono">
+                                {dbId}
+                              </div>
+                            )}
+                            {!code && !dbId && (
+                              <span className="text-slate-400 text-xs">-</span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <User size={14} className="text-slate-400" />
                         <span className="text-sm text-slate-700">{log.userName}</span>
@@ -313,7 +408,7 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
                           title="点击查看完整详情"
                         >
                           <FileText size={14} className="text-slate-400 flex-shrink-0" />
-                          <span>{log.details.length > 35 ? log.details.substring(0, 35) + '...' : log.details}</span>
+                          <span>{removeEnglishCode(log.details).length > 35 ? removeEnglishCode(log.details).substring(0, 35) + '...' : removeEnglishCode(log.details)}</span>
                         </button>
                       ) : (
                         <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -521,7 +616,7 @@ export function SystemLogView({ loading }: SystemLogViewProps) {
                   <div>
                     <label className="text-xs font-medium text-slate-500">操作描述</label>
                     <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-700 whitespace-pre-wrap break-words">
-                      {selectedDetailsLog.details}
+                      {removeEnglishCode(selectedDetailsLog.details)}
                     </div>
                   </div>
                 )}

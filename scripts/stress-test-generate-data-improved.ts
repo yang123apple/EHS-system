@@ -197,32 +197,41 @@ async function createTestUsers() {
   
   console.log('⏳ 创建测试用户中...');
   const users: any[] = [];
+  const existingUsernames = new Set(existingUsers.map((user) => user.username));
   const password = hashPassword('test123'); // 统一密码
   
   // 创建普通用户
   for (let i = 1; i <= CONFIG.TEST_USERS; i++) {
-    users.push({
-      username: `test_user_${i}`,
-      name: `测试用户${i}`,
-      password,
-      role: 'user',
-      isActive: true,
-    });
+    const username = `test_user_${i}`;
+    if (!existingUsernames.has(username)) {
+      users.push({
+        username,
+        name: `测试用户${i}`,
+        password,
+        role: 'user',
+        isActive: true,
+      });
+    }
   }
   
   // 创建管理员用户
   for (let i = 1; i <= CONFIG.ADMIN_USERS; i++) {
-    users.push({
-      username: `test_admin_${i}`,
-      name: `测试管理员${i}`,
-      password,
-      role: 'admin',
-      isActive: true,
-    });
+    const username = `test_admin_${i}`;
+    if (!existingUsernames.has(username)) {
+      users.push({
+        username,
+        name: `测试管理员${i}`,
+        password,
+        role: 'admin',
+        isActive: true,
+      });
+    }
   }
   
   // 批量插入
-  await prisma.user.createMany({ data: users, skipDuplicates: true as any });
+  if (users.length > 0) {
+    await prisma.user.createMany({ data: users });
+  }
   
   // 返回所有测试用户
   const allUsers = await prisma.user.findMany({
@@ -363,8 +372,8 @@ async function generateHazards(users: any[]) {
         
         // 批量插入（带重试）
         await prisma.$transaction(async (tx) => {
-          await tx.hazardRecord.createMany({ data: hazards, skipDuplicates: true as any });
-          await (tx as any).hazardVisibility.createMany({ data: visibilityRecords, skipDuplicates: true as any });
+          await tx.hazardRecord.createMany({ data: hazards });
+          await (tx as any).hazardVisibility.createMany({ data: visibilityRecords });
         });
         
         const batchTime = Date.now() - batchStartTime;

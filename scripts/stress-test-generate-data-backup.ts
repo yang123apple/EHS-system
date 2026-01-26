@@ -121,7 +121,7 @@ async function createTestUsers() {
   }
   
   // 批量插入
-  await prisma.user.createMany({ data: users as any, skipDuplicates: true as any });
+  await prisma.user.createMany({ data: users as any });
   
   // 返回所有测试用户
   const allUsers = await prisma.user.findMany({
@@ -305,8 +305,8 @@ async function generateHazards(users: any[]) {
     // 批量插入
     try {
       await prisma.$transaction(async (tx) => {
-        await tx.hazardRecord.createMany({ data: hazards, skipDuplicates: true as any });
-        await (tx as any).hazardVisibility.createMany({ data: visibilityRecords, skipDuplicates: true });
+        await tx.hazardRecord.createMany({ data: hazards });
+        await (tx as any).hazardVisibility.createMany({ data: visibilityRecords });
       });
       
       const batchTime = Date.now() - batchStartTime;

@@ -22,29 +22,73 @@ async function cleanupMinIOFiles(photoPaths: string[]) {
   }
 
   try {
-    // 动态导入 MinIO 客户端
-    const { minioClient, MINIO_BUCKET } = await import('@/lib/minio');
+    // 动态导入 MinIO 服务
+    const { minioService } = await import('@/lib/minio');
     
     let cleanedCount = 0;
     const errors: string[] = [];
 
-    for (const path of photoPaths) {
-      if (!path) continue;
+    const resolveMinioTarget = (filePath: string): { bucket: 'private' | 'public'; objectName: string } => {
+      // 格式1: "bucket:key" (显式指定 bucket)
+      if (filePath.includes(':')) {
+        const [bucket, ...keyParts] = filePath.split(':');
+        if (bucket === 'private' || bucket === 'public') {
+          return {
+            bucket,
+            objectName: keyParts.join(':'), // 支持 key 中包含冒号
+          };
+        }
+      }
+
+      const normalized = filePath.startsWith('/') ? filePath.substring(1) : filePath;
+
+      // 格式2: 隐患相关文件 -> private bucket
+      if (normalized.startsWith('hazard/') || normalized.startsWith('hazards/')) {
+        return { bucket: 'private', objectName: normalized };
+      }
+
+      // 格式3: 旧格式兼容 "/uploads/..." -> public bucket
+      if (normalized.startsWith('uploads/')) {
+        return { bucket: 'public', objectName: normalized.replace(/^uploads\//, '') };
+      }
+
+      // 格式4: 培训资料 -> public bucket
+      if (normalized.startsWith('training/')) {
+        return { bucket: 'public', objectName: normalized };
+      }
+
+      // 默认：假设是 public bucket 的 key
+      return { bucket: 'public', objectName: normalized };
+    };
+
+    for (const filePath of photoPaths) {
+      if (!filePath) continue;
+
+      // 跳过 base64 编码的数据 URL（不是实际文件，无需删除）
+      if (filePath.startsWith('data:')) {
+        console.log(`⏭️ [MinIO清理] 跳过 base64 数据 URL: ${filePath.substring(0, 50)}...`);
+        continue;
+      }
+
+      // 跳过 HTTP/HTTPS URL（外部链接，不是 MinIO 文件）
+      if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+        console.log(`⏭️ [MinIO清理] 跳过外部 URL: ${filePath}`);
+        continue;
+      }
 
       try {
-        // 提取对象名称（去掉 bucket 前缀，如果有的话）
-        const objectName = path.includes(':') 
-          ? path.split(':')[1] 
-          : path.startsWith('/') 
-            ? path.substring(1) 
-            : path;
-
-        // 删除 MinIO 对象
-        await minioClient.removeObject(MINIO_BUCKET, objectName);
-        cleanedCount++;
-        console.log(`✅ [MinIO清理] 已删除文件: ${objectName}`);
+        const { bucket, objectName } = resolveMinioTarget(filePath);
+        const deleted = await minioService.deleteFile(bucket, objectName);
+        if (deleted) {
+          cleanedCount++;
+          console.log(`✅ [MinIO清理] 已删除文件: ${objectName}`);
+        } else {
+          const errorMsg = `删除文件失败 ${filePath}`;
+          errors.push(errorMsg);
+          console.error(`❌ [MinIO清理] ${errorMsg}`);
+        }
       } catch (error: any) {
-        const errorMsg = `删除文件失败 ${path}: ${error.message}`;
+        const errorMsg = `删除文件失败 ${filePath}: ${error.message}`;
         errors.push(errorMsg);
         console.error(`❌ [MinIO清理] ${errorMsg}`);
       }
@@ -97,8 +141,12 @@ export const DELETE = withErrorHandling(
         status: true,
         isVoided: true,
         photos: true,
+        // ⚠️ 旧字段（保持兼容）
         rectifyPhotos: true,
         verifyPhotos: true,
+        // ✅ 新字段（如果存在）
+        rectificationPhotos: true,
+        verificationPhotos: true,
         reporterName: true,
         reportTime: true
       }
@@ -114,8 +162,8 @@ export const DELETE = withErrorHandling(
     // 2. 收集所有需要清理的文件路径
     const allPhotos = [
       ...safeJsonParseArray(hazard.photos),
-      ...safeJsonParseArray(hazard.rectifyPhotos),
-      ...safeJsonParseArray(hazard.verifyPhotos)
+      ...safeJsonParseArray(hazard.rectificationPhotos || hazard.rectifyPhotos),
+      ...safeJsonParseArray(hazard.verificationPhotos || hazard.verifyPhotos)
     ].filter(Boolean);
 
     console.log(`🗑️ [硬删除] 准备删除隐患 ${hazard.code}，关联文件数：${allPhotos.length}`);

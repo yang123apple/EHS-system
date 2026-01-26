@@ -301,9 +301,23 @@ export function useHazardWorkflow(onSuccess: () => void) {
         console.log('✅ 已到达最后一步，流程结束');
       }
 
-      // 将抄送人也添加到历史经手人数组
+      // 🔧 修复：将当前操作人、抄送人都添加到历史经手人数组
       const currentOldPersonalIds = dispatchedHandlers.old_personal_ID || hazard.old_personal_ID || [];
-      const allOldPersonalIds = [...new Set([...currentOldPersonalIds, ...result.ccUsers.userIds])];
+      const allOldPersonalIds = [
+        ...new Set([
+          ...currentOldPersonalIds,
+          ...result.ccUsers.userIds,
+          // ✅ 关键修复：添加当前操作人ID，确保审核人能继续看到隐患
+          ...(user?.id ? [user.id] : [])
+        ])
+      ];
+
+      console.log('📝 更新历史经手人列表:', {
+        当前操作人: user?.id,
+        原历史列表: currentOldPersonalIds,
+        新增抄送人: result.ccUsers.userIds,
+        最终历史列表: allOldPersonalIds
+      });
 
       // 🟢 会签模式未完成时，保持当前状态
       const finalStatus = shouldStayAtCurrentStep ? hazard.status : result.newStatus;
@@ -321,7 +335,7 @@ export function useHazardWorkflow(onSuccess: () => void) {
         ...payload,
         // 最后覆盖派发引擎匹配的处理人（确保优先级最高）
         ...dispatchedHandlers,
-        // 更新历史经手人数组（包含处理人和抄送人）
+        // ✅ 更新历史经手人数组（包含当前操作人、处理人和抄送人）
         old_personal_ID: allOldPersonalIds
       };
       

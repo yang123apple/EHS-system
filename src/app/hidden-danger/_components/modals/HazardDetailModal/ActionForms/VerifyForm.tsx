@@ -17,8 +17,8 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
   const { user } = useAuth();
   const [rejectReason, setRejectReason] = useState('');
   const [rootCause, setRootCause] = useState<string>('');
-  const [verifyDesc, setVerifyDesc] = useState('');
-  const [verifyPhotos, setVerifyPhotos] = useState<string[]>([]);
+  const [verificationNotes, setVerificationNotes] = useState('');
+  const [verificationPhotos, setVerificationPhotos] = useState<string[]>([]);
   const [workflowConfig, setWorkflowConfig] = useState<HazardWorkflowConfig | null>(null);
   const [isMatching, setIsMatching] = useState(false);
   const [matchResult, setMatchResult] = useState<string>('');
@@ -71,7 +71,7 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
     const reader = new FileReader();
     reader.onload = (evt) => {
       const result = evt.target?.result as string;
-      setVerifyPhotos(prev => [...prev, result]);
+      setVerificationPhotos(prev => [...prev, result]);
     };
     reader.readAsDataURL(file);
 
@@ -82,7 +82,7 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
   };
 
   const handleRemovePhoto = (index: number) => {
-    setVerifyPhotos(prev => prev.filter((_, i) => i !== index));
+    setVerificationPhotos(prev => prev.filter((_, i) => i !== index));
   };
 
   // 智能匹配验收人（用于提示）
@@ -149,7 +149,7 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
       
       <div className="bg-white p-3 rounded border text-xs text-slate-600 space-y-1">
         <div className="font-bold text-slate-800">整改人描述：</div>
-        <p>{hazard.rectifyDesc || '未填写描述'}</p>
+        <p>{hazard.rectificationNotes || hazard.rectifyDesc || '未填写描述'}</p>
       </div>
 
       {/* 智能匹配验收人建议 */}
@@ -223,8 +223,8 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
           验收描述
         </label>
         <textarea
-          value={verifyDesc}
-          onChange={(e) => setVerifyDesc(e.target.value)}
+          value={verificationNotes}
+          onChange={(e) => setVerificationNotes(e.target.value)}
           className="w-full border border-slate-300 rounded-lg p-3 text-sm h-24 focus:ring-2 focus:ring-purple-200 focus:border-purple-300 outline-none resize-none"
           placeholder="请详细描述验收情况、整改效果评价等..."
         />
@@ -255,9 +255,9 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
         />
 
         {/* 图片预览 */}
-        {verifyPhotos.length > 0 && (
+        {verificationPhotos.length > 0 && (
           <div className="mt-3 grid grid-cols-3 gap-2">
-            {verifyPhotos.map((photo, index) => (
+            {verificationPhotos.map((photo, index) => (
               <div key={index} className="relative group">
                 <img
                   src={photo}
@@ -277,13 +277,15 @@ export function VerifyForm({ hazard, allUsers, onProcess }: VerifyFormProps) {
       </div>
 
       <div className="flex flex-col gap-2 pt-2">
-        <button 
+        <button
           onClick={() => {
             const payload: any = {};
             if (rootCause) payload.rootCause = rootCause;
-            if (verifyDesc) payload.verifyDesc = verifyDesc;
-            if (verifyPhotos.length > 0) payload.verifyPhotos = verifyPhotos;
-            
+            if (verificationNotes) payload.verificationNotes = verificationNotes;
+            if (verificationNotes) payload.verifyDesc = verificationNotes; // 向后兼容
+            if (verificationPhotos.length > 0) payload.verificationPhotos = verificationPhotos;
+            if (verificationPhotos.length > 0) payload.verifyPhotos = verificationPhotos; // 向后兼容
+
             payload.signerId = user?.id;
             payload.signerName = user?.name;
             onProcess('verify_pass', hazard, payload);

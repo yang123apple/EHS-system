@@ -50,34 +50,42 @@ export async function getCurrentStepInfoForPermission(
  */
 export function canViewHazard(hazard: HazardRecord, user: any): boolean {
   if (!user) return false;
-  
+
   // Admin 可以查看所有
   if (user.role === 'admin') return true;
-  
+
   // 历史经手人可以查看（包括所有处理人和抄送人）
-  if (hazard.old_personal_ID?.includes(user.id)) return true;
-  
+  // ✅ 优先使用新字段名，向后兼容旧字段名
+  const historicalHandlers = hazard.historicalHandlerIds || hazard.old_personal_ID;
+  if (historicalHandlers?.includes(user.id)) return true;
+
   // 上报人可以查看
   if (hazard.reporterId === user.id) return true;
-  
+
   // 当前步骤执行人可以查看
-  if (hazard.dopersonal_ID === user.id) return true;
-  
+  // ✅ 优先使用新字段名，向后兼容旧字段名
+  const currentExecutorId = hazard.currentExecutorId || hazard.dopersonal_ID;
+  if (currentExecutorId === user.id) return true;
+
   // 整改责任人可以查看（保留，用于历史查看）
-  if (hazard.responsibleId === user.id) return true;
-  
+  // ✅ 优先使用新字段名，向后兼容旧字段名
+  const rectificationLeaderId = hazard.rectificationLeaderId || hazard.responsibleId;
+  if (rectificationLeaderId === user.id) return true;
+
   // 🟢 候选处理人可以查看（或签/会签模式）
   if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0) {
     const isCandidate = hazard.candidateHandlers.some(h => h.userId === user.id);
     if (isCandidate) return true;
   }
-  
+
   // 抄送人员可以查看
-  if (hazard.ccUsers?.includes(user.id)) return true;
-  
+  // ✅ 优先使用新字段名，向后兼容旧字段名
+  const ccUserIds = hazard.ccUserIds || hazard.ccUsers;
+  if (ccUserIds?.includes(user.id)) return true;
+
   // 验收人可以查看
   if (hazard.verifierId === user.id) return true;
-  
+
   return false;
 }
 
@@ -152,7 +160,9 @@ export function canRectifyHazard(
     
     // 🔧 责任人兜底：当前步骤为「提交整改」且匹配策略为责任人时，若 handlers 为空或未包含用户
     // （如责任人未在 allUsers、匹配失败等），仍允许责任人操作，与后端 PATCH 逻辑一致
-    if (hazard.status === HAZARD_STATUS.RECTIFYING && hazard.responsibleId === user.id) {
+    // ✅ 优先使用新字段名，向后兼容旧字段名
+    const rectificationLeaderId = hazard.rectificationLeaderId || hazard.responsibleId;
+    if (hazard.status === HAZARD_STATUS.RECTIFYING && rectificationLeaderId === user.id) {
       return true;
     }
     
@@ -185,10 +195,14 @@ export function canRectifyHazard(
   }
   
   // 单人模式：只有当前步骤执行人可以整改
-  if (hazard.dopersonal_ID === user.id) return true;
-  
+  // ✅ 优先使用新字段名，向后兼容旧字段名
+  const currentExecutorId = hazard.currentExecutorId || hazard.dopersonal_ID;
+  if (currentExecutorId === user.id) return true;
+
   // 🔧 责任人兜底（无步骤信息时）：整改中且为责任人则允许，与后端逻辑一致
-  if (hazard.status === HAZARD_STATUS.RECTIFYING && hazard.responsibleId === user.id) return true;
+  // ✅ 优先使用新字段名，向后兼容旧字段名
+  const rectificationLeaderId = hazard.rectificationLeaderId || hazard.responsibleId;
+  if (hazard.status === HAZARD_STATUS.RECTIFYING && rectificationLeaderId === user.id) return true;
   
   return false;
 }
@@ -275,7 +289,9 @@ export function canVerifyHazard(
   }
   
   // 单人模式：只有当前步骤执行人可以验收
-  if (hazard.dopersonal_ID === user.id) return true;
+  // ✅ 优先使用新字段名，向后兼容旧字段名
+  const currentExecutorId = hazard.currentExecutorId || hazard.dopersonal_ID;
+  if (currentExecutorId === user.id) return true;
   
   return false;
 }
@@ -298,10 +314,12 @@ export function canDeleteHazard(hazard: HazardRecord, user: any): boolean {
  */
 export function canRequestExtension(hazard: HazardRecord, user: any): boolean {
   if (!user) return false;
-  
+
   // 只有当前步骤执行人可以申请延期
-  if (hazard.dopersonal_ID === user.id) return true;
-  
+  // ✅ 优先使用新字段名，向后兼容旧字段名
+  const currentExecutorId = hazard.currentExecutorId || hazard.dopersonal_ID;
+  if (currentExecutorId === user.id) return true;
+
   return false;
 }
 
@@ -383,7 +401,9 @@ export function canRejectRectify(
   }
   
   // 单人模式：只有当前步骤执行人可以驳回
-  if (hazard.dopersonal_ID === user.id) return true;
+  // ✅ 优先使用新字段名，向后兼容旧字段名
+  const currentExecutorId = hazard.currentExecutorId || hazard.dopersonal_ID;
+  if (currentExecutorId === user.id) return true;
   
   return false;
 }

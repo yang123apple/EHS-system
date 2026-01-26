@@ -15,15 +15,40 @@ model Project {
   location        String
   startDate       DateTime
   endDate         DateTime
+  // ⚠️ DEPRECATED: 使用 requestorDept 替代
   requestDept     String
+  // ⚠️ DEPRECATED: 使用 requestorHead 替代
   requestHead     String
+  // ⚠️ DEPRECATED: 使用 requestorContact 替代
   requestContact  String
+  // ⚠️ DEPRECATED: 使用 supervisorDept 替代
   mgmtDept        String?
+  // ⚠️ DEPRECATED: 使用 supervisorHead 替代
   mgmtHead        String?
+  // ⚠️ DEPRECATED: 使用 supervisorContact 替代
   mgmtContact     String?
+  // ⚠️ DEPRECATED: 使用 contractorName 替代
   supplierName    String
+  // ⚠️ DEPRECATED: 使用 contractorHead 替代
   supplierHead    String
+  // ⚠️ DEPRECATED: 使用 contractorContact 替代
   supplierContact String
+
+  // ✅ 新字段：申请方（推荐使用）
+  requestorDept    String? // 申请部门
+  requestorHead    String? // 申请人
+  requestorContact String? // 申请人联系方式
+
+  // ✅ 新字段：监管方（推荐使用）
+  supervisorDept    String? // 监管部门
+  supervisorHead    String? // 监管负责人
+  supervisorContact String? // 监管联系方式
+
+  // ✅ 新字段：承包商（推荐使用）
+  contractorName    String? // 承包商名称
+  contractorHead    String? // 承包商负责人
+  contractorContact String? // 承包商联系方式
+
   attachments     String?
   deletedAt       DateTime?
   createdAt       DateTime           @default(now())
@@ -73,7 +98,10 @@ model WorkPermitRecord {
   location       String? // 作业地点
   applicantId    String? // 申请人ID
   applicantName  String? // 申请人姓名
+  // ⚠️ DEPRECATED: 使用 applicantDeptName 替代
   applicantDept  String? // 申请人部门
+  // ✅ 新字段：申请人部门名称（推荐使用）
+  applicantDeptName String? // 申请人部门名称
   workDate       DateTime? // 作业日期
   workStartTime  DateTime? // 作业开始时间
   workEndTime    DateTime? // 作业结束时间
@@ -150,43 +178,103 @@ model HazardRecord {
   reporterId              String
   reporter                User      @relation("Reporter", fields: [reporterId], references: [id])
   reporterName            String
+  reporterDeptName        String? // 上报人部门名称（快照）
   reportTime              DateTime  @default(now())
+
+  // ============ 整改责任人信息 ============
+  // ⚠️ DEPRECATED: 使用 rectificationLeaderId 替代
   responsibleId           String?
   responsible             User?     @relation("Responsible", fields: [responsibleId], references: [id])
+  // ⚠️ DEPRECATED: 使用 rectificationLeaderName 替代
   responsibleName         String?
+  // ⚠️ DEPRECATED: 已废弃，勿使用
   responsibleDept         String?
+
+  // ✅ 新字段：整改责任人（推荐使用）
+  rectificationLeaderId   String? // 整改责任人ID
+  rectificationLeaderName String? // 整改责任人姓名
+  rectificationDeptId     String? // 整改部门ID
+  rectificationDeptName   String? // 整改部门名称
+
   deadline                DateTime?
+
+  // ============ 整改过程信息 ============
+  // ⚠️ DEPRECATED: 使用 rectificationNotes 替代
   rectifyDesc             String?
+  // ⚠️ DEPRECATED: 使用 rectificationPhotos 替代
   rectifyPhotos           String?
+  // ⚠️ DEPRECATED: 使用 rectificationTime 替代
   rectifyTime             DateTime?
+  // ⚠️ DEPRECATED: 使用 rectificationRequirements 替代
+  rectifyRequirement      String?
+
+  // ✅ 新字段：整改过程（推荐使用）
+  rectificationNotes      String? // 整改备注
+  rectificationPhotos     String? // 整改照片（JSON数组）
+  rectificationTime       DateTime? // 整改完成时间
+  rectificationRequirements String? // 整改要求
+
+  // ============ 验收信息 ============
   verifierId              String?
   verifierName            String?
+
+  // ⚠️ DEPRECATED: 使用 verificationTime 替代
   verifyTime              DateTime?
+  // ⚠️ DEPRECATED: 使用 verificationPhotos 替代
   verifyPhotos            String? // 验收时的现场照片路径（JSON字符串）
+  // ⚠️ DEPRECATED: 使用 verificationNotes 替代
   verifyDesc              String? // 验收时的描述/评价
-  rectifyRequirement      String?
+
+  // ✅ 新字段：验收过程（推荐使用）
+  verificationTime        DateTime? // 验收时间
+  verificationPhotos      String? // 验收照片（JSON数组）
+  verificationNotes       String? // 验收意见
+
+  // ============ 应急预案相关 ============
   requireEmergencyPlan    Boolean   @default(false)
   emergencyPlanDeadline   DateTime?
   emergencyPlanContent    String?
   emergencyPlanSubmitTime DateTime?
+
+  // ============ 根因分析 ============
   rootCause               String? // 根本原因分析分类（如：人的不安全行为、物的不安全状态、管理缺陷等）
+
+  // ============ 抄送信息 ============
+  // ⚠️ DEPRECATED: 使用 ccDeptIds 替代
   ccDepts                 String?
+  // ⚠️ DEPRECATED: 使用 ccUserIds 替代
   ccUsers                 String?
+
+  // ✅ 新字段：抄送（推荐使用）
+  ccDeptIds               String? // 抄送部门ID列表（JSON数组）
+  ccUserIds               String? // 抄送用户ID列表（JSON数组）
+
+  // ============ 工作流执行人信息 ============
   logs                    String?
+
+  // ⚠️ DEPRECATED: 使用 historicalHandlerIds 替代
   old_personal_ID         String?
+  // ⚠️ DEPRECATED: 使用 currentExecutorId 替代（极差命名）
   dopersonal_ID           String? // 当前步骤执行人ID（动态字段，随步骤流转更新）
+  // ⚠️ DEPRECATED: 使用 currentExecutorName 替代（极差命名）
   dopersonal_Name         String? // 当前步骤执行人姓名（动态字段，随步骤流转更新）
+
+  // ✅ 新字段：当前执行人（推荐使用）
+  currentExecutorId       String? // 当前步骤执行人ID
+  currentExecutorName     String? // 当前步骤执行人姓名
+  historicalHandlerIds    String? // 历史处理人ID列表（JSON数组）
+
   candidateHandlers       String? // 🟢 或签/会签模式：候选处理人列表（JSON格式）
   approvalMode            String? // 🟢 当前步骤的审批模式（OR=或签，AND=会签）
   currentStepIndex        Int?      @default(0) // 当前步骤索引（用于追踪工作流位置）
   currentStepId           String? // 当前步骤ID（用于追踪工作流位置）
-  
+
   // 🟢 软删除字段（用于审计和恢复）
   isVoided                Boolean   @default(false) // 是否已作废
   voidReason              String? // 作废原因
   voidedAt                DateTime? // 作废时间
   voidedBy                String? // 作废操作人信息（JSON格式：{id, name, role}）
-  
+
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
@@ -197,7 +285,7 @@ model HazardRecord {
   ccUsersRel HazardCC[] // 🟢 抄送用户关联表
   workflowStepsRel HazardWorkflowStep[] // 🟢 工作流步骤关联表（存储每个步骤的执行人和抄送人）
   visibilityRecords HazardVisibility[] // 🚀 可见性记录（Row-Level Security）
-  
+
   // 🟢 索引优化
   @@index([isVoided])
   @@index([voidedAt])
@@ -334,11 +422,13 @@ model Incident {
   description String // 事故描述
 
   // ============ 关联关系 ============
-  reporterId   String // 上报人ID
-  reporter     User     @relation("IncidentReporter", fields: [reporterId], references: [id])
-  reporterName String // 上报人姓名（快照）
-  reporterDept String? // 上报人部门（快照）
-  reportTime   DateTime @default(now()) // 上报时间
+  reporterId       String // 上报人ID
+  reporter         User     @relation("IncidentReporter", fields: [reporterId], references: [id])
+  reporterName     String // 上报人姓名（快照）
+  // ⚠️ DEPRECATED: 使用 reporterDeptName 替代
+  reporterDept     String? // 上报人部门（快照）
+  reporterDeptName String? // ✅ 上报人部门名称（推荐使用）
+  reportTime       DateTime @default(now()) // 上报时间
 
   departmentId   String? // 责任部门ID
   department     Department? @relation("IncidentDepartment", fields: [departmentId], references: [id])
@@ -358,11 +448,16 @@ model Incident {
   rootCause String? // 根本原因分析
 
   // ============ 整改措施 (CAPA) ============
-  correctiveActions     String? // 纠正措施（JSON格式，支持多条）
-  preventiveActions     String? // 预防措施（JSON格式，支持多条）
-  actionDeadline        DateTime? // 整改措施完成期限
-  actionResponsibleId   String? // 整改措施负责人ID
-  actionResponsibleName String? // 整改措施负责人姓名
+  correctiveActions         String? // 纠正措施（JSON格式，支持多条）
+  preventiveActions         String? // 预防措施（JSON格式，支持多条）
+  actionDeadline            DateTime? // 整改措施完成期限
+  // ⚠️ DEPRECATED: 使用 rectificationLeaderId 替代
+  actionResponsibleId       String? // 整改措施负责人ID
+  // ⚠️ DEPRECATED: 使用 rectificationLeaderName 替代
+  actionResponsibleName     String? // 整改措施负责人姓名
+  // ✅ 新字段：整改责任人（推荐使用，与 HazardRecord 统一）
+  rectificationLeaderId     String? // 整改责任人ID
+  rectificationLeaderName   String? // 整改责任人姓名
 
   // ============ 附件与证据 ============
   photos              String? // 现场照片（JSON数组，存储MinIO路径）
@@ -397,8 +492,13 @@ model Incident {
   signatures SignatureRecord[] // 关联的签名记录（调查报告签字、结案签字等）
 
   // ============ 通知与抄送 ============
-  ccDepts String? // 抄送部门（JSON数组）
-  ccUsers String? // 抄送用户（JSON数组）
+  // ⚠️ DEPRECATED: 使用 ccDeptIds 替代
+  ccDepts   String? // 抄送部门（JSON数组）
+  // ⚠️ DEPRECATED: 使用 ccUserIds 替代
+  ccUsers   String? // 抄送用户（JSON数组）
+  // ✅ 新字段：抄送（推荐使用）
+  ccDeptIds String? // 抄送部门ID列表（JSON数组）
+  ccUserIds String? // 抄送用户ID列表（JSON数组）
 
   // ============ 时间戳 ============
   createdAt DateTime @default(now())
@@ -430,8 +530,14 @@ model Document {
   parent     Document?  @relation("DocHierarchy", fields: [parentId], references: [id])
   children   Document[] @relation("DocHierarchy")
   dept       String?
-  uploader   String?
+  // ⚠️ DEPRECATED: 使用 uploaderName 和 uploaderId 替代
+  uploader   String? // 上传者用户名（不推荐，应使用 uploaderId）
+  // ⚠️ DEPRECATED: 使用 uploadedAt 替代
   uploadTime DateTime   @default(now())
+  // ✅ 新字段：上传者信息（推荐使用）
+  uploaderId   String? // 上传者ID
+  uploaderName String? // 上传者姓名
+  uploadedAt   DateTime? // 上传时间
   searchText String?
 
   // 🟢 EHS Archive Fields

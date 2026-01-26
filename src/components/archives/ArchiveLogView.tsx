@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FileText, Search, RefreshCw, Filter, Eye, X, Calendar } from 'lucide-react';
+import { FileText, RefreshCw, Eye, X, Calendar } from 'lucide-react';
 import { apiFetch } from '@/lib/apiClient';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -46,16 +46,16 @@ export default function ArchiveLogView() {
       const params = new URLSearchParams({
         page: pageNum.toString(),
         limit: limit.toString(),
+        module: 'ARCHIVE', // 只显示档案库模块的日志
       });
-      
-      // 使用档案库专用日志接口
+
       if (targetType) params.append('targetType', targetType);
       if (targetIdFilter) params.append('targetId', targetIdFilter);
       if (actionFilter) params.append('action', actionFilter);
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
 
-      const res = await apiFetch(`/api/archives/logs?${params.toString()}`);
+      const res = await apiFetch(`/api/logs?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.data) {
@@ -89,9 +89,16 @@ export default function ArchiveLogView() {
     const colorMap: Record<string, string> = {
       'UPLOAD': 'bg-violet-100 text-violet-700',
       'DELETE': 'bg-red-100 text-red-700',
+      'DESTROY': 'bg-red-100 text-red-700',
+      'VOID': 'bg-red-100 text-red-700',
       'CREATE': 'bg-green-100 text-green-700',
       'UPDATE': 'bg-blue-100 text-blue-700',
       'CONFIG': 'bg-amber-100 text-amber-700',
+      'DOWNLOAD': 'bg-sky-100 text-sky-700',
+      'EXPORT': 'bg-indigo-100 text-indigo-700',
+      'IMPORT': 'bg-teal-100 text-teal-700',
+      'ARCHIVE': 'bg-stone-100 text-stone-700',
+      'RESTORE': 'bg-lime-100 text-lime-700',
     };
     return colorMap[action] || 'bg-slate-100 text-slate-700';
   };
