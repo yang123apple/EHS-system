@@ -7,10 +7,9 @@ import * as XLSX from 'xlsx';  // 用于提取 Excel 文本
 import { prisma } from '@/lib/prisma';
 import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
 import crypto from 'crypto';
+import { minioStorageService } from '@/services/storage/MinioStorageService';
 
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'docs');
-
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// 使用 MinIO 存储，不需要本地上传目录
 
 export const GET = withErrorHandling(
   withAuth(async (req: NextRequest, context, user) => {
@@ -155,23 +154,20 @@ export const POST = withErrorHandling(
     }
 
     const ext = isXlsx ? 'xlsx' : 'docx';
-    // 文件保存到磁盘
-    const fileId = Date.now().toString(36);
-    const safeFileName = `${ext.toUpperCase()}-${fileId}.${ext}`;
+    // 上传文件到 MinIO
     const buffer = Buffer.from(await file.arrayBuffer());
-    const filePath = path.join(UPLOAD_DIR, safeFileName);
-    const relativePath = `/uploads/docs/${safeFileName}`;
-    let fileWritten = false;
-    
+    const objectName = minioStorageService.generateObjectName(file.name, 'docs');
+    const dbRecord = minioStorageService.formatDbRecord('public', objectName);
+
     try {
-      fs.writeFileSync(filePath, buffer);
-      fileWritten = true;
+      // 上传到 MinIO
+      await minioStorageService.uploadFile('public', objectName, buffer, file.type);
 
       // 同步到FileMetadata表（用于备份索引）
       try {
         const md5Hash = crypto.createHash('md5').update(buffer).digest('hex');
         await prisma.fileMetadata.upsert({
-          where: { filePath: relativePath },
+          where: { filePath: dbRecord },
           update: {
             fileName: file.name,
             fileType: ext,
@@ -182,7 +178,7 @@ export const POST = withErrorHandling(
             uploadedAt: new Date()
           },
           create: {
-            filePath: relativePath,
+            filePath: dbRecord,
             fileName: file.name,
             fileType: ext,
             fileSize: file.size,
@@ -196,16 +192,9 @@ export const POST = withErrorHandling(
         // FileMetadata保存失败不影响主流程，只记录日志
         console.warn('保存FileMetadata失败（不影响主流程）:', metaError);
       }
-    } catch (ioError) {
-      // 如果文件写入失败，清理可能已写入的文件
-      if (fileWritten && fs.existsSync(filePath)) {
-        try {
-          fs.unlinkSync(filePath);
-        } catch (cleanupError) {
-          console.error('清理文件失败:', cleanupError);
-        }
-      }
-      return NextResponse.json({ error: '服务器写入文件失败' }, { status: 500 });
+    } catch (uploadError) {
+      console.error('上传文档到MinIO失败:', uploadError);
+      return NextResponse.json({ error: '上传文件到存储系统失败' }, { status: 500 });
     }
 
     // 2. 提取文本
@@ -249,7 +238,7 @@ export const POST = withErrorHandling(
         suffix = maxSamePrefix.suffix + 1;
       }
     }
-    
+
     const suffixStr = suffix.toString().padStart(3, '0');
     const fullNum = `${finalPrefix}-${suffixStr}`;
 
@@ -257,7 +246,7 @@ export const POST = withErrorHandling(
       data: {
         name: file.name.replace(`.${ext}`, ''),
         type: ext,
-        docxPath: `/uploads/docs/${safeFileName}`,
+        docxPath: dbRecord,
         level,
         parentId: parentId || null,
         dept,

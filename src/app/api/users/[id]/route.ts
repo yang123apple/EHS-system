@@ -5,6 +5,7 @@ import path from 'path';
 import { db } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
 import { withAuth, withAdmin } from '@/middleware/auth';
+import { minioStorageService } from '@/services/storage/MinioStorageService';
 
 // 确保头像目录存在
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
@@ -82,28 +83,29 @@ export const PUT = withAdmin<{ params: Promise<{ id: string }> }>(async (req, co
         } catch (e) { }
       }
 
-      // 头像处理 (保持原有逻辑，文件系统操作是允许的)
+      // 头像处理 (使用 MinIO)
       const avatarFile = formData.get('avatarFile') as File;
       if (avatarFile && avatarFile.size > 0) {
         const buffer = Buffer.from(await avatarFile.arrayBuffer());
         const ext = path.extname(avatarFile.name) || '.jpg';
-        // 使用时间戳防止缓存
-        const safeFileName = `AVATAR-${id}-${Date.now()}${ext}`;
-        const filePath = path.join(AVATAR_DIR, safeFileName);
-        const relativePath = `/uploads/avatars/${safeFileName}`;
-        let fileWritten = false;
 
         try {
-          fs.writeFileSync(filePath, buffer);
-          fileWritten = true;
-          updateData.avatar = relativePath;
+          // 生成对象名称
+          const objectName = minioStorageService.generateObjectName(avatarFile.name, 'avatars');
+
+          // 上传到 MinIO
+          await minioStorageService.uploadFile('public', objectName, buffer, avatarFile.type);
+
+          // 格式化数据库记录
+          const dbRecord = minioStorageService.formatDbRecord('public', objectName);
+          updateData.avatar = dbRecord;
 
           // 同步到FileMetadata表（用于备份索引）
           try {
             const crypto = await import('crypto');
             const md5Hash = crypto.createHash('md5').update(buffer).digest('hex');
             await prisma.fileMetadata.upsert({
-              where: { filePath: relativePath },
+              where: { filePath: dbRecord },
               update: {
                 fileName: avatarFile.name,
                 fileType: ext.replace('.', '') || 'jpg',
@@ -114,7 +116,7 @@ export const PUT = withAdmin<{ params: Promise<{ id: string }> }>(async (req, co
                 uploadedAt: new Date()
               },
               create: {
-                filePath: relativePath,
+                filePath: dbRecord,
                 fileName: avatarFile.name,
                 fileType: ext.replace('.', '') || 'jpg',
                 fileSize: avatarFile.size,
@@ -128,16 +130,9 @@ export const PUT = withAdmin<{ params: Promise<{ id: string }> }>(async (req, co
             // FileMetadata保存失败不影响主流程，只记录日志
             console.warn('保存FileMetadata失败（不影响主流程）:', metaError);
           }
-        } catch (ioError) {
-          // 如果文件写入失败，清理可能已写入的文件
-          if (fileWritten && fs.existsSync(filePath)) {
-            try {
-              fs.unlinkSync(filePath);
-            } catch (cleanupError) {
-              console.error('清理文件失败:', cleanupError);
-            }
-          }
-          throw ioError;
+        } catch (uploadError) {
+          console.error('上传头像到MinIO失败:', uploadError);
+          throw uploadError;
         }
       }
     }

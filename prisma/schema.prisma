@@ -649,6 +649,7 @@ model TrainingMaterial {
   url                 String
   convertedUrl        String? // PDF version of docx
   thumbnail           String? // 缩略图路径
+  thumbnailPendingSince DateTime? // 缩略图开始生成的时间戳，用于检测僵尸锁
   duration            Int? // seconds, for video
   isExamRequired      Boolean                 @default(false)
   passingScore        Int?
@@ -967,6 +968,23 @@ model CheckType {
 
   @@index([isActive])
   @@index([sortOrder])
+}
+
+// 文件删除队列 - 用于跟踪 MinIO 删除失败的文件，支持重试
+model FileDeletionQueue {
+  id          String   @id @default(cuid())
+  filePath    String   // 数据库记录格式，如 "public:docs/xxx.pdf"
+  bucket      String   // MinIO bucket 名称
+  objectName  String   // MinIO 对象键
+  status      String   @default("pending") // pending, retrying, failed, completed
+  retryCount  Int      @default(0)
+  lastTriedAt DateTime?
+  errorMsg    String?  // 最后一次尝试的错误信息
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([lastTriedAt])
 }
 
 // ============ 注意事项 ============

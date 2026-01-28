@@ -1,17 +1,10 @@
 // src/app/api/users/batch-avatar/route.ts
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { prisma } from '@/lib/prisma';
 import crypto from 'crypto';
+import { minioStorageService } from '@/services/storage/MinioStorageService';
 
-const PUBLIC_DIR = path.join(process.cwd(), 'public');
-const AVATAR_DIR = path.join(PUBLIC_DIR, 'uploads', 'avatars');
-
-// 确保目录存在
-if (!fs.existsSync(AVATAR_DIR)) {
-  fs.mkdirSync(AVATAR_DIR, { recursive: true });
-}
+// 使用 MinIO 存储，不需要本地目录
 
 export async function POST(req: Request) {
   try {
@@ -54,30 +47,32 @@ export async function POST(req: Request) {
         // 匹配成功！
         console.log(`✅ 匹配成功: ${extractedName} (ID: ${targetUser.id})`);
 
-        // 4. 保存文件
+        // 4. 保存到 MinIO
         const buffer = Buffer.from(await file.arrayBuffer());
-        const safeFileName = `AVATAR-${targetUser.id}-${Date.now()}${ext}`;
-        const filePath = path.join(AVATAR_DIR, safeFileName);
-        const relativePath = `/uploads/avatars/${safeFileName}`;
-        let fileWritten = false;
 
         try {
-          fs.writeFileSync(filePath, buffer);
-          fileWritten = true;
+          // 生成对象名称
+          const objectName = minioStorageService.generateObjectName(file.name, 'avatars');
+
+          // 上传到 MinIO
+          await minioStorageService.uploadFile('public', objectName, buffer, file.type);
+
+          // 格式化数据库记录
+          const dbRecord = minioStorageService.formatDbRecord('public', objectName);
 
           // 5. 更新数据库（使用事务）
           await prisma.$transaction(async (tx) => {
             // 更新用户头像
             await tx.user.update({
               where: { id: targetUser.id },
-              data: { avatar: relativePath }
+              data: { avatar: dbRecord }
             });
 
             // 同步到FileMetadata表（用于备份索引）
             try {
               const md5Hash = crypto.createHash('md5').update(buffer).digest('hex');
               await tx.fileMetadata.upsert({
-                where: { filePath: relativePath },
+                where: { filePath: dbRecord },
                 update: {
                   fileName: file.name,
                   fileType: ext.replace('.', '') || 'jpg',
@@ -88,7 +83,7 @@ export async function POST(req: Request) {
                   uploadedAt: new Date()
                 },
                 create: {
-                  filePath: relativePath,
+                  filePath: dbRecord,
                   fileName: file.name,
                   fileType: ext.replace('.', '') || 'jpg',
                   fileSize: file.size,
@@ -107,15 +102,7 @@ export async function POST(req: Request) {
           successCount++;
           matchLog.push(targetUser.name);
         } catch (error) {
-          // 如果数据库保存失败，清理已写入的文件
-          if (fileWritten && fs.existsSync(filePath)) {
-            try {
-              fs.unlinkSync(filePath);
-            } catch (cleanupError) {
-              console.error('清理文件失败:', cleanupError);
-            }
-          }
-          console.error(`保存头像失败: ${extractedName}`, error);
+          console.error(`上传头像到MinIO失败: ${extractedName}`, error);
         }
       } else {
         console.log(`❌ 匹配失败: 数据库中未找到姓名 [${extractedName}]`);

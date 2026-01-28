@@ -4,16 +4,63 @@
  * 在 npm run dev 之前自动启动 MinIO（如果未运行）
  */
 
-const { spawn, exec } = require('child_process');
+const { spawn, exec, spawnSync } = require('child_process');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const https = require('https');
 const { getLocalIP } = require('./get-local-ip');
 
 const isWindows = os.platform() === 'win32';
-const MINIO_PORT = 9000;
-const MINIO_CONSOLE_PORT = 9001;
-const NEXTJS_PORT = 3000;
+const projectRoot = path.join(__dirname, '..');
+
+loadMinioEnv();
+
+const MINIO_PORT = Number.parseInt(process.env.MINIO_PORT || '9000', 10) || 9000;
+const MINIO_CONSOLE_PORT = Number.parseInt(process.env.MINIO_CONSOLE_PORT || '9001', 10) || 9001;
+const NEXTJS_PORT = Number.parseInt(process.env.PORT || '3000', 10) || 3000;
+const MINIO_USE_SSL = process.env.MINIO_USE_SSL === 'true';
+
+/**
+ * 加载 .env/.env.local 中的 MINIO 配置
+ */
+function loadMinioEnv() {
+  const explicitEnvKeys = new Set(Object.keys(process.env));
+  const envFiles = [path.join(projectRoot, '.env'), path.join(projectRoot, '.env.local')];
+  for (const envPath of envFiles) {
+    if (!fs.existsSync(envPath)) {
+      continue;
+    }
+
+    const content = fs.readFileSync(envPath, 'utf-8');
+    const lines = content.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim().replace(/^\uFEFF/, '');
+      if (!trimmed || trimmed.startsWith('#')) {
+        continue;
+      }
+
+      const match = trimmed.match(/^([^=#\s]+)\s*=\s*(.*)$/);
+      if (!match) {
+        continue;
+      }
+
+      const key = match[1].trim();
+      if (!key.startsWith('MINIO_')) {
+        continue;
+      }
+
+      let value = match[2].trim();
+      if ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      if (!explicitEnvKeys.has(key)) {
+        process.env[key] = value;
+      }
+    }
+  }
+}
 
 /**
  * 检查端口是否被占用
@@ -37,8 +84,9 @@ function checkPort(port) {
  */
 function checkMinIOHealth() {
   return new Promise((resolve) => {
-    const http = require('http');
-    const req = http.get('http://localhost:9000/minio/health/live', { timeout: 2000 }, (res) => {
+    const protocol = MINIO_USE_SSL ? 'https' : 'http';
+    const httpModule = MINIO_USE_SSL ? require('https') : require('http');
+    const req = httpModule.get(`${protocol}://localhost:${MINIO_PORT}/minio/health/live`, { timeout: 2000 }, (res) => {
       resolve(res.statusCode === 200);
     });
     req.on('error', () => resolve(false));
@@ -53,8 +101,6 @@ function checkMinIOHealth() {
  * 查找 MinIO 可执行文件
  */
 function findMinIOExecutable() {
-  const scriptDir = __dirname;
-  const projectRoot = path.join(scriptDir, '..');
   const binDir = path.join(projectRoot, 'bin');
   
   if (isWindows) {
@@ -90,29 +136,9 @@ function findMinIOExecutable() {
 }
 
 /**
- * 等待 MinIO 服务就绪（最多等待 30 秒）
- */
-async function waitForMinIOReady(maxAttempts = 30, interval = 1000) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const isHealthy = await checkMinIOHealth();
-    if (isHealthy) {
-      return true;
-    }
-    if (attempt < maxAttempts) {
-      process.stdout.write(`[MinIO] 等待服务就绪... (${attempt}/${maxAttempts})\r`);
-      await new Promise(resolve => setTimeout(resolve, interval));
-    }
-  }
-  throw new Error('MinIO 服务启动超时（30秒）');
-}
-
-/**
  * 启动 MinIO
  */
 function startMinIO() {
-  // 获取脚本所在目录
-  const scriptDir = __dirname;
-  const projectRoot = path.join(scriptDir, '..');
   const dataDir = path.join(projectRoot, 'data', 'minio-data');
   
   // 确保数据目录存在
@@ -123,7 +149,14 @@ function startMinIO() {
   
   // 查找 MinIO 可执行文件
   const command = findMinIOExecutable();
-  const args = ['server', dataDir, '--console-address', ':9001'];
+  const args = [
+    'server',
+    dataDir,
+    '--address',
+    `:${MINIO_PORT}`,
+    '--console-address',
+    `:${MINIO_CONSOLE_PORT}`,
+  ];
   
   // 设置环境变量
   const env = {
@@ -195,7 +228,7 @@ function startMinIO() {
     console.error('[MinIO] ❌ 请检查：');
     console.error('[MinIO]   1. bin/minio 或 bin/minio.exe 是否存在');
     console.error('[MinIO]   2. 文件是否有执行权限');
-    console.error('[MinIO]   3. 端口 9000 是否被其他服务占用');
+    console.error(`[MinIO]   3. 端口 ${MINIO_PORT} 是否被其他服务占用`);
     throw error;
   }
 }
@@ -222,6 +255,133 @@ async function waitForMinIOReady(maxAttempts = 30, interval = 1000) {
   throw new Error('MinIO 服务启动超时（30秒）');
 }
 
+function isMcCommandAvailable(command) {
+  const result = spawnSync(command, ['--version'], { stdio: 'ignore' });
+  return !result.error && result.status === 0;
+}
+
+function findMinioClientExecutable() {
+  const binDir = path.join(projectRoot, 'bin');
+  const localMc = isWindows ? path.join(binDir, 'mc.exe') : path.join(binDir, 'mc');
+
+  if (fs.existsSync(localMc) && isMcCommandAvailable(localMc)) {
+    return localMc;
+  }
+
+  if (isMcCommandAvailable('mc')) {
+    return 'mc';
+  }
+
+  return null;
+}
+
+function getMcDownloadInfo() {
+  const platform = os.platform();
+  const arch = os.arch();
+
+  if (platform === 'darwin') {
+    if (arch === 'arm64') {
+      return { url: 'https://dl.min.io/client/mc/release/darwin-arm64/mc', filename: 'mc' };
+    }
+    return { url: 'https://dl.min.io/client/mc/release/darwin-amd64/mc', filename: 'mc' };
+  }
+
+  if (platform === 'linux') {
+    if (arch === 'arm64') {
+      return { url: 'https://dl.min.io/client/mc/release/linux-arm64/mc', filename: 'mc' };
+    }
+    return { url: 'https://dl.min.io/client/mc/release/linux-amd64/mc', filename: 'mc' };
+  }
+
+  if (platform === 'win32') {
+    return { url: 'https://dl.min.io/client/mc/release/windows-amd64/mc.exe', filename: 'mc.exe' };
+  }
+
+  return null;
+}
+
+function downloadFile(url, destination, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, (response) => {
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        if (redirects >= 5) {
+          reject(new Error('下载重定向次数过多'));
+          return;
+        }
+        resolve(downloadFile(response.headers.location, destination, redirects + 1));
+        return;
+      }
+
+      if (response.statusCode !== 200) {
+        reject(new Error(`下载失败，HTTP 状态码: ${response.statusCode}`));
+        return;
+      }
+
+      const fileStream = fs.createWriteStream(destination);
+      response.pipe(fileStream);
+      fileStream.on('finish', () => fileStream.close(resolve));
+      fileStream.on('error', (error) => {
+        fs.unlink(destination, () => reject(error));
+      });
+    });
+
+    request.on('error', reject);
+  });
+}
+
+function showMcInstallHints() {
+  console.log('[MinIO] 提示: 可手动安装 MinIO Client (mc)');
+  if (isWindows) {
+    console.log('[MinIO]   - 下载: https://dl.min.io/client/mc/release/windows-amd64/mc.exe');
+    console.log('[MinIO]   - 放入项目 bin/ 或加入系统 PATH');
+  } else if (os.platform() === 'darwin') {
+    console.log('[MinIO]   - brew install minio/stable/mc');
+    console.log('[MinIO]   - 或运行: bash scripts/download-mc.sh');
+  } else {
+    console.log('[MinIO]   - wget https://dl.min.io/client/mc/release/linux-amd64/mc');
+    console.log('[MinIO]   - chmod +x mc && sudo mv mc /usr/local/bin/');
+  }
+}
+
+async function ensureMinioClient() {
+  console.log('[MinIO] 检查 MinIO Client (mc)...');
+
+  const existingMc = findMinioClientExecutable();
+  if (existingMc) {
+    console.log(`[MinIO] ✓ MinIO Client 已就绪: ${existingMc}`);
+    return existingMc;
+  }
+
+  const downloadInfo = getMcDownloadInfo();
+  if (!downloadInfo) {
+    console.warn('[MinIO] ⚠ 当前平台不支持自动下载 mc');
+    showMcInstallHints();
+    return null;
+  }
+
+  const binDir = path.join(projectRoot, 'bin');
+  const targetPath = path.join(binDir, downloadInfo.filename);
+  try {
+    fs.mkdirSync(binDir, { recursive: true });
+    console.log('[MinIO] ⚠ 未检测到 mc，尝试自动下载...');
+    await downloadFile(downloadInfo.url, targetPath);
+    if (!isWindows) {
+      fs.chmodSync(targetPath, '755');
+    }
+
+    if (!isMcCommandAvailable(targetPath)) {
+      throw new Error('下载的 mc 无法执行');
+    }
+
+    console.log(`[MinIO] ✓ MinIO Client 已安装: ${targetPath}`);
+    return targetPath;
+  } catch (error) {
+    console.warn(`[MinIO] ⚠ 自动安装 MinIO Client 失败: ${error.message}`);
+    showMcInstallHints();
+    return null;
+  }
+}
+
 /**
  * 显示局域网访问信息
  */
@@ -246,6 +406,11 @@ async function displayNetworkInfo() {
   } catch (error) {
     // 忽略错误，不影响启动
   }
+}
+
+async function finalizeStartup() {
+  await displayNetworkInfo();
+  await ensureMinioClient();
 }
 
 /**
@@ -282,16 +447,15 @@ async function main() {
     if (isHealthy) {
       const localIP = await getLocalIP();
       console.log(`[MinIO] ✓ MinIO 服务已在运行并可以连接`);
-      console.log('[MinIO] 📍 API (本地): http://localhost:9000');
-      console.log('[MinIO] 📍 Console (本地): http://localhost:9001');
+      console.log(`[MinIO] 📍 API (本地): http://localhost:${MINIO_PORT}`);
+      console.log(`[MinIO] 📍 Console (本地): http://localhost:${MINIO_CONSOLE_PORT}`);
       if (localIP && localIP !== 'localhost') {
-        console.log(`[MinIO] 📍 API (局域网): http://${localIP}:9000`);
-        console.log(`[MinIO] 📍 Console (局域网): http://${localIP}:9001`);
+        console.log(`[MinIO] 📍 API (局域网): http://${localIP}:${MINIO_PORT}`);
+        console.log(`[MinIO] 📍 Console (局域网): http://${localIP}:${MINIO_CONSOLE_PORT}`);
       }
       console.log('');
       
-      // 显示局域网访问信息
-      await displayNetworkInfo();
+      await finalizeStartup();
       return;
     }
     
@@ -310,16 +474,15 @@ async function main() {
       if (retryHealthy) {
         const localIP = await getLocalIP();
         console.log(`[MinIO] ✓ MinIO 服务已就绪`);
-        console.log('[MinIO] 📍 API (本地): http://localhost:9000');
-        console.log('[MinIO] 📍 Console (本地): http://localhost:9001');
+        console.log(`[MinIO] 📍 API (本地): http://localhost:${MINIO_PORT}`);
+        console.log(`[MinIO] 📍 Console (本地): http://localhost:${MINIO_CONSOLE_PORT}`);
         if (localIP && localIP !== 'localhost') {
-          console.log(`[MinIO] 📍 API (局域网): http://${localIP}:9000`);
-          console.log(`[MinIO] 📍 Console (局域网): http://${localIP}:9001`);
+          console.log(`[MinIO] 📍 API (局域网): http://${localIP}:${MINIO_PORT}`);
+          console.log(`[MinIO] 📍 Console (局域网): http://${localIP}:${MINIO_CONSOLE_PORT}`);
         }
         console.log('');
         
-        // 显示局域网访问信息
-        await displayNetworkInfo();
+        await finalizeStartup();
         return;
       }
       
@@ -364,16 +527,15 @@ async function main() {
       
       const localIP = await getLocalIP();
       console.log('[MinIO] ✅ MinIO 服务已成功启动并可以连接');
-      console.log('[MinIO] 📍 API (本地): http://localhost:9000');
-      console.log('[MinIO] 📍 Console (本地): http://localhost:9001');
+      console.log(`[MinIO] 📍 API (本地): http://localhost:${MINIO_PORT}`);
+      console.log(`[MinIO] 📍 Console (本地): http://localhost:${MINIO_CONSOLE_PORT}`);
       if (localIP && localIP !== 'localhost') {
-        console.log(`[MinIO] 📍 API (局域网): http://${localIP}:9000`);
-        console.log(`[MinIO] 📍 Console (局域网): http://${localIP}:9001`);
+        console.log(`[MinIO] 📍 API (局域网): http://${localIP}:${MINIO_PORT}`);
+        console.log(`[MinIO] 📍 Console (局域网): http://${localIP}:${MINIO_CONSOLE_PORT}`);
       }
       console.log('');
       
-      // 显示局域网访问信息
-      await displayNetworkInfo();
+      await finalizeStartup();
     } catch (error) {
       console.log('');
       console.error('[MinIO] ⚠ 等待 MinIO 启动超时（30秒）');
@@ -397,10 +559,10 @@ async function main() {
     if (isWindows) {
       console.error('[MinIO]   - .\\start-minio-local.bat');
       console.error('[MinIO]   - .\\start-minio.ps1');
-      console.error('[MinIO]   - .\\bin\\minio.exe server .\\data\\minio-data --console-address ":9001"');
+      console.error(`[MinIO]   - .\\bin\\minio.exe server .\\data\\minio-data --console-address ":${MINIO_CONSOLE_PORT}"`);
     } else {
       console.error('[MinIO]   - ./start-minio-local.sh');
-      console.error('[MinIO]   - ./bin/minio server ./data/minio-data --console-address ":9001"');
+      console.error(`[MinIO]   - ./bin/minio server ./data/minio-data --console-address ":${MINIO_CONSOLE_PORT}"`);
     }
     console.error('[MinIO]   - docker-compose -f docker-compose.minio.yml up -d');
     console.error('');
