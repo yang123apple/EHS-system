@@ -20,6 +20,7 @@
     "restic:prune": "scripts/restic/prune.sh",
     "restic:verify": "scripts/restic/verify.sh",
     "restic:snapshots": "restic snapshots --compact",
+    "restic:check-agents": "scripts/restic/check-launchagents.sh",
     "backup:full": "node scripts/auto-backup.js",
     "restore:full": "node scripts/restore-backup.js",
     "backup:auto": "node scripts/auto-backup.js",
