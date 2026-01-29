@@ -52,7 +52,7 @@ services:
       - ehs-network
 
   minio:
-    image: minio/minio:RELEASE.2024-11-20T22-40-07Z
+    image: minio/minio:latest
     container_name: ehs-minio
     restart: unless-stopped
     ports:
