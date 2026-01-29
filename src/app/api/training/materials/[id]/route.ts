@@ -110,7 +110,7 @@ export const PUT = withErrorHandling(
 // 事务 commit 后再尝试 MinIO 删除，成功则标记 completed。
 // 这保证即使 MinIO 删除失败或进程崩溃，文件引用不会丢失。
 const safeDeleteFileWithQueue = async (
-  tx: Omit<typeof prisma, '$queryRaw' | '$executeRaw' | '$queryRawUnsafe' | '$executeRawUnsafe' | '$transaction'>,
+  tx: any,
   urlPath: string | null | undefined
 ): Promise<{ filePath: string; bucket: string; objectName: string } | null> => {
   if (!urlPath) return null;
@@ -147,7 +147,7 @@ const executeMinioDeletes = async (
 ): Promise<void> => {
   for (const item of pendingDeletes) {
     try {
-      await minioStorageService.deleteFile(item.bucket, item.objectName);
+      await minioStorageService.deleteFile(item.bucket as 'public' | 'private', item.objectName);
       console.log('[Delete Material API] MinIO文件删除成功:', item.filePath);
 
       // 标记为已完成

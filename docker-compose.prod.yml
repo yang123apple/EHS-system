@@ -1,0 +1,80 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ehs-system:prod
+    container_name: ehs-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: "production"
+      PORT: "3000"
+      DATABASE_URL: "${DATABASE_URL:-file:/app/data/db/ehs.db}"
+      MINIO_ENDPOINT: "${MINIO_ENDPOINT}"
+      MINIO_PORT: "${MINIO_PORT:-9000}"
+      MINIO_USE_SSL: "${MINIO_USE_SSL:-false}"
+      MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY}"
+      MINIO_SECRET_KEY: "${MINIO_SECRET_KEY}"
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      MINIO_PRIMARY_ENDPOINT: "${MINIO_PRIMARY_ENDPOINT}"
+      MINIO_PRIMARY_ACCESS_KEY: "${MINIO_PRIMARY_ACCESS_KEY}"
+      MINIO_PRIMARY_SECRET_KEY: "${MINIO_PRIMARY_SECRET_KEY}"
+      MINIO_BACKUP_TARGET: "${MINIO_BACKUP_TARGET:-/app/data/minio-backup}"
+      # Restic 配置
+      RESTIC_REPOSITORY: "${RESTIC_REPOSITORY:-/app/data/restic-repo}"
+      RESTIC_PASSWORD: "${RESTIC_PASSWORD:-change-me-restic-password}"
+      # Restic MinIO 配置（用于备份到 MinIO）
+      RESTIC_MINIO_ENDPOINT: "${RESTIC_MINIO_ENDPOINT:-http://minio:9000}"
+      RESTIC_MINIO_BUCKET: "${RESTIC_MINIO_BUCKET:-restic-backup}"
+      AWS_ACCESS_KEY_ID: "${MINIO_ACCESS_KEY}"
+      AWS_SECRET_ACCESS_KEY: "${MINIO_SECRET_KEY}"
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      # 挂载上层 data 目录到容器
+      - ../data:/app/data
+      - ./public/uploads:/app/public/uploads
+      - ./ehs-private:/app/ehs-private
+      - ./ehs-public:/app/ehs-public
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ehs-network
+
+  minio:
+    image: minio/minio:RELEASE.2024-11-20T22-40-07Z
+    container_name: ehs-minio
+    restart: unless-stopped
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+    volumes:
+      # MinIO 数据保存到上层 data 目录
+      - ../data/minio-data:/data
+      - ../data/minio-config:/root/.minio
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ehs-network
+
+networks:
+  ehs-network:
+    driver: bridge

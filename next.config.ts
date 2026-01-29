@@ -3,8 +3,16 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   reactCompiler: true,
-  turbopack: {},
-  // 排除频繁变化的文件，防止 Fast Refresh 持续重建
+
+  // Turbopack 配置（Next.js 16+ 默认使用 Turbopack）
+  turbopack: {
+    resolveAlias: {
+      // 配置 PDF.js worker 文件处理
+      'pdfjs-dist/build/pdf.worker.min.mjs': 'pdfjs-dist/build/pdf.worker.min.mjs',
+    },
+  },
+
+  // Webpack 配置（仅在开发环境使用 --webpack 时生效）
   webpack: (config, { isServer }) => {
     // 配置文件监听选项，排除频繁变化的文件
     const ignoredPatterns = [

@@ -1,4 +1,4 @@
-import { LogArchiveService } from '../src/services/backup/logArchive.service';
+import { LogArchiveService } from '../../src/services/backup/logArchive.service';
 
 async function main() {
   const service = new LogArchiveService();

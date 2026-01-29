@@ -26,6 +26,8 @@ dist/
 .env.test.local
 .env.production.local
 .env*
+# 但允许提交环境变量模板
+!.env.docker.example
 
 # Prisma (SQLite dev DB)
 prisma/dev.db

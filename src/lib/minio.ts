@@ -495,7 +495,7 @@ class MinIOService {
     objectName: string
   ): Promise<boolean> {
     await this.ensureInitialized();
-    
+
     if (!this.client) {
       throw new Error('MinIO Client 未初始化');
     }
@@ -512,7 +512,7 @@ class MinIOService {
         this.client.removeObject(bucketName, objectName),
         timeoutPromise
       ]);
-      
+
       return true;
     } catch (error: any) {
       // 如果是超时错误，记录但不抛出
@@ -522,6 +522,38 @@ class MinIOService {
       }
       console.error('删除文件失败:', error);
       return false;
+    }
+  }
+
+  /**
+   * 下载文件
+   * 从 MinIO 下载文件并返回 Buffer
+   */
+  public async downloadFile(
+    bucket: 'private' | 'public',
+    objectName: string
+  ): Promise<Buffer> {
+    await this.ensureInitialized();
+
+    if (!this.client) {
+      throw new Error('MinIO Client 未初始化');
+    }
+
+    const bucketName = bucket === 'private' ? this.BUCKETS.PRIVATE : this.BUCKETS.PUBLIC;
+
+    try {
+      const stream = await this.client.getObject(bucketName, objectName);
+
+      // 将流转换为 Buffer
+      const chunks: Buffer[] = [];
+      return new Promise((resolve, reject) => {
+        stream.on('data', (chunk) => chunks.push(chunk));
+        stream.on('end', () => resolve(Buffer.concat(chunks)));
+        stream.on('error', reject);
+      });
+    } catch (error: any) {
+      console.error('下载文件失败:', error);
+      throw new Error(`下载文件失败: ${error.message}`);
     }
   }
 
