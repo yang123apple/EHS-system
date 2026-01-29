@@ -1,0 +1,195 @@
+# ============================================
+# EHS 系统完整镜像 - 包含数据和所有依赖
+# ============================================
+# 包含：
+# - Next.js 应用
+# - 项目数据库
+# - MinIO 服务器
+# - MinIO Client (mc)
+# - Restic 备份工具
+# - 所有上传文件和数据
+# ============================================
+
+FROM node:20-bookworm-slim AS base
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    ca-certificates \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+# ============================================
+# 阶段 1: 构建 Next.js 应用
+# ============================================
+FROM base AS builder
+
+WORKDIR /app
+
+# 复制依赖文件
+COPY package.json package-lock.json ./
+
+# 安装依赖
+RUN npm ci --ignore-scripts
+
+# 复制 Prisma schema 并生成客户端
+COPY prisma ./prisma
+RUN npx --no-install prisma generate
+
+# 复制源代码
+COPY . .
+
+# 构建 Next.js 应用
+RUN npm run build
+
+# ============================================
+# 阶段 2: 下载 MinIO、mc 和 Restic
+# ============================================
+FROM base AS downloader
+
+WORKDIR /downloads
+
+# 下载 MinIO Server (ARM64)
+RUN wget https://dl.min.io/server/minio/release/linux-arm64/minio \
+    && chmod +x minio
+
+# 下载 MinIO Client (ARM64)
+RUN wget https://dl.min.io/client/mc/release/linux-arm64/mc \
+    && chmod +x mc
+
+# 安装 bzip2 用于解压
+RUN apt-get update && apt-get install -y bzip2 && rm -rf /var/lib/apt/lists/*
+
+# 下载 Restic (ARM64)
+RUN wget https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_arm64.bz2 \
+    && bzip2 -d restic_0.17.3_linux_arm64.bz2 \
+    && mv restic_0.17.3_linux_arm64 restic \
+    && chmod +x restic
+
+# ============================================
+# 阶段 3: 最终运行镜像
+# ============================================
+FROM base AS runner
+
+WORKDIR /app
+
+# 设置环境变量
+ENV NODE_ENV=production \
+    PORT=3100 \
+    MINIO_PORT=9100 \
+    MINIO_CONSOLE_PORT=9101
+
+# 安装运行时依赖
+RUN apt-get update && apt-get install -y \
+    curl \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+# 从 builder 复制应用文件
+COPY --from=builder /app/package.json /app/package-lock.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/next.config.ts ./next.config.ts
+
+# 从 downloader 复制二进制文件
+COPY --from=downloader /downloads/minio /usr/local/bin/minio
+COPY --from=downloader /downloads/mc /usr/local/bin/mc
+COPY --from=downloader /downloads/restic /usr/local/bin/restic
+
+# 复制项目数据库
+COPY prisma/dev.db /app/data/db/ehs.db
+
+# 复制上传文件和数据
+COPY public/uploads/ /app/public/uploads/
+COPY ehs-private/ /app/ehs-private/
+COPY ehs-public/ /app/ehs-public/
+
+# 创建必要的目录
+RUN mkdir -p \
+    /app/data/db \
+    /app/data/minio-data \
+    /app/data/minio-config \
+    /app/data/minio-backup \
+    /app/data/restic-repo \
+    /app/data/restic-cache \
+    /app/data/restic-logs \
+    /app/data/backups \
+    /app/public/uploads \
+    /app/ehs-private \
+    /app/ehs-public
+
+# 创建 supervisor 配置
+RUN mkdir -p /etc/supervisor/conf.d
+
+# 创建 supervisor 配置文件
+RUN cat > /etc/supervisor/conf.d/supervisord.conf <<'EOF'
+[supervisord]
+nodaemon=true
+user=root
+logfile=/var/log/supervisor/supervisord.log
+pidfile=/var/run/supervisord.pid
+
+[program:nextjs]
+command=npm start
+directory=/app
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/nextjs.log
+stderr_logfile=/var/log/supervisor/nextjs_error.log
+environment=NODE_ENV="production",PORT="3100",DATABASE_URL="file:/app/data/db/ehs.db"
+
+[program:minio]
+command=/usr/local/bin/minio server /app/data/minio-data --address :9100 --console-address :9101
+directory=/app
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/minio.log
+stderr_logfile=/var/log/supervisor/minio_error.log
+environment=MINIO_ROOT_USER="admin",MINIO_ROOT_PASSWORD="change-me-now"
+EOF
+
+# 创建启动脚本
+RUN cat > /app/start.sh <<'EOF'
+#!/bin/bash
+set -e
+
+echo "=========================================="
+echo "EHS 系统完整镜像启动"
+echo "=========================================="
+echo ""
+echo "服务端口配置："
+echo "  - Next.js 应用: 3100"
+echo "  - MinIO API: 9100"
+echo "  - MinIO 控制台: 9101"
+echo ""
+echo "数据目录："
+echo "  - 数据库: /app/data/db/ehs.db"
+echo "  - MinIO 数据: /app/data/minio-data"
+echo "  - 上传文件: /app/public/uploads"
+echo ""
+echo "=========================================="
+
+# 确保数据库文件存在
+if [ ! -f /app/data/db/ehs.db ]; then
+    echo "⚠️  数据库文件不存在，运行迁移..."
+    cd /app && npx prisma migrate deploy
+fi
+
+# 启动 supervisor
+exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+EOF
+
+RUN chmod +x /app/start.sh
+
+# 暴露端口
+EXPOSE 3100 9100 9101
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=40s \
+    CMD curl -f http://localhost:3100/api/health || exit 1
+
+# 启动命令
+CMD ["/app/start.sh"]

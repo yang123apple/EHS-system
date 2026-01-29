@@ -1,0 +1,40 @@
+# .dockerignore for full image build
+# 这个文件用于构建包含所有数据的完整镜像
+
+.git
+.DS_Store
+node_modules
+npm-debug.log
+yarn-error.log
+coverage
+dist
+
+.env
+.env.local
+.env.*.local
+.env.docker
+*.log
+
+# 不排除数据文件（与默认 .dockerignore 不同）
+# data/backups
+# data/minio-data
+# data/minio-config
+# data/minio-backup
+# data/file-index
+# data/**/*.db
+# data/**/*.db-*
+
+# 不排除上传文件（与默认 .dockerignore 不同）
+# public/uploads
+# public/uploads.*
+
+# 不排除数据库文件（与默认 .dockerignore 不同）
+# backups
+# prisma/*.db*
+# prisma/**/*.db*
+# *.db
+# *.db-journal
+# *.db-wal
+# *.db-shm
+
+bin
