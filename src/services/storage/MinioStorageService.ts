@@ -327,7 +327,7 @@ class MinioStorageService {
 
   /**
    * 获取文件信息
-   * 
+   *
    * @param bucket 存储桶类型
    * @param objectName 对象键
    * @returns 文件信息
@@ -337,6 +337,21 @@ class MinioStorageService {
     objectName: string
   ) {
     return await minioService.getFileInfo(bucket, objectName);
+  }
+
+  /**
+   * 下载文件
+   * 从 MinIO 下载文件并返回 Buffer
+   *
+   * @param bucket 存储桶类型
+   * @param objectName 对象键
+   * @returns 文件 Buffer
+   */
+  public async downloadFile(
+    bucket: 'private' | 'public',
+    objectName: string
+  ): Promise<Buffer> {
+    return await minioService.downloadFile(bucket, objectName);
   }
 }
 
