@@ -3,6 +3,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mammoth from 'mammoth';
 import { withErrorHandling, withAuth } from '@/middleware/auth';
+import { minioStorageService } from '@/services/storage/MinioStorageService';
+import { parseFileRecordFromDb } from '@/utils/storage';
 
 export const GET = withErrorHandling(
   withAuth(async (req: NextRequest, context: { params: Promise<{}> }, user) => {
@@ -16,9 +18,26 @@ export const GET = withErrorHandling(
     }
 
     try {
-      // 从 URL 获取文件路径（可能是相对路径或绝对路径）
-      let filePath: string;
-      if (url.startsWith('http://') || url.startsWith('https://')) {
+      let buffer: Buffer;
+
+      // 检查是否是 MinIO 路径格式 (bucket:key)
+      const minioRecord = parseFileRecordFromDb(url);
+      if (minioRecord) {
+        console.log('📄 [DOCX转换API] 从MinIO下载文件:', url);
+        console.log('  - Bucket:', minioRecord.bucket);
+        console.log('  - ObjectName:', minioRecord.objectName);
+
+        try {
+          buffer = await minioStorageService.downloadFile(
+            minioRecord.bucket,
+            minioRecord.objectName
+          );
+          console.log('📄 [DOCX转换API] MinIO文件下载成功, 大小:', buffer.length, 'bytes');
+        } catch (error) {
+          console.error('❌ [DOCX转换API] MinIO下载失败:', error);
+          throw new Error(`找不到文件: ${url}`);
+        }
+      } else if (url.startsWith('http://') || url.startsWith('https://')) {
         // 如果是完整 URL，需要下载文件
         console.log('📄 [DOCX转换API] 从远程URL下载文件:', url);
         // Next.js 16: 服务端 fetch 也需要明确指定缓存策略
@@ -29,53 +48,31 @@ export const GET = withErrorHandling(
           throw new Error(`无法下载文件: ${response.statusText}`);
         }
         const arrayBuffer = await response.arrayBuffer();
-        console.log('📄 [DOCX转换API] 文件下载成功, 大小:', arrayBuffer.byteLength, 'bytes');
-        
-        // 🔴 mammoth 默认会正确转换表格，使用默认配置即可
-        const result = await mammoth.convertToHtml({ arrayBuffer });
-        
-        console.log('📄 [DOCX转换API] Mammoth转换完成');
-        console.log('  - HTML长度:', result.value?.length || 0, 'characters');
-        console.log('  - 消息数量:', result.messages?.length || 0);
-        if (result.messages && result.messages.length > 0) {
-          console.log('  - 转换消息:', result.messages);
-        }
-        
-        // 🔴 如果HTML为空，返回特殊标记让前端知道
-        if (!result.value || result.value.trim().length === 0) {
-          console.warn('⚠️ [DOCX转换API] Mammoth转换结果为空，可能包含不支持的元素');
-          return NextResponse.json({ 
-            html: '', 
-            empty: true,
-            messages: result.messages,
-            reason: 'mammoth_empty_result'
-          });
-        }
-        
-        return NextResponse.json({ html: result.value, messages: result.messages });
+        buffer = Buffer.from(arrayBuffer);
+        console.log('📄 [DOCX转换API] 文件下载成功, 大小:', buffer.length, 'bytes');
       } else {
         // 相对路径，需要判断是 public 目录还是 ehs-private 目录
         const fs = await import('fs/promises');
         const path = await import('path');
-        
+
         // 尝试多个可能的路径
         const possiblePaths = [
           path.join(process.cwd(), 'public', url),  // public/uploads/...
           path.join(process.cwd(), url.startsWith('/') ? url.substring(1) : url), // 相对于项目根目录
           path.join(process.cwd(), 'ehs-private', url.startsWith('/') ? url.substring(1) : url) // ehs-private/...
         ];
-        
+
         console.log('📄 [DOCX转换API] 尝试查找本地文件，候选路径:');
         possiblePaths.forEach((p, i) => console.log(`  ${i + 1}. ${p}`));
-        
-        let buffer: Buffer | null = null;
+
+        let foundBuffer: Buffer | null = null;
         let foundPath: string | null = null;
-        
+
         for (const tryPath of possiblePaths) {
           try {
             const stats = await fs.stat(tryPath);
             if (stats.isFile()) {
-              buffer = await fs.readFile(tryPath);
+              foundBuffer = await fs.readFile(tryPath);
               foundPath = tryPath;
               console.log('📄 [DOCX转换API] ✅ 找到文件:', tryPath);
               console.log('  - 文件大小:', stats.size, 'bytes');
@@ -86,42 +83,42 @@ export const GET = withErrorHandling(
             console.log('📄 [DOCX转换API] ❌ 路径不存在:', tryPath);
           }
         }
-        
-        if (!buffer || !foundPath) {
+
+        if (!foundBuffer || !foundPath) {
           throw new Error(`找不到文件: ${url}`);
         }
-        
+
+        buffer = foundBuffer;
         console.log('📄 [DOCX转换API] 开始Mammoth转换, Buffer大小:', buffer.length, 'bytes');
-        
-        // 🔴 mammoth 默认会正确转换表格，使用默认配置即可
-        const result = await mammoth.convertToHtml({ buffer });
-        
-        console.log('📄 [DOCX转换API] Mammoth转换完成');
-        console.log('  - HTML长度:', result.value?.length || 0, 'characters');
-        console.log('  - 消息数量:', result.messages?.length || 0);
-        if (result.messages && result.messages.length > 0) {
-          console.log('  - 转换消息:', result.messages);
-        }
-        
-        // 🔴 如果HTML为空，返回特殊标记和详细诊断信息
-        if (!result.value || result.value.trim().length === 0) {
-          console.warn('⚠️ [DOCX转换API] 转换结果为空！');
-          console.warn('  - result.value:', JSON.stringify(result.value));
-          console.warn('  - 文件路径:', foundPath);
-          console.warn('  - Buffer大小:', buffer.length, 'bytes');
-          
-          return NextResponse.json({ 
-            html: '', 
-            empty: true,
-            messages: result.messages,
-            reason: 'mammoth_empty_result',
-            fileSize: buffer.length,
-            filePath: url
-          });
-        }
-        
-        return NextResponse.json({ html: result.value, messages: result.messages });
       }
+
+      // 🔴 mammoth 默认会正确转换表格，使用默认配置即可
+      const result = await mammoth.convertToHtml({ buffer });
+
+      console.log('📄 [DOCX转换API] Mammoth转换完成');
+      console.log('  - HTML长度:', result.value?.length || 0, 'characters');
+      console.log('  - 消息数量:', result.messages?.length || 0);
+      if (result.messages && result.messages.length > 0) {
+        console.log('  - 转换消息:', result.messages);
+      }
+
+      // 🔴 如果HTML为空，返回特殊标记和详细诊断信息
+      if (!result.value || result.value.trim().length === 0) {
+        console.warn('⚠️ [DOCX转换API] 转换结果为空！');
+        console.warn('  - result.value:', JSON.stringify(result.value));
+        console.warn('  - Buffer大小:', buffer.length, 'bytes');
+
+        return NextResponse.json({
+          html: '',
+          empty: true,
+          messages: result.messages,
+          reason: 'mammoth_empty_result',
+          fileSize: buffer.length,
+          filePath: url
+        });
+      }
+
+      return NextResponse.json({ html: result.value, messages: result.messages });
     } catch (error) {
       console.error('❌ [DOCX转换API] 转换失败:', error);
       return NextResponse.json(
