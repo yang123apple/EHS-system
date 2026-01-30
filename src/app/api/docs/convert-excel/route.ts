@@ -31,7 +31,7 @@ export const GET = withErrorHandling(
             minioRecord.objectName
           );
           console.log('📊 [Excel转换API] MinIO文件下载成功, 大小:', buffer.length, 'bytes');
-          arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+          arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
         } catch (error) {
           console.error('❌ [Excel转换API] MinIO下载失败:', error);
           throw new Error(`找不到文件: ${url}`);
