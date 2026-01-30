@@ -27,6 +27,7 @@ export interface DepartmentNode {
   parentId: string | null;
   managerId?: string;
   level: number;
+  sortOrder?: number;
   children?: DepartmentNode[];
 }
 

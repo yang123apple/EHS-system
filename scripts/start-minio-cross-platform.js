@@ -139,8 +139,23 @@ function findMinIOExecutable() {
  * 启动 MinIO
  */
 function startMinIO() {
-  const dataDir = path.join(projectRoot, 'data', 'minio-data');
-  
+  let dataDir = path.join(projectRoot, 'data', 'minio-data');
+
+  // 解析符号链接，获取实际路径
+  // MinIO 无法正确处理符号链接，需要使用实际的绝对路径
+  try {
+    if (fs.existsSync(dataDir)) {
+      const realPath = fs.realpathSync(dataDir);
+      if (realPath !== dataDir) {
+        console.log(`[MinIO] 检测到符号链接: ${dataDir} -> ${realPath}`);
+        dataDir = realPath;
+      }
+    }
+  } catch (error) {
+    // 如果无法解析，保持原路径
+    console.log(`[MinIO] 使用路径: ${dataDir}`);
+  }
+
   // 确保数据目录存在
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });

@@ -102,7 +102,9 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 echo -e "${CYAN}[2/5] Checking MinIO Client...${NC}"
 
-if command -v mc &>/dev/null; then
+if [ -x "$PROJECT/bin/mc" ]; then
+  log_success "MinIO client found at $PROJECT/bin/mc"
+elif command -v mc &>/dev/null; then
   log_success "MinIO client (mc) is installed"
 elif command -v /opt/homebrew/bin/mc &>/dev/null; then
   log_success "MinIO client found at /opt/homebrew/bin/mc"

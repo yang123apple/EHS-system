@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
-import { Network, ChevronRight, ChevronDown, Plus, Trash2, Edit2, User as UserIcon, Briefcase, BadgeCheck, UserPlus, X, GripVertical, LogOut, FileSpreadsheet, Download, Upload, HelpCircle, FolderTree, Settings } from 'lucide-react';
+import { Network, ChevronRight, ChevronDown, Plus, Trash2, Edit2, User as UserIcon, Briefcase, BadgeCheck, UserPlus, X, GripVertical, LogOut, FileSpreadsheet, Download, Upload, HelpCircle, FolderTree, Settings, Eye } from 'lucide-react';
 import jschardet from 'jschardet';
 import { parseTableFile, pick } from '@/utils/fileImport';
 import * as XLSX from 'xlsx';
@@ -15,6 +15,7 @@ interface OrgNode {
   name: string;
   managerId?: string;
   parentId: string | null;
+  sortOrder?: number;
   children?: OrgNode[];
 }
 
@@ -26,6 +27,7 @@ interface UserSimple {
   department: string;
   jobTitle?: string;
   avatar?: string;
+  isActive?: boolean;
 }
 
 export default function OrgStructurePage() {
@@ -56,10 +58,50 @@ export default function OrgStructurePage() {
   const importFileRef = useRef<HTMLInputElement>(null);
     const [showImportGuide, setShowImportGuide] = useState(false);
 
+  // 🟢 离职人员显示开关
+  const [showDepartedEmployees, setShowDepartedEmployees] = useState(false);
+
+  // 🟢 部门拖拽状态
+  const [draggingDeptId, setDraggingDeptId] = useState<string | null>(null);
+  const [dragOverDeptId, setDragOverDeptId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
+
+  // 🟢 部门展开状态（集中管理，避免拖动时重置）
+  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     if (!currentUser) return;
     fetchData();
   }, [currentUser]);
+
+  // 🟢 初始化展开状态：默认展开所有部门
+  useEffect(() => {
+    if (tree.length > 0) {
+      const allDeptIds = new Set<string>();
+      const collectIds = (nodes: OrgNode[]) => {
+        nodes.forEach(node => {
+          allDeptIds.add(node.id);
+          if (node.children) {
+            collectIds(node.children);
+          }
+        });
+      };
+      collectIds(tree);
+      setExpandedDepts(allDeptIds);
+    }
+  }, [tree.length]); // 只在树结构变化时初始化
+
+  const toggleExpanded = (deptId: string) => {
+    setExpandedDepts(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(deptId)) {
+        newSet.delete(deptId);
+      } else {
+        newSet.add(deptId);
+      }
+      return newSet;
+    });
+  };
 
   const fetchData = async () => {
     if (!currentUser) return;
@@ -132,6 +174,84 @@ export default function OrgStructurePage() {
     if (!confirm('确定删除该部门吗？(请确保该部门下无子部门)')) return;
     await apiFetch(`/api/org/${id}`, { method: 'DELETE' });
     fetchData();
+  };
+
+  // 🟢 部门排序处理
+  const handleDepartmentReorder = async (draggedId: string, targetId: string, position: 'before' | 'after') => {
+    // Find all siblings of the dragged department
+    const draggedNode = findNodeById(tree, draggedId);
+    const targetNode = findNodeById(tree, targetId);
+
+    if (!draggedNode || !targetNode) return;
+    if (draggedNode.id === targetNode.id) return; // Prevent self-drop
+    if (draggedNode.parentId !== targetNode.parentId) {
+      alert('只能在同级部门之间调整顺序');
+      return;
+    }
+
+    // Get all siblings
+    const siblings = getSiblings(tree, draggedId);
+    if (siblings.length <= 1) return; // No reordering needed
+
+    // Remove dragged node from siblings
+    const filteredSiblings = siblings.filter(s => s.id !== draggedId);
+
+    // Find target index
+    const targetIndex = filteredSiblings.findIndex(s => s.id === targetId);
+    const insertIndex = position === 'before' ? targetIndex : targetIndex + 1;
+
+    // Insert dragged node at new position
+    filteredSiblings.splice(insertIndex, 0, draggedNode);
+
+    // Assign new sortOrder values
+    const updates = filteredSiblings.map((node, index) => ({
+      id: node.id,
+      sortOrder: index
+    }));
+
+    // Send to backend
+    try {
+      const res = await apiFetch('/api/org/reorder', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates })
+      });
+
+      if (res.ok) {
+        fetchData(); // Refresh tree
+      } else {
+        alert('排序失败');
+      }
+    } catch (e) {
+      alert('网络错误');
+    }
+  };
+
+  // Helper: Find node by ID in tree
+  const findNodeById = (nodes: OrgNode[], id: string): OrgNode | null => {
+    for (const node of nodes) {
+      if (node.id === id) return node;
+      if (node.children) {
+        const found = findNodeById(node.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  // Helper: Get all siblings of a node
+  const getSiblings = (nodes: OrgNode[], nodeId: string): OrgNode[] => {
+    const node = findNodeById(nodes, nodeId);
+    if (!node) return [];
+
+    if (!node.parentId) {
+      // Root level siblings
+      return nodes;
+    } else {
+      // Find parent and return its children
+      const parent = findNodeById(nodes, node.parentId);
+      return parent?.children || [];
+    }
   };
 
   // ========================
@@ -451,13 +571,16 @@ export default function OrgStructurePage() {
   // 3. 递归树节点组件
   // ========================
   const TreeNode = ({ node, level }: { node: OrgNode, level: number }) => {
-    const [expanded, setExpanded] = useState(true);
-    const [isDragOver, setIsDragOver] = useState(false); 
-    
+    const expanded = expandedDepts.has(node.id);
+    const [isDragOver, setIsDragOver] = useState(false);
+    const [localDropPosition, setLocalDropPosition] = useState<'before' | 'after' | null>(null);
+
     // 1. 找出归属于该部门的 直属 成员
-    const directUsers = users.filter(u => 
-        u.departmentId === node.id || (!u.departmentId && u.department === node.name)
-    );
+    const directUsers = users.filter(u => {
+        const belongsToDept = u.departmentId === node.id || (!u.departmentId && u.department === node.name);
+        const isActiveUser = showDepartedEmployees ? true : (u.isActive !== false);
+        return belongsToDept && isActiveUser;
+    });
 
     // 2. 找出负责人信息
     const manager = users.find(u => u.id === node.managerId);
@@ -465,34 +588,116 @@ export default function OrgStructurePage() {
     // 3. 🟢 核心修改：递归计算总人数 (本部门 + 所有子部门)
     const getTotalUserCount = (n: OrgNode): number => {
         // 当前节点的直属人数
-        const direct = users.filter(u => u.departmentId === n.id || (!u.departmentId && u.department === n.name)).length;
+        const direct = users.filter(u => {
+            const belongsToDept = u.departmentId === n.id || (!u.departmentId && u.department === n.name);
+            const isActiveUser = showDepartedEmployees ? true : (u.isActive !== false);
+            return belongsToDept && isActiveUser;
+        }).length;
         // 子节点的总人数
         const childrenSum = n.children ? n.children.reduce((acc, child) => acc + getTotalUserCount(child), 0) : 0;
         return direct + childrenSum;
     };
 
     const totalCount = getTotalUserCount(node);
-    
+
     // 是否显示折叠箭头：有子部门 或者 有直属员工
     const hasChildren = (node.children && node.children.length > 0) || directUsers.length > 0;
-    
+
+    // 🟢 NEW: Department drag handlers
+    const handleDeptDragStart = (e: React.DragEvent) => {
+        e.stopPropagation();
+        e.dataTransfer.setData("deptId", node.id);
+        e.dataTransfer.effectAllowed = "move";
+        setDraggingDeptId(node.id);
+    };
+
+    const handleDeptDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Check if this is a department drag or user drag
+        const types = Array.from(e.dataTransfer.types);
+        const isDeptDrag = types.includes('text/plain') && e.dataTransfer.effectAllowed === 'move';
+
+        // Try to get deptId (won't work during dragOver in some browsers, so we check types)
+        if (draggingDeptId) {
+            // This is a department drag
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            const midpoint = rect.top + rect.height / 2;
+            const position = e.clientY < midpoint ? 'before' : 'after';
+
+            setDragOverDeptId(node.id);
+            setLocalDropPosition(position);
+        } else {
+            // This is a user drag, use existing logic
+            setIsDragOver(true);
+        }
+    };
+
+    const handleDeptDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+        setDragOverDeptId(null);
+        setLocalDropPosition(null);
+    };
+
+    const handleDeptDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const deptId = e.dataTransfer.getData("deptId");
+        const userId = e.dataTransfer.getData("userId");
+
+        if (userId) {
+            // User drop - existing logic
+            setIsDragOver(false);
+            handleDrop(e, node);
+        } else if (deptId && localDropPosition) {
+            // Department drop - new logic
+            setDragOverDeptId(null);
+            setLocalDropPosition(null);
+            setDraggingDeptId(null);
+            handleDepartmentReorder(deptId, node.id, localDropPosition);
+        }
+    };
+
+    const handleDeptDragEnd = () => {
+        setDraggingDeptId(null);
+        setDragOverDeptId(null);
+        setLocalDropPosition(null);
+    };
+
+    // Determine if this node is being dragged or is a drop target
+    const isDragging = draggingDeptId === node.id;
+    const isDropTarget = dragOverDeptId === node.id;
+
     return (
       <div className="select-none transition-all">
+        {/* Drop indicator BEFORE */}
+        {isDropTarget && localDropPosition === 'before' && (
+          <div className="h-1 bg-blue-500 rounded-full mx-2 mb-1 animate-pulse" />
+        )}
+
         {/* 部门行 (Drop Zone) */}
-        <div 
-            className={`flex items-center justify-between p-2 md:p-3 my-1 rounded-lg border transition-all duration-200 group
+        <div
+            draggable
+            onDragStart={handleDeptDragStart}
+            onDragOver={handleDeptDragOver}
+            onDragLeave={handleDeptDragLeave}
+            onDrop={handleDeptDrop}
+            onDragEnd={handleDeptDragEnd}
+            className={`flex items-center justify-between p-2 md:p-3 my-1 rounded-lg border transition-all duration-200 group cursor-move
                 ${level === 0 ? 'bg-blue-50/80 border-blue-200 shadow-sm' : 'bg-white border-slate-100 hover:border-blue-200 hover:shadow-sm'}
-                ${isDragOver ? 'ring-2 ring-green-400 bg-green-50 scale-[1.01]' : ''} 
+                ${isDragOver ? 'ring-2 ring-green-400 bg-green-50 scale-[1.01]' : ''}
+                ${isDragging ? 'opacity-50 scale-95' : ''}
+                ${isDropTarget ? 'ring-2 ring-blue-400' : ''}
             `}
             style={{ marginLeft: `${level * 20}px` }}
-            
-            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-            onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
-            onDrop={(e) => { setIsDragOver(false); handleDrop(e, node); }}
         >
           <div className="flex items-center gap-3 overflow-hidden">
-            <button 
-                onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }} 
+            <button
+                onClick={(e) => { e.stopPropagation(); toggleExpanded(node.id); }}
                 className={`w-6 h-6 flex items-center justify-center rounded hover:bg-slate-200 text-slate-400 transition-colors shrink-0 ${!hasChildren && 'invisible'}`}
             >
                {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -533,9 +738,9 @@ export default function OrgStructurePage() {
 
           {/* 操作按钮组 */}
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pr-2 shrink-0">
-            <button 
-                onClick={() => handleOpenAddMember(node)} 
-                className="p-1.5 text-green-600 hover:bg-green-50 rounded flex items-center gap-1 bg-white border border-transparent hover:border-green-100 shadow-sm" 
+            <button
+                onClick={() => handleOpenAddMember(node)}
+                className="p-1.5 text-green-600 hover:bg-green-50 rounded flex items-center gap-1 bg-white border border-transparent hover:border-green-100 shadow-sm"
                 title="添加成员"
             >
                 <UserPlus size={14} />
@@ -543,23 +748,32 @@ export default function OrgStructurePage() {
             <div className="w-[1px] h-4 bg-slate-200 mx-1"></div>
             <button onClick={() => handleOpenAddDept(node.id)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Plus size={16} /></button>
             <button onClick={() => handleOpenEditDept(node)} className="p-1.5 text-slate-600 hover:bg-slate-100 rounded"><Edit2 size={16} /></button>
-            {level !== 0 && <button onClick={() => handleDeleteDept(node.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>}
+            <button onClick={() => handleDeleteDept(node.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
           </div>
         </div>
+
+        {/* Drop indicator AFTER */}
+        {isDropTarget && localDropPosition === 'after' && (
+          <div className="h-1 bg-blue-500 rounded-full mx-2 mt-1 animate-pulse" />
+        )}
 
         {/* 展开区域：成员 + 子部门 */}
         {expanded && hasChildren && (
           <div className="border-l-2 border-slate-100 ml-[1.6rem] pl-1">
              <div className="flex flex-col gap-1 mt-1 mb-2">
                 {directUsers.map(user => (
-                    <div 
-                        key={user.id} 
+                    <div
+                        key={user.id}
                         draggable
                         onDragStart={(e) => {
                             e.dataTransfer.setData("userId", user.id);
                             e.dataTransfer.effectAllowed = "move";
                         }}
-                        className="flex items-center gap-3 p-2 ml-8 rounded border border-dashed border-slate-200 bg-slate-50/50 hover:bg-white hover:border-blue-300 hover:shadow-sm transition-all group/user cursor-move"
+                        className={`flex items-center gap-3 p-2 ml-8 rounded border border-dashed transition-all group/user cursor-move ${
+                            user.isActive === false
+                                ? 'border-slate-300 bg-slate-100/50 opacity-60'
+                                : 'border-slate-200 bg-slate-50/50 hover:bg-white hover:border-blue-300 hover:shadow-sm'
+                        }`}
                     >
                         <GripVertical size={14} className="text-slate-300 group-hover/user:text-slate-400" />
                         <div className="w-6 h-6 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 overflow-hidden shrink-0 select-none">
@@ -574,6 +788,12 @@ export default function OrgStructurePage() {
                             {node.managerId === user.id && (
                                 <span className="flex items-center gap-0.5 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
                                     <BadgeCheck size={10} /> 负责人
+                                </span>
+                            )}
+
+                            {user.isActive === false && (
+                                <span className="flex items-center gap-0.5 text-[10px] text-slate-500 bg-slate-200 px-1.5 py-0.5 rounded border border-slate-300">
+                                    离职
                                 </span>
                             )}
                         </div>
@@ -625,8 +845,7 @@ export default function OrgStructurePage() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 md:mb-8 gap-3">
             <div>
                 <h1 className="text-xl md:text-3xl font-bold text-slate-900 flex items-center gap-2 md:gap-3">
-                    <Network className="text-hytzer-blue" size={24} />
-                    <Network className="text-hytzer-blue hidden md:block" size={32} /> 
+                    <Network className="text-hytzer-blue w-6 h-6 md:w-8 md:h-8" />
                     组织架构图谱
                 </h1>
                 <p className="text-slate-500 mt-2 text-xs md:text-sm">
@@ -635,7 +854,20 @@ export default function OrgStructurePage() {
             </div>
             <div className="flex items-center gap-2 md:gap-3 flex-wrap">
               {/* 🟢 批量导入导出 & 导入指南 按钮（始终显示） */}
-              <button 
+              <button
+                onClick={() => setShowDepartedEmployees(!showDepartedEmployees)}
+                className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 md:py-2 border rounded-lg font-medium text-xs md:text-sm transition-colors ${
+                  showDepartedEmployees
+                    ? 'border-orange-200 text-orange-700 bg-orange-50'
+                    : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
+                }`}
+                title={showDepartedEmployees ? '点击隐藏离职人员' : '点击显示离职人员'}
+              >
+                <Eye size={14} className="md:hidden" />
+                <Eye size={16} className="hidden md:block" />
+                <span className="hidden sm:inline">{showDepartedEmployees ? '隐藏离职' : '显示离职'}</span>
+              </button>
+              <button
                 onClick={handleExportOrg}
                 disabled={tree.length === 0}
                 className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 md:py-2 border rounded-lg font-medium text-xs md:text-sm transition-colors ${tree.length === 0 ? 'border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed' : 'border-blue-200 text-blue-700 bg-white hover:bg-blue-50'}`}

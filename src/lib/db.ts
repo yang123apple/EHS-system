@@ -36,6 +36,7 @@ function mapDept(pDept: PrismaDepartment): DepartmentNode {
     parentId: pDept.parentId,
     managerId: pDept.managerId ?? undefined,
     level: pDept.level,
+    sortOrder: pDept.sortOrder ?? 0,
     children: [] // 树状结构需要在 getOrgTree 中处理
   };
 }
@@ -237,7 +238,9 @@ export const db = {
   },
 
   getOrgTree: async () => {
-    const list = await prisma.department.findMany();
+    const list = await prisma.department.findMany({
+      orderBy: { sortOrder: 'asc' }
+    });
     const map: Record<string, DepartmentNode> = {};
     const tree: DepartmentNode[] = [];
 
@@ -251,6 +254,18 @@ export const db = {
         tree.push(map[node.id]);
       }
     });
+
+    // Sort children by sortOrder at each level
+    const sortChildren = (nodes: DepartmentNode[]) => {
+      nodes.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      nodes.forEach(node => {
+        if (node.children && node.children.length > 0) {
+          sortChildren(node.children);
+        }
+      });
+    };
+    sortChildren(tree);
+
     return tree;
   },
 
@@ -286,6 +301,17 @@ export const db = {
     } catch (e) {
       return false;
     }
+  },
+
+  reorderDepartments: async (updates: Array<{ id: string; sortOrder: number }>) => {
+    // Batch update sortOrder for multiple departments
+    const promises = updates.map(({ id, sortOrder }) =>
+      prisma.department.update({
+        where: { id },
+        data: { sortOrder }
+      })
+    );
+    await Promise.all(promises);
   },
 
   // === 隐患 ===

@@ -107,6 +107,9 @@ COPY public/uploads/ /app/public/uploads/
 COPY ehs-private/ /app/ehs-private/
 COPY ehs-public/ /app/ehs-public/
 
+# 复制核心数据（用于自动恢复）
+COPY data/core_data/ /app/data/core_data/
+
 # 创建必要的目录
 RUN mkdir -p \
     /app/data/db \

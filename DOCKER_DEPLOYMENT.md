@@ -422,31 +422,201 @@ docker compose --env-file .env.docker.local -f docker-compose.prod.yml down -v
 
 ### 更新应用
 
+#### 场景 1：更新应用代码（无数据库变更）
+
+**适用情况**：修复 bug、UI 优化、功能增强（不涉及数据库结构变更）
+
 ```bash
-# 1. 拉取最新代码
+# 1. 备份数据（保险起见）
+./scripts/backup-data.sh
+
+# 2. 拉取最新代码
 git pull
 
-# 2. 重新构建镜像
+# 3. 停止容器（数据保留在宿主机）
+docker compose --env-file .env.docker.local -f docker-compose.prod.yml down
+
+# 4. 重新构建镜像
 docker compose --env-file .env.docker.local -f docker-compose.prod.yml build --no-cache
 
-# 3. 重启服务
+# 5. 启动新容器（自动挂载原有数据）
 docker compose --env-file .env.docker.local -f docker-compose.prod.yml up -d
 
-# 4. 查看日志确认启动成功
+# 6. 验证数据完整性
+docker exec ehs-app sqlite3 /app/data/db/ehs.db "SELECT COUNT(*) FROM User;"
+
+# 7. 查看日志确认启动成功
 docker logs -f ehs-app
 ```
+
+**数据安全保证**：
+- ✅ 数据库文件在 `../data/db/ehs.db`（宿主机）
+- ✅ 容器删除不影响数据
+- ✅ 新容器启动时自动挂载原有数据
+
+---
+
+#### 场景 2：更新应用代码 + 数据库迁移
+
+**适用情况**：添加新功能需要修改数据库结构（新增表、字段等）
+
+```bash
+# 1. 备份数据（重要！）
+./scripts/backup-data.sh
+
+# 2. 记录当前数据统计（用于验证）
+docker exec ehs-app sqlite3 /app/data/db/ehs.db "SELECT COUNT(*) FROM User;"
+docker exec ehs-app sqlite3 /app/data/db/ehs.db "SELECT COUNT(*) FROM HazardRecord;"
+# 记下这些数字
+
+# 3. 拉取最新代码
+git pull
+
+# 4. 检查是否有新的迁移文件
+ls -la prisma/migrations/
+# 如果有新的迁移目录，说明有数据库结构变更
+
+# 5. 在宿主机上测试迁移（可选但推荐）
+DATABASE_URL="file:../data/db/ehs.db" npx prisma migrate deploy --preview-feature
+
+# 6. 停止容器
+docker compose --env-file .env.docker.local -f docker-compose.prod.yml down
+
+# 7. 重新构建镜像
+docker compose --env-file .env.docker.local -f docker-compose.prod.yml build --no-cache
+
+# 8. 启动新容器（Dockerfile 中的 CMD 会自动运行迁移）
+docker compose --env-file .env.docker.local -f docker-compose.prod.yml up -d
+
+# 9. 查看迁移日志
+docker logs ehs-app | grep "prisma migrate"
+
+# 10. 验证数据完整性
+docker exec ehs-app sqlite3 /app/data/db/ehs.db "SELECT COUNT(*) FROM User;"
+docker exec ehs-app sqlite3 /app/data/db/ehs.db "SELECT COUNT(*) FROM HazardRecord;"
+# 数量应该与步骤 2 一致
+
+# 11. 功能测试
+# - 登录系统
+# - 查看现有数据
+# - 测试新功能
+```
+
+**数据安全保证**：
+- ✅ 迁移前已备份
+- ✅ Prisma 迁移是事务性的（失败会回滚）
+- ✅ 数据在宿主机，可随时恢复
+
+---
+
+#### 场景 3：更新完整镜像（Dockerfile.full）
+
+**适用情况**：使用完整镜像部署，需要更新到新版本
+
+```bash
+# 1. 备份当前运行容器的数据
+docker cp ehs-system:/app/data/db/ehs.db ../backups/ehs-$(date +%Y%m%d-%H%M%S).db
+
+# 2. 拉取最新代码
+git pull
+
+# 3. 更新本地数据库（用于构建新镜像）
+# 方法 A：从运行容器复制
+docker cp ehs-system:/app/data/db/ehs.db prisma/dev.db
+
+# 方法 B：使用宿主机数据库
+cp ../data/db/ehs.db prisma/dev.db
+
+# 4. 运行新的迁移（如果有）
+npx prisma migrate deploy
+
+# 5. 运行构建前检查
+./scripts/pre-build-check.sh
+
+# 6. 重新构建完整镜像
+./build-full-image.sh
+# 或
+docker build -f Dockerfile.full -t ehs-system-full:v1.2 .
+
+# 7. 停止旧容器
+docker stop ehs-system
+docker rm ehs-system
+
+# 8. 启动新容器（使用 volume 挂载保护数据）
+docker run -d \
+  --name ehs-system \
+  -p 3100:3100 \
+  -p 9100:9100 \
+  -p 9101:9101 \
+  -v $(pwd)/../data:/app/data \
+  ehs-system-full:v1.2
+
+# 9. 验证
+docker logs ehs-system
+curl http://localhost:3100/api/health
+```
+
+**关键点**：
+- ⚠️ 即使使用完整镜像，也要挂载 volume
+- ⚠️ Volume 中的数据优先级高于镜像中的数据
+- ✅ 这样即使镜像中的数据库是旧的，容器也会使用 volume 中的新数据
+
+---
+
+### 更新前检查清单
+
+每次更新镜像前，使用此检查清单：
+
+```bash
+# ✅ 1. 确认数据位置
+ls -la ../data/db/ehs.db
+ls -la ../data/minio-data/
+
+# ✅ 2. 备份数据
+./scripts/backup-data.sh
+
+# ✅ 3. 检查 docker-compose volume 配置
+grep -A 5 "volumes:" docker-compose.prod.yml
+# 应该看到: - ../data:/app/data
+
+# ✅ 4. 测试迁移（如果有）
+DATABASE_URL="file:../data/db/ehs.db" npx prisma migrate deploy --preview-feature
+
+# ✅ 5. 记录当前数据统计
+docker exec ehs-app sqlite3 /app/data/db/ehs.db "SELECT COUNT(*) FROM User;"
+docker exec ehs-app sqlite3 /app/data/db/ehs.db "SELECT COUNT(*) FROM HazardRecord;"
+
+# ✅ 6. 执行更新
+# ... 更新步骤 ...
+
+# ✅ 7. 验证数据完整性
+docker exec ehs-app sqlite3 /app/data/db/ehs.db "SELECT COUNT(*) FROM User;"
+docker exec ehs-app sqlite3 /app/data/db/ehs.db "SELECT COUNT(*) FROM HazardRecord;"
+# 数量应该与更新前一致
+
+# ✅ 8. 功能测试
+# - 登录系统
+# - 查看隐患记录
+# - 上传文件
+# - 下载文件
+```
+
+---
 
 ### 数据备份
 
 ```bash
-# 备份数据库
-cp ./data/db/ehs.db ./backups/ehs-$(date +%Y%m%d-%H%M%S).db
+# 使用备份脚本（推荐）
+./scripts/backup-data.sh
 
-# 备份 MinIO 数据
-tar -czf minio-backup-$(date +%Y%m%d-%H%M%S).tar.gz ./data/minio-data
+# 手动备份数据库
+cp ../data/db/ehs.db ../backups/ehs-$(date +%Y%m%d-%H%M%S).db
 
-# 备份上传文件
-tar -czf uploads-backup-$(date +%Y%m%d-%H%M%S).tar.gz ./public/uploads
+# 手动备份 MinIO 数据
+tar -czf ../backups/minio-backup-$(date +%Y%m%d-%H%M%S).tar.gz ../data/minio-data
+
+# 手动备份上传文件
+tar -czf ../backups/uploads-backup-$(date +%Y%m%d-%H%M%S).tar.gz ./public/uploads
 ```
 
 ### 数据恢复
@@ -456,10 +626,10 @@ tar -czf uploads-backup-$(date +%Y%m%d-%H%M%S).tar.gz ./public/uploads
 docker compose --env-file .env.docker.local -f docker-compose.prod.yml down
 
 # 2. 恢复数据库
-cp ./backups/ehs-20260128-120000.db ./data/db/ehs.db
+cp ../backups/ehs-20260128-120000.db ../data/db/ehs.db
 
 # 3. 恢复 MinIO 数据
-tar -xzf minio-backup-20260128-120000.tar.gz -C ./data/
+tar -xzf ../backups/minio-backup-20260128-120000.tar.gz -C ../data/
 
 # 4. 重启服务
 docker compose --env-file .env.docker.local -f docker-compose.prod.yml up -d
