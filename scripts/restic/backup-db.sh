@@ -58,13 +58,13 @@ if [ ! -f "$DB_PATH" ]; then
 fi
 
 log_info "Performing WAL checkpoint..."
-if ! timeout 60 /usr/bin/sqlite3 "$DB_PATH" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1; then
+if ! gtimeout 60 /usr/bin/sqlite3 "$DB_PATH" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1; then
   log_warning "WAL checkpoint timeout or failed (database may not be in WAL mode)"
 fi
 
 log_info "Creating database snapshot..."
-# Use timeout to prevent indefinite hangs (max 50 minutes for large databases)
-if ! timeout 3000 /usr/bin/sqlite3 "$DB_PATH" ".backup '$SNAPSHOT'" 2>&1 | tee -a "$LOG_FILE"; then
+# Use gtimeout to prevent indefinite hangs (max 50 minutes for large databases)
+if ! gtimeout 3000 /usr/bin/sqlite3 "$DB_PATH" ".backup '$SNAPSHOT'" 2>&1 | tee -a "$LOG_FILE"; then
   log_error "Database snapshot creation timeout or failed"
   send_notification "Backup Failed" "Database snapshot timeout"
   exit 1

@@ -73,7 +73,30 @@ export function calculateVisibilityRoles(hazard: {
         });
       }
     } catch (error) {
-      console.warn('[calculateVisibilityRoles] 解析历史处理人ID失败:', error);
+      console.error('[calculateVisibilityRoles] JSON解析历史处理人ID失败，尝试回退处理:', {
+        error,
+        historicalIdsJson,
+        hazardId: (hazard as any).id
+      });
+
+      // 🔧 回退方案1：尝试作为逗号分隔字符串解析
+      try {
+        if (typeof historicalIdsJson === 'string') {
+          const idsArray = historicalIdsJson.split(',').map(id => id.trim()).filter(id => id);
+          if (idsArray.length > 0) {
+            console.log('[calculateVisibilityRoles] 使用逗号分隔解析成功:', idsArray);
+            idsArray.forEach(userId => {
+              const key = `${userId}-executor`;
+              if (!addedUsers.has(key)) {
+                roles.push({ userId, role: 'executor' });
+                addedUsers.add(key);
+              }
+            });
+          }
+        }
+      } catch (fallbackError) {
+        console.error('[calculateVisibilityRoles] 回退处理也失败，历史处理人权限可能丢失:', fallbackError);
+      }
     }
   }
 

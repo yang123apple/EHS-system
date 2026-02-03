@@ -61,33 +61,78 @@ export const POST = withErrorHandling(
       timestamp: new Date().toISOString()
     });
 
-    // 4. 更新隐患记录 - 标记为已作废
+    // 4. 在事务中执行：标记为已作废 + 释放编号（确保原子性）
     const currentLogs = safeJsonParseArray(hazard.logs || '[]');
     const voidLog = {
       operatorId: user.id,
       operatorName: user.name,
       action: '作废隐患',
       time: new Date().toISOString(),
-      changes: `作废原因：${reason}`
+      changes: `作废原因：${reason}；原编号：${hazard.code}`
     };
 
-    const updatedHazard = await prisma.hazardRecord.update({
-      where: { id: hazardId },
-      data: {
-        isVoided: true,
-        voidReason: reason,
-        voidedAt: new Date(),
-        voidedBy: voidedByInfo,
-        logs: JSON.stringify([voidLog, ...currentLogs])
-      },
-      select: {
-        id: true,
-        code: true,
-        isVoided: true,
-        voidReason: true,
-        voidedAt: true,
-        voidedBy: true
+    const updatedHazard = await prisma.$transaction(async (tx) => {
+      // 4.1 标记隐患为已作废
+      const updated = await tx.hazardRecord.update({
+        where: { id: hazardId },
+        data: {
+          isVoided: true,
+          voidReason: reason,
+          voidedAt: new Date(),
+          voidedBy: voidedByInfo,
+          code: null, // ♻️ 清除编号，使其可以被重用
+          logs: JSON.stringify([voidLog, ...currentLogs])
+        },
+        select: {
+          id: true,
+          code: true,
+          isVoided: true,
+          voidReason: true,
+          voidedAt: true,
+          voidedBy: true
+        }
+      });
+
+      // 4.2 释放编号到编号池（在同一事务中，确保原子性）
+      if (hazard.code) {
+        const now = new Date();
+        const expiresAt = new Date(now);
+        expiresAt.setDate(expiresAt.getDate() + 30); // 30天后过期
+
+        // 提取日期前缀和序号
+        const match = hazard.code.match(/^Hazard(\d{8})(\d{3})$/);
+        if (match) {
+          const datePrefix = match[1];
+          const sequence = parseInt(match[2], 10);
+
+          await tx.hazardCodePool.upsert({
+            where: { code: hazard.code },
+            update: {
+              status: 'available',
+              releasedBy: user.id,
+              releasedAt: now,
+              expiresAt,
+              usedAt: null,
+              usedBy: null
+            },
+            create: {
+              code: hazard.code,
+              datePrefix,
+              sequence,
+              status: 'available',
+              releasedBy: user.id,
+              releasedAt: now,
+              expiresAt
+            }
+          });
+
+          console.log(`♻️ [编号回收] 编号 ${hazard.code} 已释放到编号池 (序号: ${sequence}), 过期时间: ${expiresAt.toISOString()}`);
+        } else {
+          console.warn(`⚠️ [编号回收] 无效编号格式: ${hazard.code}`);
+        }
       }
+
+      return updated;
     });
 
     // 5. 记录系统日志
@@ -102,10 +147,11 @@ export const POST = withErrorHandling(
 
     return NextResponse.json({
       success: true,
-      message: '隐患已作废',
+      message: '隐患已作废，编号已释放可重用',
       data: {
         id: updatedHazard.id,
-        code: updatedHazard.code,
+        originalCode: hazard.code, // 返回原编号
+        code: updatedHazard.code,  // 现在是null
         isVoided: updatedHazard.isVoided,
         voidReason: updatedHazard.voidReason,
         voidedAt: updatedHazard.voidedAt

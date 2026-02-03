@@ -753,24 +753,30 @@ export class HazardDispatchEngine {
         if (hazard.candidateHandlers && hazard.candidateHandlers.length > 0 && hazard.approvalMode) {
           const approvalMode = hazard.approvalMode;
           const isAdmin = this.isOperatorAdmin(operator);
-          
+
           // 🔒 安全校验：首先检查当前用户是否在候选处理人列表中
           const isCandidate = hazard.candidateHandlers.some(h => String(h.userId) === String(operator.id));
-          
+
           // 🔧 管理员特权：如果是管理员，允许跳过候选人检查
           if (!isCandidate && !isAdmin) {
             return `您不是当前步骤的候选处理人，无法执行此操作`;
           }
-          
+
           if (approvalMode === 'AND') {
             // 会签模式下，已操作过的用户不能重复操作
-            const currentUserHandler = hazard.candidateHandlers.find(h => String(h.userId) === String(operator.id));
-            if (currentUserHandler && currentUserHandler.hasOperated) {
+            // 🔒 从数据库重新查询以避免并发竞争条件
+            const { hasUserOperated } = await import('./hazardCandidateHandler.service');
+            const stepIndex = currentStepIndex ?? hazard.currentStepIndex ?? 0;
+            const hasOperated = await hasUserOperated(hazard.id, operator.id, stepIndex);
+            if (hasOperated) {
               return '您已完成本次会签，无法重复操作';
             }
           } else if (approvalMode === 'OR') {
             // 或签模式下，已有人操作后，其他人不能再操作
-            const someoneOperated = hazard.candidateHandlers.some(h => h.hasOperated);
+            // 🔒 从数据库重新查询以避免并发竞争条件
+            const { hasAnyUserOperated } = await import('./hazardCandidateHandler.service');
+            const stepIndex = currentStepIndex ?? hazard.currentStepIndex ?? 0;
+            const someoneOperated = await hasAnyUserOperated(hazard.id, stepIndex);
             if (someoneOperated) {
               return '或签已完成，无法重复操作';
             }

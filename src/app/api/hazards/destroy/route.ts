@@ -190,7 +190,19 @@ export const DELETE = withErrorHandling(
         where: { hazardId }
       });
 
-      // 3.5 删除隐患记录本身
+      // 🗑️ 3.5 从编号池中永久移除编号（如果存在）
+      let deletedCodePool = 0;
+      if (hazard.code) {
+        const codePoolResult = await tx.hazardCodePool.deleteMany({
+          where: { code: hazard.code }
+        });
+        deletedCodePool = codePoolResult.count;
+        if (deletedCodePool > 0) {
+          console.log(`🗑️ [编号回收] 编号 ${hazard.code} 已从编号池永久移除`);
+        }
+      }
+
+      // 3.6 删除隐患记录本身
       await tx.hazardRecord.delete({
         where: { id: hazardId }
       });
@@ -199,7 +211,8 @@ export const DELETE = withErrorHandling(
         deletedCandidates: deletedCandidates.count,
         deletedCC: deletedCC.count,
         deletedExtensions: deletedExtensions.count,
-        deletedSignatures: deletedSignatures.count
+        deletedSignatures: deletedSignatures.count,
+        deletedCodePool
       };
     });
 
@@ -222,6 +235,7 @@ export const DELETE = withErrorHandling(
     console.log(`   - 抄送记录：${result.deletedCC} 条`);
     console.log(`   - 延期记录：${result.deletedExtensions} 条`);
     console.log(`   - 签名记录：${result.deletedSignatures} 条`);
+    console.log(`   - 编号池记录：${result.deletedCodePool} 条`);
     console.log(`   - MinIO 文件：${cleanupResult.cleaned}/${allPhotos.length} 个`);
 
     return NextResponse.json({
@@ -239,7 +253,8 @@ export const DELETE = withErrorHandling(
           candidateHandlers: result.deletedCandidates,
           ccRecords: result.deletedCC,
           extensions: result.deletedExtensions,
-          signatures: result.deletedSignatures
+          signatures: result.deletedSignatures,
+          codePoolRecords: result.deletedCodePool
         }
       }
     });

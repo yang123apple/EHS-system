@@ -314,6 +314,30 @@ model HazardExtension {
   @@index([createdAt])
 }
 
+// 🟢 隐患编号池（用于编号回收利用）
+// 用途：当隐患被软删除（作废）时，将编号释放到此池中，供后续创建隐患时重用
+// 优势：保持编号连续性，避免编号浪费，便于审计追溯
+model HazardCodePool {
+  id         String    @id @default(cuid())
+  code       String    @unique // 被释放的编号（如：Hazard20250202001）
+  datePrefix String // 日期前缀（如：20250202），用于快速筛选当天可用编号
+  sequence   Int // 序号（如：1, 2, 3），用于排序，优先重用小序号
+  status     String    @default("available") // available(可用), used(已使用), expired(过期)
+  releasedBy String? // 释放此编号的操作人ID
+  releasedAt DateTime  @default(now()) // 释放时间
+  usedAt     DateTime? // 被重新使用的时间
+  usedBy     String? // 重新使用此编号的操作人ID
+  expiresAt  DateTime? // 过期时间（可选：如30天后过期，避免编号池过大）
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  // 🔥 性能关键索引
+  @@index([status]) // 按状态筛选
+  @@index([datePrefix, status]) // 复合索引：查询某天的可用编号（核心查询）
+  @@index([datePrefix, sequence]) // 复合索引：按日期和序号排序，保证编号连续性
+  @@index([expiresAt]) // 用于定时清理过期编号
+}
+
 // 🟢 隐患候选处理人关联表（用于或签/会签模式，持久化操作状态）
 model HazardCandidateHandler {
   id          String       @id @default(cuid())

@@ -26,6 +26,7 @@ services:
       MINIO_PRIMARY_SECRET_KEY: "${MINIO_PRIMARY_SECRET_KEY}"
       MINIO_BACKUP_TARGET: "${MINIO_BACKUP_TARGET:-/app/data/minio-backup}"
       # Restic 配置
+      ENABLE_RESTIC_BACKUP: "${ENABLE_RESTIC_BACKUP:-true}"
       RESTIC_REPOSITORY: "${RESTIC_REPOSITORY:-/app/data/restic-repo}"
       RESTIC_PASSWORD: "${RESTIC_PASSWORD:-change-me-restic-password}"
       # Restic MinIO 配置（用于备份到 MinIO）

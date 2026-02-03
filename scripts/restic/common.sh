@@ -1,12 +1,42 @@
 #!/bin/bash
 set -euo pipefail
 
-# 使用绝对路径，指向上层 data 目录
-BASE="/Users/yangguang/Desktop/EHS/data"
-PROJECT="/Users/yangguang/Desktop/EHS/EHS-system"
+# ============================================
+# 自动检测运行环境（Docker 容器 vs 宿主机）
+# ============================================
 
-# Auto-detect Homebrew paths (Apple Silicon vs Intel)
-if [ -x /opt/homebrew/bin/restic ]; then
+# 检测是否在 Docker 容器内运行
+IS_DOCKER=false
+if [ -f /.dockerenv ] || grep -q docker /proc/1/cgroup 2>/dev/null; then
+  IS_DOCKER=true
+fi
+
+# 根据运行环境设置路径
+if [ "$IS_DOCKER" = true ]; then
+  # Docker 容器内路径
+  BASE="/app/data"
+  PROJECT="/app"
+  echo "[INFO] Running in Docker container mode"
+else
+  # 宿主机路径（开发模式）
+  BASE="/Users/yangguang/Desktop/EHS"
+  PROJECT="/Users/yangguang/Desktop/EHS/EHS-system"
+  echo "[INFO] Running in host machine mode"
+fi
+
+# Auto-detect Homebrew paths (Apple Silicon vs Intel) or Docker container
+if [ "$IS_DOCKER" = true ]; then
+  # Docker 容器中 restic 在标准路径
+  if [ -x /usr/bin/restic ]; then
+    RESTIC_BIN="/usr/bin/restic"
+  elif [ -x /usr/local/bin/restic ]; then
+    RESTIC_BIN="/usr/local/bin/restic"
+  else
+    echo "[RESTIC ERROR] restic not found in container. Install with: apk add restic"
+    exit 1
+  fi
+  export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+elif [ -x /opt/homebrew/bin/restic ]; then
   RESTIC_BIN="/opt/homebrew/bin/restic"
   export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 elif [ -x /usr/local/bin/restic ]; then
@@ -24,10 +54,25 @@ export RESTIC_CACHE_DIR="$BASE/restic-cache"
 
 # 数据路径配置
 STAGING_DB_DIR="$BASE/restic-staging/db"
-DB_PATH="$PROJECT/prisma/dev.db"
-MINIO_DATA_DIR="$BASE/minio-data"
 LOG_ARCHIVE_DIR="$BASE/backups/logs/archives"
 LOG_DIR="$BASE/restic-logs"
+
+# 数据库路径 - 自动检测实际位置
+if [ "$IS_DOCKER" = true ]; then
+  # Docker 模式：数据库在 /app/data/db/ehs.db
+  DB_PATH="$BASE/db/ehs.db"
+  MINIO_DATA_DIR="$BASE/minio-data"
+else
+  # 开发模式：优先检查统一数据目录，其次检查项目目录
+  if [ -f "$BASE/data/db/ehs.db" ]; then
+    DB_PATH="$BASE/data/db/ehs.db"
+  elif [ -f "$PROJECT/prisma/dev.db" ]; then
+    DB_PATH="$PROJECT/prisma/dev.db"
+  else
+    DB_PATH="$PROJECT/prisma/dev.db"  # 默认路径
+  fi
+  MINIO_DATA_DIR="$BASE/minio-data"
+fi
 
 # Ensure log directory exists
 mkdir -p "$LOG_DIR"

@@ -31,6 +31,9 @@ import { logError, extractErrorContext } from '@/utils/errorLogger';
 import { canViewHazard } from '@/app/hidden-danger/_utils/permissions';
 import { syncHazardVisibility } from '@/services/hazardVisibility.service';
 
+// 🔒 管理员角色白名单（用于权限检查）
+const ADMIN_ROLES = ['admin', 'super_admin'] as const;
+
 // 辅助：生成变更描述
 const generateChanges = (oldData: HazardRecord, newData: Partial<HazardRecord>) => {
   const changes: string[] = [];
@@ -50,77 +53,15 @@ const generateChanges = (oldData: HazardRecord, newData: Partial<HazardRecord>) 
  * 🔒 生成隐患编号（后端生成，确保唯一性）
  * 格式：Hazard + YYYYMMDD + 序号（3位，从001开始）
  * 例如：Hazard20250112001
+ *
+ * ♻️ 优化：支持编号回收利用
+ * - 优先从编号池获取已释放的编号
+ * - 保持编号连续性，避免编号浪费
+ * - 编号池为空时生成新编号
  */
-async function generateHazardCode(): Promise<string> {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const dateStr = `${year}${month}${day}`;
-  const prefix = `Hazard${dateStr}`;
-
-  // 查询当天已存在的最大编号
-  const todayStart = new Date(year, now.getMonth(), now.getDate());
-  const todayEnd = new Date(todayStart);
-  todayEnd.setDate(todayEnd.getDate() + 1);
-
-  // 查找当天所有以prefix开头的编号
-  const existingRecords = await prisma.hazardRecord.findMany({
-    where: {
-      code: {
-        startsWith: prefix
-      },
-      createdAt: {
-        gte: todayStart,
-        lt: todayEnd
-      }
-    },
-    select: { code: true },
-    orderBy: { code: 'desc' }
-  });
-
-  // 计算最大序号
-  let maxSeq = 0;
-  for (const record of existingRecords) {
-    if (record.code) {
-      // 提取编号中的序号部分（最后3位）
-      const seqStr = record.code.slice(-3);
-      const seq = parseInt(seqStr, 10);
-      if (!isNaN(seq) && seq > maxSeq) {
-        maxSeq = seq;
-      }
-    }
-  }
-
-  // 生成新序号（最大序号+1）
-  const newSeq = String(maxSeq + 1).padStart(3, '0');
-  const newCode = `${prefix}${newSeq}`;
-
-  // 双重检查：确保编号唯一（防止并发）
-  const existing = await prisma.hazardRecord.findUnique({
-    where: { code: newCode }
-  });
-
-  if (existing) {
-    // 如果编号已存在，继续递增查找可用编号
-    let seq = maxSeq + 1;
-    while (seq < 999) {
-      seq++;
-      const testCode = `${prefix}${String(seq).padStart(3, '0')}`;
-      const testExisting = await prisma.hazardRecord.findUnique({
-        where: { code: testCode }
-      });
-      if (!testExisting) {
-        console.log(`✅ [编号生成] 发现冲突，使用新编号: ${testCode}`);
-        return testCode;
-      }
-    }
-    // 如果999个编号都用完了，使用时间戳后缀
-    const timestamp = Date.now().toString().slice(-3);
-    return `${prefix}${timestamp}`;
-  }
-
-  return newCode;
+async function generateHazardCode(operatorId: string): Promise<string> {
+  const { HazardCodePoolService } = await import('@/services/hazardCodePool.service');
+  return await HazardCodePoolService.acquireCode(operatorId);
 }
 
 // 转换 Prisma HazardRecord 到前端 HazardRecord 类型
@@ -279,7 +220,8 @@ async function mapHazard(pHazard: PrismaHazardWithRelations | PrismaHazardRecord
     } as HazardRecord;
   } catch (error) {
     console.error('[mapHazard] 转换失败:', error, pHazard);
-    // 如果解析失败，返回基本数据结构
+    // 🔧 尽可能保留原始数据，避免数据丢失
+    // 使用安全的JSON解析函数来处理可能格式错误的字段
     return {
       id: pHazard.id,
       code: pHazard.code,
@@ -290,13 +232,23 @@ async function mapHazard(pHazard: PrismaHazardWithRelations | PrismaHazardRecord
       desc: pHazard.desc,
       reporterId: pHazard.reporterId,
       reporterName: pHazard.reporterName,
-      reportTime: new Date().toISOString(),
-      photos: [],
-      rectifyPhotos: [],
-      logs: [],
-      ccDepts: [],
-      ccUsers: [],
-      old_personal_ID: [],
+      reportTime: normalizeDate(pHazard.reportTime) ?? new Date().toISOString(),
+      // 🔧 修复：使用 safeJsonParseArray 尽可能保留照片和日志数据
+      photos: safeJsonParseArray(pHazard.photos),
+      rectifyPhotos: safeJsonParseArray(pHazard.rectifyPhotos),
+      verifyPhotos: safeJsonParseArray(pHazard.verifyPhotos),
+      logs: safeJsonParseArray(pHazard.logs),
+      ccDepts: safeJsonParseArray(pHazard.ccDepts),
+      ccUsers: safeJsonParseArray(pHazard.ccUsers),
+      old_personal_ID: safeJsonParseArray(pHazard.old_personal_ID),
+      // 🔧 其他字段也尽可能保留
+      responsibleId: pHazard.responsibleId ?? undefined,
+      responsibleName: pHazard.responsibleName ?? undefined,
+      verifierId: pHazard.verifierId ?? undefined,
+      verifierName: pHazard.verifierName ?? undefined,
+      deadline: normalizeDate(pHazard.deadline) ?? undefined,
+      createdAt: normalizeDate(pHazard.createdAt) ?? new Date().toISOString(),
+      updatedAt: normalizeDate(pHazard.updatedAt) ?? new Date().toISOString(),
     } as HazardRecord;
   }
 }
@@ -835,27 +787,81 @@ export const POST = withErrorHandling(
       processedData.deadline = setEndOfDay(extractDatePart(processedData.deadline));
     }
 
-    // 🔒 如果未提供编号，由后端自动生成（确保唯一性）
-    if (!processedData.code || processedData.code.trim() === '') {
-      processedData.code = await generateHazardCode();
-      console.log(`✅ [隐患创建] 自动生成编号: ${processedData.code}`);
-    } else {
-      // 如果前端提供了编号，检查是否已存在（防止重复）
-      const existing = await prisma.hazardRecord.findUnique({
-        where: { code: processedData.code }
-      });
-      if (existing) {
-        // 如果编号已存在，自动生成新编号
-        console.warn(`⚠️ [隐患创建] 编号 ${processedData.code} 已存在，自动生成新编号`);
-        processedData.code = await generateHazardCode();
+    // 🔒 使用重试机制处理编号唯一性冲突（修复并发竞争条件）
+    let res: any;
+    let retries = 3;
+    let lastAcquiredCode: string | null = null; // 🔧 跟踪最后获取的编号，用于失败时回滚
+
+    while (retries > 0) {
+      try {
+        // 如果未提供编号，由后端自动生成
+        if (!processedData.code || processedData.code.trim() === '') {
+          const newCode = await generateHazardCode(user.id);
+          lastAcquiredCode = newCode; // 记录新获取的编号
+          processedData.code = newCode;
+          console.log(`✅ [隐患创建] 自动生成编号: ${processedData.code}`);
+        } else if (retries === 3) {
+          // 第一次尝试时检查前端提供的编号是否已存在
+          const existing = await prisma.hazardRecord.findUnique({
+            where: { code: processedData.code }
+          });
+          if (existing) {
+            console.warn(`⚠️ [隐患创建] 编号 ${processedData.code} 已存在，自动生成新编号`);
+            const newCode = await generateHazardCode(user.id);
+            lastAcquiredCode = newCode;
+            processedData.code = newCode;
+          }
+        }
+
+        // 🔄 Step 1: 创建隐患记录
+        res = await prisma.hazardRecord.create({
+          data: processedData
+        });
+
+        // 创建成功，清除回滚标记
+        lastAcquiredCode = null;
+        // 创建成功，跳出重试循环
+        break;
+      } catch (error: any) {
+        // 检查是否是唯一约束冲突 (Prisma错误代码 P2002)
+        if (error.code === 'P2002' && retries > 1) {
+          retries--;
+          console.warn(`⚠️ [隐患创建] 编号冲突，重试中... (剩余${retries}次)`);
+
+          // 🔧 释放当前编号（如果是从池中获取的）
+          if (lastAcquiredCode) {
+            try {
+              const { HazardCodePoolService } = await import('@/services/hazardCodePool.service');
+              await HazardCodePoolService.releaseCode(lastAcquiredCode, user.id, 30);
+              console.log(`♻️ [编号回收] 冲突编号已回滚: ${lastAcquiredCode}`);
+            } catch (releaseError) {
+              console.error(`⚠️ [编号回收] 回滚编号失败:`, releaseError);
+            }
+          }
+
+          // 重新生成编号后重试
+          const newCode = await generateHazardCode(user.id);
+          lastAcquiredCode = newCode;
+          processedData.code = newCode;
+          continue;
+        }
+
+        // 🔧 其他错误或重试次数用完，回滚编号后抛出异常
+        if (lastAcquiredCode) {
+          try {
+            const { HazardCodePoolService } = await import('@/services/hazardCodePool.service');
+            await HazardCodePoolService.releaseCode(lastAcquiredCode, user.id, 30);
+            console.log(`♻️ [编号回收] 失败编号已回滚: ${lastAcquiredCode}`);
+          } catch (releaseError) {
+            console.error(`⚠️ [编号回收] 回滚编号失败:`, releaseError);
+          }
+        }
+
+        throw error;
       }
     }
 
     try {
-      // 🔄 Step 1: 创建隐患记录
-      const res = await prisma.hazardRecord.create({
-        data: processedData
-      });
 
       console.log(`✅ [隐患创建] 隐患记录创建成功: ${res.code}`);
 
@@ -1291,8 +1297,8 @@ export const PATCH = withErrorHandling(
               candidateHandlersCount: candidateHandlers?.length || 0
             });
             
-            // Admin 总是有权限
-            if (user.role === 'admin') {
+            // 🔒 严格权限检查：使用白名单机制验证管理员身份
+            if (ADMIN_ROLES.includes(user.role as any)) {
               hasPermission = true;
               console.log('[Hazard PATCH] Admin 用户，权限检查通过');
             } else {
@@ -1349,7 +1355,7 @@ export const PATCH = withErrorHandling(
                   console.log('[Hazard PATCH] 用户不在候选人列表中');
                 }
               } else {
-                // 单人模式：检查当前用户是否在处理人列表中
+                // 单人模式：严格检查当前用户是否在处理人列表中
                 console.log('[Hazard PATCH] 进入单人模式权限检查');
                 if (handlers.userIds && handlers.userIds.length > 0) {
                   hasPermission = handlers.userIds.includes(user.id);
@@ -1358,12 +1364,6 @@ export const PATCH = withErrorHandling(
                     userId: user.id,
                     hasPermission
                   });
-                  
-                  // 🔧 如果处理人列表中没有，但用户是责任人，也应该授予权限（修复匹配逻辑错误的情况）
-                  if (!hasPermission && oldRecord.responsibleId === user.id) {
-                    hasPermission = true;
-                    console.log('[Hazard PATCH] 单人模式：处理人列表中不包含用户，但用户是责任人，授予权限');
-                  }
                 } else {
                   // 向后兼容：从 hazard 对象读取
                   hasPermission = oldRecord.dopersonal_ID === user.id;
@@ -1372,12 +1372,6 @@ export const PATCH = withErrorHandling(
                     userId: user.id,
                     hasPermission
                   });
-                  
-                  // 🔧 额外检查：如果 dopersonal_ID 也不匹配，检查是否是责任人
-                  if (!hasPermission && oldRecord.responsibleId === user.id) {
-                    hasPermission = true;
-                    console.log('[Hazard PATCH] 单人模式：dopersonal_ID 不匹配，但用户是责任人，授予权限');
-                  }
                 }
               }
             }

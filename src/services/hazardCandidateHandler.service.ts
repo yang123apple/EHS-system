@@ -184,6 +184,27 @@ export async function hasUserOperated(
 }
 
 /**
+ * 检查是否有任何用户已操作（用于或签模式）
+ * @param hazardId 隐患ID
+ * @param stepIndex 步骤索引
+ * @returns 是否有任何用户已操作
+ */
+export async function hasAnyUserOperated(
+  hazardId: string,
+  stepIndex: number
+): Promise<boolean> {
+  const record = await prisma.hazardCandidateHandler.findFirst({
+    where: {
+      hazardId,
+      stepIndex,
+      hasOperated: true
+    }
+  });
+
+  return !!record;
+}
+
+/**
  * 检查用户是否是候选处理人
  * @param hazardId 隐患ID
  * @param userId 用户ID
