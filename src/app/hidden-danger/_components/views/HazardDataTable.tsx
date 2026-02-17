@@ -8,13 +8,13 @@ import { TableSkeleton } from '@/components/common/Loading';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
 import { canDeleteHazard } from '../../_utils/permissions';
 import { hazardService } from '@/services/hazard.service';
 import { VIEW_MODES } from '@/constants/hazard';
 import { BATCH_LIMITS } from '@/lib/business-constants';
-import { getCheckTypeNameSync } from '@/utils/checkTypeMapping';
+import { exportHazardsToExcel, ExportProgress } from '@/utils/hazardExcelExport';
+import { useState } from 'react';
 
 interface Props {
   hazards: HazardRecord[];
@@ -29,29 +29,39 @@ interface Props {
   user?: any; // 用户信息，用于权限检查
 }
 
-export function HazardDataTable({ 
-  hazards, 
-  total, 
-  page, 
-  pageSize, 
-  onPageChange, 
-  onSelect, 
-  onDelete, 
+export function HazardDataTable({
+  hazards,
+  total,
+  page,
+  pageSize,
+  onPageChange,
+  onSelect,
+  onDelete,
   loading = false,
   viewMode,
-  user 
+  user
 }: Props) {
-  
+  // 导出进度状态
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
   // 文本截断工具函数：最多显示10个字符
   const truncateText = (text: string | null | undefined, maxLength = 10): string => {
     if (!text) return '-';
     if (text.length <= maxLength) return text;
     return text.slice(0, maxLength) + '...';
   };
-  
+
   // 导出所有隐患数据（而非仅当前页）
   const handleExport = async () => {
+    if (isExporting) {
+      alert('导出正在进行中，请稍候...');
+      return;
+    }
     try {
+      setIsExporting(true);
+      setExportProgress(null);
+
       // 构建筛选条件，保留当前视图模式
       const filters: any = {
         viewMode: viewMode === VIEW_MODES.MY_TASKS ? 'my_tasks' : undefined,
@@ -60,10 +70,10 @@ export function HazardDataTable({
 
       // 🔒 资源控制：限制单次导出最大条数
       const maxExportLimit = BATCH_LIMITS.EXPORT_MAX;
-      
+
       // 获取数据（使用配置的最大限制）
       const response = await hazardService.getHazards(1, maxExportLimit, filters);
-      
+
       let allHazards: HazardRecord[] = [];
       if (response && typeof response === 'object') {
         if (response.data && Array.isArray(response.data)) {
@@ -84,84 +94,36 @@ export function HazardDataTable({
         return;
       }
 
-      // 检查类型映射
-      const checkTypeMap: Record<string, string> = {
-        'daily': '日常检查',
-        'special': '专项检查',
-        'monthly': '月度检查',
-        'pre-holiday': '节前检查',
-        'self': '员工自查',
-        'other': '其他检查',
-      };
-
-      // 整改方式映射
-      const rectificationTypeMap: Record<string, string> = {
-        'immediate': '立即整改',
-        'scheduled': '限期整改',
-      };
-
       // 判断是否为管理员
       const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
-      // 解析作废操作人信息
-      const parseVoidedBy = (voidedBy: string | undefined): string => {
-        if (!voidedBy) return '-';
-        try {
-          const voidedByObj = JSON.parse(voidedBy);
-          return voidedByObj.name || '-';
-        } catch {
-          return voidedBy;
+      // 使用新的导出工具（包含图片 + 进度回调）
+      const blob = await exportHazardsToExcel(
+        allHazards,
+        isAdmin,
+        (progress) => {
+          setExportProgress(progress);
         }
-      };
+      );
 
-      // 导出数据
-      const ws = XLSX.utils.json_to_sheet(allHazards.map(h => {
-        // 基础字段（所有用户都可见）
-        const baseData = {
-          '隐患编号': h.code || h.id,
-          '状态': h.status,
-          '风险等级': h.riskLevel,
-          '检查类型': h.checkType ? (checkTypeMap[h.checkType] || getCheckTypeNameSync(h.checkType) || h.checkType) : '-',
-          '整改方式': h.rectificationType ? (rectificationTypeMap[h.rectificationType] || h.rectificationType) : '-',
-          '隐患类型': h.type,
-          '发现位置': h.location,
-          '隐患描述': h.desc,
-          '上报人': h.reporterName || '-',
-          '上报时间': h.reportTime ? h.reportTime.split('T')[0] : '-',
-          '责任部门': h.responsibleDeptName || '-',
-          '责任人': h.responsibleName || '-',
-          '整改期限': h.deadline ? h.deadline.split('T')[0] : '-',
-          '整改描述': h.rectificationNotes || h.rectifyDesc || '-',
-          '整改时间': h.rectificationTime ? h.rectificationTime.split('T')[0] : (h.rectifyTime ? h.rectifyTime.split('T')[0] : '-'),
-          '整改措施要求': h.rectificationRequirements || h.rectifyRequirement || '-',
-          '验收人': h.verifierName || '-',
-          '验收时间': h.verificationTime ? h.verificationTime.split('T')[0] : (h.verifyTime ? h.verifyTime.split('T')[0] : '-'),
-          '验收描述': h.verificationNotes || h.verifyDesc || '-',
-        };
+      // 下载文件
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `隐患导出_${new Date().toISOString().slice(0,10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
 
-        // 管理员额外字段（作废相关）
-        const adminData = isAdmin ? {
-          '是否已作废': h.isVoided ? '是' : '否',
-          '作废原因': h.voidReason || '-',
-          '作废时间': h.voidedAt ? h.voidedAt.split('T')[0] : '-',
-          '作废操作人': parseVoidedBy(h.voidedBy),
-        } : {};
-
-        return {
-          ...baseData,
-          ...adminData,
-        };
-      }));
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "隐患列表");
-      
-      // 🟢 设置列样式（为已作废的行添加灰色背景）
-      // 注意：xlsx库的样式支持有限，这里主要通过数据标记来区分
-      
-      XLSX.writeFile(wb, `隐患导出_${new Date().toISOString().slice(0,10)}.xlsx`);
+      // 成功提示
+      alert('导出成功！');
     } catch (error) {
       console.error('导出Excel失败:', error);
       alert('导出失败，请重试');
+    } finally {
+      setIsExporting(false);
+      setExportProgress(null);
     }
   };
 
@@ -183,13 +145,61 @@ export function HazardDataTable({
         <Button
           variant="outline"
           size="sm"
-          onClick={handleExport} 
-          disabled={hazards.length === 0}
+          onClick={handleExport}
+          disabled={hazards.length === 0 || isExporting}
           className="gap-2 text-green-700 bg-green-50/50 hover:bg-green-100 hover:border-green-300 border-green-200"
         >
-          <FileSpreadsheet size={14} /> 导出 Excel
+          <FileSpreadsheet size={14} />
+          {isExporting ? '导出中...' : '导出 Excel'}
         </Button>
       </div>
+
+      {/* 导出进度提示 */}
+      {isExporting && exportProgress && (
+        <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              {/* 进度信息 */}
+              <div className="flex justify-between items-center mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" />
+                  <span className="text-sm font-semibold text-blue-900">
+                    {exportProgress.message}
+                  </span>
+                  {exportProgress.failedCount && exportProgress.failedCount > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 font-medium">
+                      失败 {exportProgress.failedCount} 张
+                    </span>
+                  )}
+                </div>
+                <span className="text-sm font-mono font-bold text-blue-700">
+                  {exportProgress.current}/{exportProgress.total}
+                  <span className="text-xs text-blue-500 ml-1">
+                    ({exportProgress.total > 0 ? Math.round((exportProgress.current / exportProgress.total) * 100) : 0}%)
+                  </span>
+                </span>
+              </div>
+
+              {/* 进度条 */}
+              <div className="relative w-full bg-blue-200 rounded-full h-2.5 overflow-hidden shadow-inner">
+                <div
+                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-300 ease-out"
+                  style={{
+                    width: `${exportProgress.total > 0 ? (exportProgress.current / exportProgress.total) * 100 : 0}%`
+                  }}
+                />
+                {/* 动画光效 */}
+                <div
+                  className="absolute top-0 left-0 h-full w-20 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"
+                  style={{
+                    width: `${exportProgress.total > 0 ? (exportProgress.current / exportProgress.total) * 100 : 0}%`
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Table Content */}
       <div className="flex-1 overflow-auto">

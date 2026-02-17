@@ -105,6 +105,12 @@ export async function apiFetch(
   try {
     response = await fetch(url, fetchOptions);
   } catch (error: unknown) {
+    // ✅ 修复：AbortError 是正常的取消请求，不应记录为错误
+    if (error instanceof Error && error.name === 'AbortError') {
+      // 直接重新抛出，让调用方的 catch 块处理
+      throw error;
+    }
+
     // 捕获网络错误（Failed to fetch, CORS错误, 连接超时等）
     console.error('[API Client] 网络请求失败:', error);
 
@@ -119,7 +125,7 @@ export async function apiFetch(
       errorMessage.includes('ERR_CONNECTION_TIMED_OUT') ||
       errorMessage.includes('ERR_NAME_NOT_RESOLVED');
 
-    // 返回一个模拟的 500 错误响应，包含网络错误信息
+    // ✅ 修复：使用合法的 HTTP 状态码（503 Service Unavailable 表示网络错误）
     return new Response(
       JSON.stringify({
         error: isNetworkError ? '网络连接失败' : '请求失败',
@@ -128,8 +134,8 @@ export async function apiFetch(
         originalError: errorMessage
       }),
       {
-        status: 0, // 使用 0 表示网络错误（fetch 无法完成）
-        statusText: 'Network Error',
+        status: 503, // ✅ 修复：使用 503 而不是 0
+        statusText: 'Service Unavailable',
         headers: { 'Content-Type': 'application/json' }
       }
     );

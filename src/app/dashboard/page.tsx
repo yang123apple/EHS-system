@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import { apiFetch } from '@/lib/apiClient'; // ✅ 导入 API 客户端
 import {
   FileSignature,
   AlertTriangle,
@@ -21,8 +23,129 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
+interface DashboardStats {
+  ongoingWorks: number;
+  pendingApprovals: number;
+  monthlyHazards: number;
+  onlineUsers: number;
+}
+
+interface ApiResponse {
+  success: boolean;
+  data?: DashboardStats;
+  message?: string;
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
+  const [stats, setStats] = useState<DashboardStats>({
+    ongoingWorks: 0,
+    pendingApprovals: 0,
+    monthlyHazards: 0,
+    onlineUsers: 0,
+  });
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const [hasError, setHasError] = useState(false);
+
+  // 使用 ref 跟踪组件挂载状态，避免竞态条件
+  const isMountedRef = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const errorCountRef = useRef(0); // ✅ 改用 ref，避免触发 useEffect 重新执行
+  const intervalIdRef = useRef<NodeJS.Timeout | null>(null); // ✅ 改用 ref，跨生命周期共享
+
+  // 获取统计数据
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    const fetchStats = async () => {
+      // 取消上一次未完成的请求
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      // 创建新的 AbortController
+      abortControllerRef.current = new AbortController();
+
+      try {
+        setIsLoadingStats(true);
+        setHasError(false);
+
+        // ✅ 使用 apiFetch 自动添加认证 header (x-user-id)
+        const response = await apiFetch('/api/dashboard/stats', {
+          signal: abortControllerRef.current.signal,
+        });
+
+        // 检查组件是否已卸载
+        if (!isMountedRef.current) return;
+
+        // 处理 401 未授权
+        if (response.status === 401) {
+          console.warn('Dashboard 统计数据获取失败：未授权，暂停轮询');
+          if (intervalIdRef.current) {
+            clearInterval(intervalIdRef.current);
+            intervalIdRef.current = null;
+          }
+          setHasError(true);
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const result: ApiResponse = await response.json();
+
+        // 再次检查组件是否已卸载
+        if (!isMountedRef.current) return;
+
+        if (result.success && result.data) {
+          setStats(result.data);
+          errorCountRef.current = 0; // ✅ 成功后重置计数器
+          setHasError(false);
+        } else {
+          throw new Error(result.message || '数据格式错误');
+        }
+      } catch (error) {
+        // 忽略 AbortError（组件卸载时的取消请求）
+        if (error instanceof Error && error.name === 'AbortError') {
+          return;
+        }
+
+        if (!isMountedRef.current) return;
+
+        console.error('获取统计数据失败:', error);
+        setHasError(true);
+        errorCountRef.current += 1;
+
+        // 连续失败3次后暂停轮询，避免频繁报错
+        if (errorCountRef.current >= 3 && intervalIdRef.current) {
+          console.warn('Dashboard 统计数据连续失败3次，暂停自动刷新');
+          clearInterval(intervalIdRef.current);
+          intervalIdRef.current = null;
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setIsLoadingStats(false);
+        }
+      }
+    };
+
+    fetchStats();
+
+    // 每30秒刷新一次数据
+    intervalIdRef.current = setInterval(fetchStats, 30000);
+
+    return () => {
+      isMountedRef.current = false;
+      if (intervalIdRef.current) {
+        clearInterval(intervalIdRef.current);
+        intervalIdRef.current = null;
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []); // ✅ 移除 errorCount 依赖，只在组件挂载时执行一次
 
   const modules = [
     {
@@ -276,35 +399,45 @@ export default function Dashboard() {
 
       {/* Stats Section - 对齐并优化 */}
       <div className="pt-6 border-t border-slate-200">
-        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">实时概览</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">实时概览</h3>
+          {hasError && (
+            <div className="flex items-center gap-2 text-xs text-red-600">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>数据加载失败，显示上次缓存</span>
+            </div>
+          )}
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard
             label="进行中作业"
-            value="3"
+            value={isLoadingStats ? "-" : String(stats.ongoingWorks)}
             unit="个"
             icon={<FileSignature className="w-4 h-4 text-orange-500" />}
-            trend="+1"
-            trendType="up"
+            isStale={hasError}
           />
           <StatCard
             label="待审批单据"
-            value="12"
+            value={isLoadingStats ? "-" : String(stats.pendingApprovals)}
             unit="条"
-            color="text-orange-600"
+            color={stats.pendingApprovals > 0 ? "text-orange-600" : "text-slate-900"}
             icon={<AlertTriangle className="w-4 h-4 text-orange-500" />}
+            isStale={hasError}
           />
           <StatCard
             label="本月隐患"
-            value="0"
+            value={isLoadingStats ? "-" : String(stats.monthlyHazards)}
             unit="起"
-            color="text-green-600"
+            color={stats.monthlyHazards === 0 ? "text-green-600" : "text-red-600"}
             icon={<ShieldCheck className="w-4 h-4 text-green-500" />}
+            isStale={hasError}
           />
           <StatCard
             label="在线人员"
-            value="45"
+            value={isLoadingStats ? "-" : String(stats.onlineUsers)}
             unit="人"
             icon={<Users className="w-4 h-4 text-blue-500" />}
+            isStale={hasError}
           />
         </div>
       </div>
@@ -320,13 +453,17 @@ interface StatCardProps {
   icon: React.ReactNode;
   trend?: string;
   trendType?: "up" | "down";
+  isStale?: boolean;
 }
 
-function StatCard({ label, value, unit, color = "text-slate-900", icon, trend, trendType = "up" }: StatCardProps) {
+function StatCard({ label, value, unit, color = "text-slate-900", icon, trend, trendType = "up", isStale = false }: StatCardProps) {
   return (
-    <Card 
+    <Card
       variant="clay"
-      className="relative overflow-hidden group"
+      className={cn(
+        "relative overflow-hidden group",
+        isStale && "opacity-60"
+      )}
     >
       {/* 背景装饰渐变 */}
       <div className="absolute -right-8 -top-8 w-24 h-24 rounded-full bg-gradient-to-br from-blue-100/40 to-purple-100/40 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
