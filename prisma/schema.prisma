@@ -564,6 +564,7 @@ model Document {
   uploaderId   String? // 上传者ID
   uploaderName String? // 上传者姓名
   uploadedAt   DateTime? // 上传时间
+  version    String    @default("1.0") // 文档版本号
   searchText String?
 
   // 🟢 EHS Archive Fields
@@ -577,6 +578,8 @@ model Document {
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
   history   DocumentHistory[]
+
+  @@index([archiveCategory, expiryDate]) // 按分类查到期证照；单加 expiryDate 扫描范围过宽
 }
 
 model Tag {
@@ -589,15 +592,17 @@ model Tag {
 }
 
 model DocumentHistory {
-  id         String   @id @default(cuid())
-  documentId String
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  type       String // 'docx', 'xlsx', 'pdf'
-  name       String
-  path       String
-  uploader   String?
-  uploadTime DateTime @default(now())
-  createdAt  DateTime @default(now())
+  id           String   @id @default(cuid())
+  documentId   String
+  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  type         String // 'docx', 'xlsx', 'pdf'
+  name         String
+  path         String
+  uploader     String?
+  uploadTime   DateTime @default(now())
+  revisionDate String?  // 修订日期（取自 createdAt 的年月日，格式 YYYY-MM-DD）
+  version      String?  // 归档时的文档版本号
+  createdAt    DateTime @default(now())
 }
 
 model SystemLog {
@@ -1011,6 +1016,23 @@ model FileDeletionQueue {
 
   @@index([status])
   @@index([lastTriedAt])
+}
+
+// 人员职业健康档案
+model PersonnelHealthRecord {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  hazardFactors       String?   // 危险有害因素
+  requirePeriodicExam Boolean   @default(false) // 是否需要定期职业健康体检
+  lastExamDate        DateTime? // 上次职业健康体检时间
+  examCycle           Int?      // 职业健康体检周期（年：1/2/3）
+  nextExamDate        DateTime? // 下次职业健康体检日期（自动计算）
+  lastExamReminderAt  DateTime? // 最近一次发送体检提醒的时间（防重复通知用）
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([requirePeriodicExam, nextExamDate]) // 每日扫描核心复合索引
 }
 
 // ============ 注意事项 ============

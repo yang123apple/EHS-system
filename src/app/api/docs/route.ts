@@ -61,7 +61,9 @@ export const GET = withErrorHandling(
         name: h.name || '未命名文件',
         path: h.path,
         uploadTime: h.uploadTime instanceof Date ? h.uploadTime.getTime() : new Date(h.uploadTime).getTime(),
-        uploader: h.uploader || ''
+        uploader: h.uploader || '',
+        revisionDate: h.revisionDate || null,
+        version: h.version || null
       }));
 
       // 确保所有字段都有默认值，避免undefined
@@ -83,6 +85,7 @@ export const GET = withErrorHandling(
         uploader: d.uploader || '',
         uploadTime: d.uploadTime instanceof Date ? d.uploadTime.getTime() : new Date(d.uploadTime).getTime(),
         searchText: d.searchText || null,
+        version: d.version || '1.0',
         createdAt: d.createdAt instanceof Date ? d.createdAt.getTime() : new Date(d.createdAt).getTime(),
         updatedAt: d.updatedAt instanceof Date ? d.updatedAt.getTime() : new Date(d.updatedAt).getTime(),
         history
@@ -255,7 +258,8 @@ export const POST = withErrorHandling(
         searchText,
         prefix: finalPrefix,
         suffix,
-        fullNum
+        fullNum,
+        version: '1.0'
       }
     });
 

@@ -17,6 +17,7 @@ import { nowISOString, toLocaleDateString, formatDateTime, setStartOfDay, setEnd
 
 interface HistoryRecord {
   id: string; type: 'docx' | 'xlsx' | 'pdf'; name: string; path: string; uploadTime: number; uploader: string;
+  revisionDate?: string | null; version?: string | null;
 }
 
 interface DocFile {
@@ -24,6 +25,7 @@ interface DocFile {
   dept: string; docxPath: string; pdfPath: string | null; type: 'docx' | 'pdf' | 'xlsx'; uploadTime: number;
   uploader?: string; history?: HistoryRecord[];
   searchText?: string;
+  version?: string;
 }
 
 export default function DocSystemPage() {
@@ -557,15 +559,32 @@ export default function DocSystemPage() {
     const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
-  const handleDownload = (file: DocFile, type: 'source' | 'pdf') => {
+  // 将 MinIO 记录格式（如 public:docs/...）转换为可访问的真实 URL
+  const resolveDownloadUrl = async (path: string): Promise<string> => {
+    if (path.startsWith('public:') || path.startsWith('private:')) {
+      const res = await fetch(`/api/storage/file-url?objectName=${encodeURIComponent(path)}&expiresIn=300`);
+      if (!res.ok) throw new Error('获取下载链接失败');
+      const data = await res.json();
+      return data.url;
+    }
+    return path;
+  };
+
+  const handleDownload = async (file: DocFile, type: 'source' | 'pdf') => {
     if (type === 'source') {
         if (!canDownloadSource(file)) return alert('无权下载此源文件');
         const ext = file.type === 'xlsx' ? 'xlsx' : 'docx';
-        handleDownloadUrl(file.docxPath, `${file.fullNum}_${file.name}.${ext}`);
+        try {
+          const url = await resolveDownloadUrl(file.docxPath);
+          handleDownloadUrl(url, `${file.fullNum}_${file.name}.${ext}`);
+        } catch { alert('获取下载链接失败，请重试'); }
     } else if (type === 'pdf') {
         if (!hasPerm('down_pdf')) return alert('无权下载 PDF');
         if (!file.pdfPath) return alert('PDF 不存在');
-        handleDownloadUrl(file.pdfPath, `${file.fullNum}_${file.name}.pdf`);
+        try {
+          const url = await resolveDownloadUrl(file.pdfPath);
+          handleDownloadUrl(url, `${file.fullNum}_${file.name}.pdf`);
+        } catch { alert('获取下载链接失败，请重试'); }
     }
   };
 
@@ -1787,7 +1806,7 @@ export default function DocSystemPage() {
                         </div>
                     </div>
                     <div><label className="block text-sm font-medium text-slate-700 mb-1">源文件 *</label><input name="file" type="file" accept={uploadLevel === 4 ? ".docx,.xlsx" : ".docx"} required className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/><p className="text-xs text-slate-400 mt-1">{uploadLevel === 4 ? '支持 .docx 或 .xlsx' : '仅支持 .docx'}</p></div>
-                    {uploadLevel < 4 ? (<div><label className="block text-sm font-medium text-slate-700 mb-1">前缀编号</label><input name="prefix" type="text" placeholder="ESH-XF" required className="w-full px-3 py-2 border rounded-lg outline-none uppercase" /></div>) : (<div className="p-3 bg-blue-50 text-blue-800 text-sm rounded-lg border border-blue-100"><strong>4级文件模式：</strong><br/>无需输入前缀，编号将自动继承自“上级文件”。<br/>例如：上级 ESH-001 &rarr; 本文件 ESH-001-001</div>)}
+                    {uploadLevel < 4 ? (<div><label className="block text-sm font-medium text-slate-700 mb-1">前缀编号</label><input name="prefix" type="text" placeholder="ESH-XF" required className="w-full px-3 py-2 border rounded-lg outline-none uppercase" /></div>) : (<div className="p-3 bg-blue-50 text-blue-800 text-sm rounded-lg border border-blue-100"><strong>4级文件模式：</strong><br/>无需输入前缀，编号将自动继承自"上级文件"。<br/>例如：上级 ESH-001 &rarr; 本文件 ESH-001-001</div>)}
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">
                           上级文件 {uploadLevel === 4 && <span className="text-red-500">*</span>}
@@ -1944,9 +1963,19 @@ export default function DocSystemPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm">
             <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl animate-fade-in">
                 <h3 className="text-lg font-bold mb-2">更新文档版本</h3>
-                <p className="text-sm text-slate-500 mb-4">上传新文件将覆盖当前版本，旧文件将自动存入“历史文件清单”。</p>
+                <p className="text-sm text-slate-500 mb-4">上传新文件将覆盖当前版本，旧文件将自动存入"历史文件清单"。</p>
                 <form onSubmit={handleUpdateVersion} className="space-y-4">
                     <div className="bg-slate-50 p-3 rounded text-sm text-slate-600 border border-slate-200">正在更新: <strong>{currentFile.fullNum || '无编号'} {currentFile.name || '未命名文档'}</strong></div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">新版本号</label>
+                        <input
+                            name="newVersion"
+                            type="text"
+                            placeholder={`留空则自动升级为 ${(Math.round((parseFloat(currentFile.version || '1.0') || 1.0) * 10 + 1) / 10).toFixed(1)}`}
+                            className="w-full px-3 py-2 border rounded-lg outline-none text-sm"
+                        />
+                        <p className="text-xs text-slate-400 mt-1">当前版本: <strong>v{currentFile.version || '1.0'}</strong>。留空将自动升为 v{(Math.round((parseFloat(currentFile.version || '1.0') || 1.0) * 10 + 1) / 10).toFixed(1)}。格式如 2.0、1.1</p>
+                    </div>
                     <div><label className="block text-sm font-medium text-slate-700 mb-1">新源文件 *</label><input name="mainFile" type="file" accept={currentFile.level === 4 ? ".docx,.xlsx" : ".docx"} required className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/><p className="text-xs text-slate-400 mt-1">当前类型: {currentFile.type || 'docx'}。{currentFile.level === 4 ? '支持更新为 .docx 或 .xlsx' : '仅支持 .docx'}</p></div>
                     <div className="flex justify-end gap-3 mt-6"><button type="button" onClick={() => setShowUpdateModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">取消</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">确认更新</button></div>
                 </form>
@@ -1960,7 +1989,7 @@ export default function DocSystemPage() {
             <div className="p-4 border-b flex justify-between items-start bg-slate-50 rounded-t-xl">
                 <div>
                     <div className="flex items-center gap-2 text-xs text-slate-500 mb-1"><span className="bg-slate-200 px-1 rounded">ROOT</span>{getBreadcrumbs(currentFile).map(p => <div key={p.id} className="flex items-center gap-2"><ChevronRight size={10} /><span className="hover:text-blue-600 cursor-pointer" onClick={() => handlePreview(p)}>{p.name || '未命名'}</span></div>)}</div>
-                    <div className="flex items-center gap-2"><h3 className="text-lg font-bold text-slate-900">{currentFile.name || '未命名文档'}</h3><span className="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded">{currentFile.fullNum || '无编号'}</span>{currentFile.type === 'xlsx' && <span className="text-[10px] bg-green-100 text-green-700 px-1 rounded border border-green-200">EXCEL</span>}</div>
+                    <div className="flex items-center gap-2"><h3 className="text-lg font-bold text-slate-900">{currentFile.name || '未命名文档'}</h3><span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded font-medium">v{currentFile.version || '1.0'}</span><span className="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded">{currentFile.fullNum || '无编号'}</span>{currentFile.type === 'xlsx' && <span className="text-[10px] bg-green-100 text-green-700 px-1 rounded border border-green-200">EXCEL</span>}</div>
                 </div>
                 <button onClick={() => setShowPreviewModal(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-500">❌</button>
             </div>
@@ -2064,9 +2093,15 @@ export default function DocSystemPage() {
                                             <span className="font-medium text-slate-700 truncate w-32" title={h.name}>{h.name}</span>
                                             <span className="text-slate-400 bg-white px-1 rounded border uppercase">{h.type}</span>
                                         </div>
+                                        {(h.version || h.revisionDate) && (
+                                            <div className="flex items-center gap-2 mb-1">
+                                                {h.version && <span className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-medium">v{h.version}</span>}
+                                                {h.revisionDate && <span className="text-slate-500">{h.revisionDate}</span>}
+                                            </div>
+                                        )}
                                         <div className="flex items-center gap-1 text-slate-400 mb-2"><Clock size={10} /> {toLocaleDateString(h.uploadTime)}</div>
                                         <div className="flex justify-end gap-2">
-                                            {((h.type === 'pdf' && hasPerm('down_pdf')) || (h.type !== 'pdf' && canDownloadSource(currentFile))) && (<button onClick={() => handleDownloadUrl(h.path, h.name)} className="text-blue-600 hover:underline flex items-center gap-1"><Download size={12} /> 下载</button>)}
+                                            {((h.type === 'pdf' && hasPerm('down_pdf')) || (h.type !== 'pdf' && canDownloadSource(currentFile))) && (<button onClick={async () => { try { const url = await resolveDownloadUrl(h.path); handleDownloadUrl(url, h.name); } catch { alert('获取下载链接失败，请重试'); } }} className="text-blue-600 hover:underline flex items-center gap-1"><Download size={12} /> 下载</button>)}
                                             {hasPerm('delete') && (<button onClick={() => handleDeleteHistory(currentFile.id, h.id)} className="text-red-400 hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> 删除</button>)}
                                         </div>
                                     </div>
