@@ -79,6 +79,15 @@ export default function LogsPage() {
     startDate: '',
     endDate: '',
   });
+  // 已提交的过滤条件（只有点击搜索按钮时才更新）
+  const [committedFilters, setCommittedFilters] = useState({
+    userId: '',
+    action: '',
+    targetType: '',
+    targetId: '',
+    startDate: '',
+    endDate: '',
+  });
   const [archiveFiles, setArchiveFiles] = useState<ArchiveFile[]>([]);
   const [previewArchiveFile, setPreviewArchiveFile] = useState<string | null>(null);
   const [selectedDetailsLog, setSelectedDetailsLog] = useState<SystemLog | null>(null);
@@ -109,7 +118,7 @@ export default function LogsPage() {
     } else {
       fetchLogs();
     }
-  }, [activeTab, page, filters]);
+  }, [activeTab, page, committedFilters]);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -118,7 +127,7 @@ export default function LogsPage() {
         page: page.toString(),
         limit: '20',
         type: activeTab,
-        ...filters,
+        ...committedFilters,
       });
 
       const response = await fetch(`/api/admin/logs?${params}`);
@@ -664,6 +673,7 @@ export default function LogsPage() {
                   placeholder="用户ID"
                   value={filters.userId}
                   onChange={(e) => setFilters({ ...filters, userId: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); setCommittedFilters(filters); } }}
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <input
@@ -671,6 +681,7 @@ export default function LogsPage() {
                   placeholder="操作类型"
                   value={filters.action}
                   onChange={(e) => setFilters({ ...filters, action: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); setCommittedFilters(filters); } }}
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <input
@@ -678,6 +689,7 @@ export default function LogsPage() {
                   placeholder="目标类型"
                   value={filters.targetType}
                   onChange={(e) => setFilters({ ...filters, targetType: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); setCommittedFilters(filters); } }}
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <input
@@ -685,6 +697,7 @@ export default function LogsPage() {
                   placeholder="对象ID"
                   value={filters.targetId}
                   onChange={(e) => setFilters({ ...filters, targetId: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); setCommittedFilters(filters); } }}
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <input
@@ -699,6 +712,26 @@ export default function LogsPage() {
                   onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
+              </div>
+              <div className="flex items-center gap-3 mt-4">
+                <button
+                  onClick={() => { setPage(1); setCommittedFilters(filters); }}
+                  className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors font-medium"
+                >
+                  <Filter size={16} />
+                  搜索
+                </button>
+                <button
+                  onClick={() => {
+                    const empty = { userId: '', action: '', targetType: '', targetId: '', startDate: '', endDate: '' };
+                    setFilters(empty);
+                    setPage(1);
+                    setCommittedFilters(empty);
+                  }}
+                  className="px-5 py-2 bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                >
+                  重置
+                </button>
               </div>
             </div>
 

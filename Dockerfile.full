@@ -142,7 +142,7 @@ autostart=true
 autorestart=true
 stdout_logfile=/var/log/supervisor/nextjs.log
 stderr_logfile=/var/log/supervisor/nextjs_error.log
-environment=NODE_ENV="production",PORT="3100",DATABASE_URL="file:/app/data/db/ehs.db"
+environment=NODE_ENV="production",PORT="3100",DATABASE_URL="file:/app/data/db/ehs.db",MINIO_ENDPOINT="10.1.65.41",MINIO_PORT="9100",MINIO_USE_SSL="false",MINIO_ACCESS_KEY="admin",MINIO_SECRET_KEY="change-me-now"
 
 [program:minio]
 command=/usr/local/bin/minio server /app/data/minio-data --address :9100 --console-address :9101
@@ -155,6 +155,7 @@ environment=MINIO_ROOT_USER="admin",MINIO_ROOT_PASSWORD="change-me-now"
 EOF
 
 # 创建启动脚本
+# 迁移已由 CI/CD 流水线在独立 runner 中完成，此处仅启动业务进程
 RUN cat > /app/start.sh <<'EOF'
 #!/bin/bash
 set -e
@@ -162,26 +163,14 @@ set -e
 echo "=========================================="
 echo "EHS 系统完整镜像启动"
 echo "=========================================="
-echo ""
-echo "服务端口配置："
-echo "  - Next.js 应用: 3100"
-echo "  - MinIO API: 9100"
-echo "  - MinIO 控制台: 9101"
-echo ""
-echo "数据目录："
-echo "  - 数据库: /app/data/db/ehs.db"
-echo "  - MinIO 数据: /app/data/minio-data"
-echo "  - 上传文件: /app/public/uploads"
-echo ""
+echo "服务端口: Next.js=3100  MinIO=9100/9101"
+echo "数据目录: /app/data"
 echo "=========================================="
 
-# 确保数据库文件存在
-if [ ! -f /app/data/db/ehs.db ]; then
-    echo "⚠️  数据库文件不存在，运行迁移..."
-    cd /app && npx prisma migrate deploy
-fi
+# 确保运行时数据目录存在（volume 首次挂载时可能为空）
+mkdir -p /app/data/db /app/data/minio-data /app/public/uploads
 
-# 启动 supervisor
+# 启动 supervisor（数据库迁移已由 CI/CD pre-deploy 步骤完成）
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
 EOF
 

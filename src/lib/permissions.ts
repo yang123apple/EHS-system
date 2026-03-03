@@ -31,7 +31,10 @@ export class PermissionManager {
     // 检查模块权限
     const modulePermissions = user.permissions[module];
     if (!modulePermissions || !Array.isArray(modulePermissions)) return false;
-    
+
+    // 模块 key 存在即代表有基础访问权限，无需 'access' 字符串显式存入数组
+    if (permission === 'access') return true;
+
     return modulePermissions.includes(permission);
   }
 

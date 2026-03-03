@@ -61,7 +61,11 @@ log_fatal() {
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 echo -e "${CYAN}[1/5] Checking MinIO Status...${NC}"
 
-if pgrep -f "minio server" > /dev/null 2>&1; then
+check_minio_health() {
+  curl -s --max-time 3 http://localhost:9000/minio/health/live > /dev/null 2>&1
+}
+
+if pgrep -f "minio server" > /dev/null 2>&1 || check_minio_health; then
   log_success "MinIO is running"
 else
   log_warning "MinIO is not running. Attempting to start..."
@@ -70,7 +74,7 @@ else
   if [ -f "$SCRIPT_DIR/start-minio-cross-platform.js" ]; then
     if node "$SCRIPT_DIR/start-minio-cross-platform.js" 2>/dev/null; then
       sleep 2  # Give it time to start
-      if pgrep -f "minio server" > /dev/null 2>&1; then
+      if pgrep -f "minio server" > /dev/null 2>&1 || check_minio_health; then
         log_success "MinIO started successfully"
       else
         log_error "MinIO failed to start"

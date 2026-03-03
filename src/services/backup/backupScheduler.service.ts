@@ -1,9 +1,10 @@
 /**
  * 备份调度服务
  * 统一调度所有备份任务
- * 
+ *
  * 调度计划：
  * - 每15天 - 日志归档（归档过去15天的日志）
+ * - 00:00 - 职业健康体检提醒（统计 60 天内待体检人员）
  * - 02:00 - 数据库全量备份（每日）
  * - 02:30 - 文件增量备份（每日）
  * - 每小时 - 数据库增量备份（WAL）
@@ -51,6 +52,24 @@ export class BackupSchedulerService {
     const nextHour = new Date(now);
     nextHour.setHours(now.getHours() + 1, 0, 0, 0);
     const msUntilNextHour = nextHour.getTime() - now.getTime();
+
+    // 每日任务：职业健康体检提醒（00:00）—— 统计 60 天内待体检人员并发通知
+    this.scheduleDailyTask('health-exam-reminder', 0, 0, async () => {
+      console.log('========================================');
+      console.log('📋 执行职业健康体检提醒任务（每日 00:00）');
+      console.log('========================================');
+      try {
+        const { checkHealthExamReminders } = await import('@/app/api/archives/personnel/exam-reminder/route');
+        const result = await checkHealthExamReminders();
+        if (result.success) {
+          console.log(`✅ 体检提醒完成：扫描 ${result.checkedCount} 条记录，${result.pendingCount} 人需在 60 天内体检`);
+        } else {
+          console.error('❌ 体检提醒任务失败:', result.error);
+        }
+      } catch (error) {
+        console.error('❌ 体检提醒任务异常:', error);
+      }
+    });
 
     // 每15天任务：日志归档（00:00）
     this.schedulePeriodicTask('log-archive', 15, async () => {

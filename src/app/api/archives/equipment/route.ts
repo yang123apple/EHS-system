@@ -13,6 +13,7 @@ export const GET = async (req: NextRequest) => {
     const status = searchParams.get('status') || undefined;
     const isSpecial = searchParams.get('isSpecial');
     const q = searchParams.get('q') || '';
+    const fileType = (searchParams.get('fileType') || '').trim();
 
     const skip = (page - 1) * limit;
 
@@ -33,6 +34,12 @@ export const GET = async (req: NextRequest) => {
             { code: { contains: q } },
             { description: { contains: q } }
         ];
+    }
+
+    if (fileType) {
+        whereCondition.files = {
+            some: { fileType }
+        };
     }
 
     const [equipments, total] = await Promise.all([

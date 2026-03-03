@@ -1,0 +1,203 @@
+name: Deploy EHS System
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# ──────────────────────────────────────────────────────────────
+# 全局并发锁：同一时刻只允许 1 条流水线触及生产环境。
+# cancel-in-progress: false → 新触发的 run 进入队列等待，不取消。
+# ──────────────────────────────────────────────────────────────
+concurrency:
+  group: ehs-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  # ============================================================
+  # JOB 1: 数据库迁移（排他，先于一切业务启动）
+  # 运行在自托管 runner（与数据库文件同机），timeout 硬限 60 s。
+  # ============================================================
+  migrate:
+    name: 数据库迁移（排他锁 / 60 s 超时）
+    runs-on: self-hosted
+    timeout-minutes: 1          # 硬限 60 s，超时整条流水线中止
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 停止业务容器，释放 SQLite WAL 写锁
+      - name: 停止应用容器（释放 DB 锁）
+        run: |
+          docker stop ehs-system 2>/dev/null || true
+          # 等待 WAL checkpoint 落盘
+          sleep 2
+
+      # 用一次性容器独占执行迁移，--network none 物理隔离网络
+      - name: 执行 prisma migrate deploy（独占 Schema 锁）
+        run: |
+          docker run --rm \
+            --name ehs-migrate \
+            --network none \
+            -v ehs-data:/app/data \
+            -e DATABASE_URL="file:/app/data/db/ehs.db" \
+            -w /app \
+            node:20-bookworm-slim \
+            sh -c "
+              npm ci --ignore-scripts --prefix /tmp/prisma-runner 2>/dev/null || true
+              cp -r prisma /tmp/prisma-runner/
+              cd /tmp/prisma-runner
+              npm install prisma@$(node -p \"require('./node_modules/.bin/../prisma/package.json').version\" 2>/dev/null || echo '5.22.0') --no-save 2>/dev/null
+              npx --no-install prisma migrate deploy
+            " || \
+          docker run --rm \
+            --name ehs-migrate \
+            --network none \
+            -v ehs-data:/app/data \
+            -v $(pwd)/prisma:/migrate/prisma \
+            -e DATABASE_URL="file:/app/data/db/ehs.db" \
+            -w /migrate \
+            node:20-bookworm-slim \
+            sh -c "npm install prisma@5 --no-save && npx prisma migrate deploy"
+
+      # 迁移成功校验：确认无 pending migration
+      - name: 验证迁移状态（0 pending）
+        run: |
+          PENDING=$(docker run --rm \
+            --network none \
+            -v ehs-data:/app/data \
+            -v $(pwd)/prisma:/migrate/prisma \
+            -e DATABASE_URL="file:/app/data/db/ehs.db" \
+            -w /migrate \
+            node:20-bookworm-slim \
+            sh -c "npm install prisma@5 --quiet --no-save 2>/dev/null && \
+                   npx prisma migrate status 2>&1 | grep -c 'not yet been applied' || echo 0")
+          if [ "$PENDING" -gt 0 ]; then
+            echo "❌ 仍有 $PENDING 条迁移未应用，终止部署"
+            exit 1
+          fi
+          echo "✅ 所有迁移已应用，并发为 0，schema 锁已释放"
+
+  # ============================================================
+  # JOB 2: 构建 Docker 镜像并推送到 GHCR
+  # 在 GitHub 托管 runner 上构建，与迁移物理隔离。
+  # ============================================================
+  build:
+    name: 构建并推送镜像
+    needs: migrate               # 迁移绿灯才准构建
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+      digest: ${{ steps.push.outputs.digest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 设置 QEMU（多架构）
+        uses: docker/setup-qemu-action@v3
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 提取镜像元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # prisma generate 在 Dockerfile.full builder 阶段执行
+      # migrate deploy 已由 JOB 1 完成，镜像内不再包含迁移逻辑
+      - name: 构建并推送（linux/arm64）
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.full
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================
+  # JOB 3: 部署上线 + 触发缓存热更新
+  # 自托管 runner，拉新镜像 → 重启容器 → Webhook 刷缓存。
+  # ============================================================
+  deploy:
+    name: 部署上线
+    needs: [migrate, build]
+    runs-on: self-hosted
+
+    environment:
+      name: production
+      url: http://localhost:3100
+
+    steps:
+      - name: 拉取新镜像
+        run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | \
+            docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker pull ghcr.io/${{ github.repository }}:latest
+
+      - name: 滚动替换容器（零停机窗口最小化）
+        run: |
+          docker stop ehs-system 2>/dev/null || true
+          docker rm   ehs-system 2>/dev/null || true
+          docker run -d \
+            --name ehs-system \
+            --restart unless-stopped \
+            -v ehs-data:/app/data \
+            -p 3100:3100 \
+            -p 9100:9100 \
+            -p 9101:9101 \
+            -e MINIO_ENDPOINT="${{ secrets.MINIO_ENDPOINT }}" \
+            -e MINIO_ACCESS_KEY="${{ secrets.MINIO_ACCESS_KEY }}" \
+            -e MINIO_SECRET_KEY="${{ secrets.MINIO_SECRET_KEY }}" \
+            -e WEBHOOK_SECRET="${{ secrets.WEBHOOK_SECRET }}" \
+            ghcr.io/${{ github.repository }}:latest
+
+      - name: 等待健康检查通过
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:3100/api/health; then
+              echo "✅ 服务已就绪"
+              break
+            fi
+            echo "等待服务启动... ($i/20)"
+            sleep 3
+          done
+
+      # 通过标准 Webhook 触发 ISR 缓存热更新，不中断主进程
+      - name: 触发 archive-status 缓存刷新
+        run: |
+          curl -sf -X POST http://localhost:3100/api/webhooks/revalidate \
+            -H "x-webhook-secret: ${{ secrets.WEBHOOK_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{"tags":["archive-status"]}' \
+          && echo "✅ 缓存已热更新" \
+          || echo "⚠️  缓存刷新跳过（首次部署时正常）"
+
+      - name: 部署摘要
+        run: |
+          echo "## 部署成功 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "- 镜像: \`ghcr.io/${{ github.repository }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 提交: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 时间: \`$(date -u '+%Y-%m-%d %H:%M:%S UTC')\`" >> $GITHUB_STEP_SUMMARY

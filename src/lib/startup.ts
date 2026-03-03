@@ -384,6 +384,7 @@ export async function initializeApp() {
     
     if (initResults.backup) {
       console.log('备份调度计划:');
+      console.log('  • 职业健康体检提醒: 每日 00:00（统计 60 天内待体检人员）');
       console.log('  • 日志归档: 每15天（归档过去15天的日志，保留10年）');
       console.log('  • 数据库全量备份: 每日 02:00');
       console.log('  • 文件增量备份: 每日 02:30');

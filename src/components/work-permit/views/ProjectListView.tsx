@@ -13,28 +13,16 @@ interface Props {
     currentPage?: number;
     totalPages?: number;
     onPageChange?: (page: number) => void;
-}
-
-interface Props {
-    projects: Project[];
-    hasPerm: (perm: string) => boolean;
-    onOpenDetail: (p: Project) => void;
-    onAdjustDate: (p: Project) => void;
-    onNewPermit: (p: Project) => void;
-    onDeleteProject: (id: string, name: string) => void;
-    // Pagination props
-    currentPage?: number;
-    totalPages?: number;
-    onPageChange?: (page: number) => void;
     // Filter Props
     filters: { text: string; status: string; date: string };
     onFilterChange: (newFilters: any) => void;
+    onSearch: () => void;
 }
 
 export default function ProjectListView({
     projects, hasPerm, onOpenDetail, onAdjustDate, onNewPermit, onDeleteProject,
     currentPage = 1, totalPages = 1, onPageChange,
-    filters, onFilterChange
+    filters, onFilterChange, onSearch
 }: Props) {
     // 辅助函数：计算项目状态 (UI Display only)
     const getProjectStatus = (start: string, end: string) => {
@@ -57,6 +45,7 @@ export default function ProjectListView({
                         placeholder="搜索项目名称、编号、地点..."
                         value={filters.text}
                         onChange={e => onFilterChange({ ...filters, text: e.target.value })}
+                        onKeyDown={(e) => e.key === 'Enter' && onSearch()}
                         className="bg-transparent outline-none text-sm flex-1"
                     />
                 </div>
@@ -85,6 +74,14 @@ export default function ProjectListView({
                     />
                     {filters.date && <button onClick={() => onFilterChange({ ...filters, date: '' })} className="ml-2 text-xs text-blue-600 hover:underline">重置</button>}
                 </div>
+
+                <button
+                    onClick={onSearch}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                    <Search size={16} />
+                    搜索
+                </button>
             </div>
 
             {/* 卡片网格 */}

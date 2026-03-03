@@ -1,6 +1,14 @@
 
 import { prisma } from '@/lib/prisma';
 import { Document, Tag } from '@prisma/client';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const TZ = 'Asia/Shanghai';
 
 export type CreateArchiveParams = {
   name: string;
@@ -49,16 +57,19 @@ export const archiveService = {
   /**
    * 获取即将过期的证照
    * @param days 预警天数，默认为 30 天
+   *
+   * 时区说明：与 getPendingHealthExamCount 保持同一套时区逻辑，
+   * 消除在 UTC 服务器上 new Date() + setDate() 带来的 8 小时零点漂移。
    */
   async getExpiringDocuments(days: number = 30) {
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + days);
+    const todaySH = dayjs().tz(TZ).startOf('day');
+    const targetDateSH = todaySH.add(days, 'day').endOf('day');
 
     return prisma.document.findMany({
       where: {
         expiryDate: {
-          lte: targetDate,
-          gte: new Date(), // 只查询尚未过期的（或者包含已过期的？通常需要分开，这里暂且查未来30天内到期的）
+          gte: todaySH.utc().toDate(),
+          lte: targetDateSH.utc().toDate(),
         },
       },
       include: {
@@ -124,6 +135,31 @@ export const archiveService = {
       },
       orderBy: {
         createdAt: 'desc',
+      },
+    });
+  },
+
+  /**
+   * 获取近期需要职业健康体检的人员数量
+   * @param days 查询天数范围，默认 60 天
+   *
+   * 时区说明：nextExamDate 由 exam-reminder 以 Asia/Shanghai 零点写入数据库（UTC 存储）。
+   * 查询边界必须对齐上海时区，否则每天 00:00-08:00 CST 窗口内会有系统性漏计。
+   */
+  async getPendingHealthExamCount(days: number = 60) {
+    const nowSH = dayjs().tz(TZ);
+    // 今天上海零点 → UTC（不统计已过期，从今天起算）
+    const startUtc = nowSH.startOf('day').utc().toDate();
+    // N 天后上海 23:59:59 → UTC（包含最后一天的全天）
+    const deadlineUtc = nowSH.add(days, 'day').endOf('day').utc().toDate();
+
+    return prisma.personnelHealthRecord.count({
+      where: {
+        requirePeriodicExam: true,
+        nextExamDate: {
+          gte: startUtc,
+          lte: deadlineUtc,
+        },
       },
     });
   },

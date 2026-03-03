@@ -1,10 +1,10 @@
 // src/app/api/archives/stats/route.ts
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { withAuth } from '@/middleware/auth';
+import { withAuth, withErrorHandling } from '@/middleware/auth';
 
 // GET: 获取档案统计数据
-export const GET = withAuth(async () => {
+export const GET = withErrorHandling(withAuth(async () => {
     // 🟢 获取所有在职用户的 ID 列表（排除 admin 和离职人员）
     const activeUsers = await prisma.user.findMany({
         where: {
@@ -75,6 +75,38 @@ export const GET = withAuth(async () => {
         _count: true
     });
 
+    // 7. 职业健康体检统计（只统计在职人员）
+    const requireExamCount = await prisma.personnelHealthRecord.count({
+        where: {
+            userId: { in: activeUserIds },
+            requirePeriodicExam: true
+        }
+    });
+
+    const sixtyDaysLater = new Date();
+    sixtyDaysLater.setDate(sixtyDaysLater.getDate() + 60);
+
+    const upcomingExamCount = await prisma.personnelHealthRecord.count({
+        where: {
+            userId: { in: activeUserIds },
+            requirePeriodicExam: true,
+            nextExamDate: {
+                gte: now,
+                lte: sixtyDaysLater
+            }
+        }
+    });
+
+    const overdueExamCount = await prisma.personnelHealthRecord.count({
+        where: {
+            userId: { in: activeUserIds },
+            requirePeriodicExam: true,
+            nextExamDate: {
+                lt: now
+            }
+        }
+    });
+
     return NextResponse.json({
         training: {
             total: totalUsers,
@@ -94,6 +126,13 @@ export const GET = withAuth(async () => {
         filesByType: {
             enterprise: enterpriseFiles.map(e => ({ type: e.fileType, count: e._count })),
             personnel: personnelFiles.map(e => ({ type: e.fileType, count: e._count }))
+        },
+        healthExam: {
+            total: totalUsers,
+            requireExam: requireExamCount,
+            noExamRequired: totalUsers - requireExamCount,
+            upcomingExam: upcomingExamCount,
+            overdueExam: overdueExamCount
         }
     });
-});
+}));

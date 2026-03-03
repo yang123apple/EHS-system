@@ -34,20 +34,68 @@ export default function EquipmentArchiveView() {
     const [totalPages, setTotalPages] = React.useState(1);
     const [total, setTotal] = React.useState(0);
     const [searchQuery, setSearchQuery] = React.useState('');
+    const [fileTypeFilter, setFileTypeFilter] = React.useState('');
+    const [fileTypes, setFileTypes] = React.useState<string[]>([]);
 
-    // 权限检查
-    const canView = PermissionManager.hasPermission(user, 'archives', 'equipment_view') || 
+    // 权限检查（派生值，非 Hook）
+    const canView = PermissionManager.hasPermission(user, 'archives', 'equipment_view') ||
                     PermissionManager.hasPermission(user, 'archives', 'access');
     const canCreate = PermissionManager.hasPermission(user, 'archives', 'equipment_create');
     const canUpload = PermissionManager.hasPermission(user, 'archives', 'equipment_upload');
     const canDelete = PermissionManager.hasPermission(user, 'archives', 'equipment_delete');
     const canEdit = PermissionManager.hasPermission(user, 'archives', 'equipment_edit');
 
-    // 如果没有查看权限，显示权限不足提示
+    // ── 函数定义（在所有 Hook 调用之前）──
+
+    const loadConfig = React.useCallback(async () => {
+        try {
+            const res = await apiFetch('/api/archives/config');
+            const config = await res.json();
+            setFileTypes(config.equipment_types || []);
+        } catch (e) {
+            console.error('加载配置失败', e);
+        }
+    }, []);
+
+    const loadEquipments = React.useCallback(async (signal?: AbortSignal) => {
+        setLoading(true);
+        try {
+            const params = new URLSearchParams({ page: page.toString(), limit: '12' });
+            if (searchQuery) params.append('q', searchQuery);
+            if (fileTypeFilter) params.append('fileType', fileTypeFilter);
+            const res = await apiFetch(`/api/archives/equipment?${params}`, { signal });
+            const data = await res.json();
+            setEquipments(data.data || []);
+            setTotalPages(data.meta?.totalPages || 1);
+            setTotal(data.meta?.total || 0);
+            setLoading(false);
+        } catch (e) {
+            if ((e as Error).name === 'AbortError') return;
+            console.error('加载设备失败', e);
+            setLoading(false);
+        }
+    }, [page, searchQuery, fileTypeFilter]);
+
+    // ── useEffect（全部在条件 return 之前）──
+
+    React.useEffect(() => {
+        if (!canView) return;
+        const controller = new AbortController();
+        loadEquipments(controller.signal);
+        return () => controller.abort();
+    }, [canView, loadEquipments]);
+
+    React.useEffect(() => {
+        if (!canView) return;
+        loadConfig();
+    }, [canView, loadConfig]);
+
+    // ── 条件 return（所有 Hook 调用完成后）──
+
     if (!canView) {
         return (
             <div className="p-6 h-full flex items-center justify-center">
-                <PermissionDenied 
+                <PermissionDenied
                     action="查看一机一档库"
                     requiredPermission="archives.equipment_view"
                 />
@@ -55,31 +103,7 @@ export default function EquipmentArchiveView() {
         );
     }
 
-    React.useEffect(() => {
-        loadEquipments();
-    }, [page, searchQuery]);
-
-    const loadEquipments = async () => {
-        try {
-            setLoading(true);
-            const params = new URLSearchParams({
-                page: page.toString(),
-                limit: '12'
-            });
-            if (searchQuery) {
-                params.append('q', searchQuery);
-            }
-            const res = await apiFetch(`/api/archives/equipment?${params}`);
-            const data = await res.json();
-            setEquipments(data.data || []);
-            setTotalPages(data.meta?.totalPages || 1);
-            setTotal(data.meta?.total || 0);
-        } catch (e) {
-            console.error('加载设备失败', e);
-        } finally {
-            setLoading(false);
-        }
-    };
+    // ── 事件处理函数 ──
 
     const handleCreateSuccess = () => {
         setShowCreateModal(false);
@@ -101,6 +125,21 @@ export default function EquipmentArchiveView() {
                         }}
                         className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-64"
                     />
+                    {fileTypes.length > 0 && (
+                        <select
+                            value={fileTypeFilter}
+                            onChange={(e) => {
+                                setFileTypeFilter(e.target.value);
+                                setPage(1);
+                            }}
+                            className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-700"
+                        >
+                            <option value="">全部类型</option>
+                            {fileTypes.map((t) => (
+                                <option key={t} value={t}>{t}</option>
+                            ))}
+                        </select>
+                    )}
                     {canCreate && (
                         <button
                             onClick={() => setShowCreateModal(true)}
@@ -121,8 +160,17 @@ export default function EquipmentArchiveView() {
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
                     <div className="text-center mb-4">
                         <SettingsIcon size={48} className="mx-auto mb-2 opacity-30" />
-                        <p>暂无设备档案</p>
-                        <p className="text-xs mt-1">点击"添加设备"按钮创建设备档案</p>
+                        {fileTypeFilter || searchQuery ? (
+                            <>
+                                <p>暂无符合条件的设备档案</p>
+                                <p className="text-xs mt-1">请尝试调整筛选条件</p>
+                            </>
+                        ) : (
+                            <>
+                                <p>暂无设备档案</p>
+                                <p className="text-xs mt-1">点击"添加设备"按钮创建设备档案</p>
+                            </>
+                        )}
                     </div>
                 </div>
             ) : (
@@ -158,4 +206,3 @@ export default function EquipmentArchiveView() {
         </div>
     );
 }
-

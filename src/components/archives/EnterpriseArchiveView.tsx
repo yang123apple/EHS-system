@@ -5,7 +5,8 @@ import { Plus } from 'lucide-react';
 import ArchiveFileCard from './ArchiveFileCard';
 import FileUploadModal from './FileUploadModal';
 import FileEditModal from './FileEditModal';
-import SecurePDFViewer from './SecurePDFViewer';
+import dynamic from 'next/dynamic';
+const SecurePDFViewer = dynamic(() => import('./SecurePDFViewer'), { ssr: false });
 import Pagination from './Pagination';
 import { apiFetch } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
@@ -38,41 +39,20 @@ export default function EnterpriseArchiveView() {
     const [totalPages, setTotalPages] = React.useState(1);
     const [total, setTotal] = React.useState(0);
     const [searchQuery, setSearchQuery] = React.useState('');
+    const [fileTypeFilter, setFileTypeFilter] = React.useState('');
     const [pdfViewerOpen, setPdfViewerOpen] = React.useState(false);
     const [pdfFile, setPdfFile] = React.useState<ArchiveFile | null>(null);
 
-    // 权限检查
-    const canView = PermissionManager.hasPermission(user, 'archives', 'enterprise_view') || 
+    // 权限检查（派生值，非 Hook）
+    const canView = PermissionManager.hasPermission(user, 'archives', 'enterprise_view') ||
                     PermissionManager.hasPermission(user, 'archives', 'access');
     const canUpload = PermissionManager.hasPermission(user, 'archives', 'enterprise_upload');
     const canDelete = PermissionManager.hasPermission(user, 'archives', 'enterprise_delete');
     const canEdit = PermissionManager.hasPermission(user, 'archives', 'enterprise_edit');
 
-    // 如果没有查看权限，显示权限不足提示
-    if (!canView) {
-        return (
-            <div className="p-6 h-full flex items-center justify-center">
-                <PermissionDenied 
-                    action="查看一企一档库"
-                    requiredPermission="archives.enterprise_view"
-                />
-            </div>
-        );
-    }
+    // ── 函数定义（在所有 Hook 调用之前，Rules of Hooks 要求）──
 
-    React.useEffect(() => {
-        loadConfig();
-        loadFiles();
-    }, [page, searchQuery]);
-
-    // 当上传弹窗打开时，重新加载文件类型配置，确保获取最新的文件类型库
-    React.useEffect(() => {
-        if (showUploadModal) {
-            loadConfig();
-        }
-    }, [showUploadModal]);
-
-    const loadConfig = async () => {
+    const loadConfig = React.useCallback(async () => {
         try {
             const res = await apiFetch('/api/archives/config');
             const config = await res.json();
@@ -80,29 +60,64 @@ export default function EnterpriseArchiveView() {
         } catch (e) {
             console.error('加载配置失败', e);
         }
-    };
+    }, []);
 
-    const loadFiles = async () => {
+    // signal 为可选参数，允许 AbortController 取消；事件处理函数调用时不传 signal
+    const loadFiles = React.useCallback(async (signal?: AbortSignal) => {
+        setLoading(true);
         try {
-            setLoading(true);
-            const params = new URLSearchParams({
-                page: page.toString(),
-                limit: '12'
-            });
-            if (searchQuery) {
-                params.append('q', searchQuery);
-            }
-            const res = await apiFetch(`/api/archives/enterprise?${params}`);
+            const params = new URLSearchParams({ page: page.toString(), limit: '12' });
+            if (searchQuery) params.append('q', searchQuery);
+            if (fileTypeFilter) params.append('fileType', fileTypeFilter);
+            const res = await apiFetch(`/api/archives/enterprise?${params}`, { signal });
             const data = await res.json();
             setFiles(data.data || []);
             setTotalPages(data.meta?.totalPages || 1);
             setTotal(data.meta?.total || 0);
+            setLoading(false);
         } catch (e) {
+            if ((e as Error).name === 'AbortError') return; // 被取消，不修改 loading 状态
             console.error('加载文件失败', e);
-        } finally {
             setLoading(false);
         }
-    };
+    }, [page, searchQuery, fileTypeFilter]);
+
+    // ── useEffect（全部在条件 return 之前，修复 Rules of Hooks 违规）──
+
+    // 数据加载：含 AbortController 防竞态
+    React.useEffect(() => {
+        if (!canView) return;
+        const controller = new AbortController();
+        loadFiles(controller.signal);
+        return () => controller.abort();
+    }, [canView, loadFiles]);
+
+    // 配置加载：仅在挂载或权限就绪时执行一次
+    React.useEffect(() => {
+        if (!canView) return;
+        loadConfig();
+    }, [canView, loadConfig]);
+
+    // 当上传弹窗打开时，重新加载文件类型配置，确保获取最新的文件类型库
+    React.useEffect(() => {
+        if (!canView) return;
+        if (showUploadModal) loadConfig();
+    }, [canView, showUploadModal, loadConfig]);
+
+    // ── 条件 return（所有 Hook 调用完成后才能提前返回）──
+
+    if (!canView) {
+        return (
+            <div className="p-6 h-full flex items-center justify-center">
+                <PermissionDenied
+                    action="查看一企一档库"
+                    requiredPermission="archives.enterprise_view"
+                />
+            </div>
+        );
+    }
+
+    // ── 事件处理函数（非 Hook，可在条件 return 之后定义）──
 
     const handleUpload = async (formData: FormData) => {
         try {
@@ -125,9 +140,7 @@ export default function EnterpriseArchiveView() {
 
     const handleDelete = async (id: string) => {
         try {
-            const res = await apiFetch(`/api/archives/files/${id}`, {
-                method: 'DELETE'
-            });
+            const res = await apiFetch(`/api/archives/files/${id}`, { method: 'DELETE' });
             if (res.ok) {
                 await loadFiles();
             } else {
@@ -174,6 +187,19 @@ export default function EnterpriseArchiveView() {
                         }}
                         className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-64"
                     />
+                    <select
+                        value={fileTypeFilter}
+                        onChange={(e) => {
+                            setFileTypeFilter(e.target.value);
+                            setPage(1);
+                        }}
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-700"
+                    >
+                        <option value="">全部类型</option>
+                        {fileTypes.map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                        ))}
+                    </select>
                     {canUpload && (
                         <button
                             onClick={() => setShowUploadModal(true)}
@@ -194,8 +220,17 @@ export default function EnterpriseArchiveView() {
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
                     <div className="text-center mb-4">
                         <Plus size={48} className="mx-auto mb-2 opacity-30" />
-                        <p>暂无档案文件</p>
-                        <p className="text-xs mt-1">点击"上传文件"按钮添加档案</p>
+                        {fileTypeFilter || searchQuery ? (
+                            <>
+                                <p>暂无符合条件的档案文件</p>
+                                <p className="text-xs mt-1">请尝试调整筛选条件</p>
+                            </>
+                        ) : (
+                            <>
+                                <p>暂无档案文件</p>
+                                <p className="text-xs mt-1">点击"上传文件"按钮添加档案</p>
+                            </>
+                        )}
                     </div>
                 </div>
             ) : (
@@ -257,4 +292,3 @@ export default function EnterpriseArchiveView() {
         </div>
     );
 }
-

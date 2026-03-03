@@ -9,62 +9,74 @@ const storage = minioStorageService;
 
 // GET: 获取人员档案文件列表
 export const GET = async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const permResult = await requirePermission(req, 'archives', 'personnel_view');
-    if (permResult instanceof NextResponse) return permResult;
-    const { id } = await context.params;
-    const { searchParams } = new URL(req.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '12');
+    try {
+        const permResult = await requirePermission(req, 'archives', 'personnel_view');
+        if (permResult instanceof NextResponse) return permResult;
+        const { id } = await context.params;
+        const { searchParams } = new URL(req.url);
+        const page = parseInt(searchParams.get('page') || '1');
+        const limit = parseInt(searchParams.get('limit') || '12');
 
-    const skip = (page - 1) * limit;
+        const skip = (page - 1) * limit;
 
-    // 获取用户信息
-    const user = await prisma.user.findUnique({
-        where: { id },
-        select: {
-            id: true,
-            username: true,
-            name: true,
-            avatar: true,
-            jobTitle: true,
-            isActive: true, // 🟢 包含在职状态
-            department: { select: { name: true } }
+        // 用户信息 + 职业健康记录并发查询，任何一方失败都不影响另一方
+        const [user, healthRecord] = await Promise.all([
+            prisma.user.findUnique({
+                where: { id },
+                select: {
+                    id: true,
+                    username: true,
+                    name: true,
+                    avatar: true,
+                    jobTitle: true,
+                    isActive: true,
+                    departmentId: true,
+                    department: { select: { name: true } }
+                }
+            }),
+            Promise.resolve(
+                (prisma as any).personnelHealthRecord?.findUnique({ where: { userId: id } })
+            ).catch(() => null)
+        ]);
+
+        if (!user) {
+            return NextResponse.json({ error: '用户不存在' }, { status: 404 });
         }
-    });
 
-    if (!user) {
-        return NextResponse.json({ error: '用户不存在' }, { status: 404 });
+        const [files, total] = await Promise.all([
+            prisma.archiveFile.findMany({
+                where: { userId: id, category: 'personnel' },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit
+            }),
+            prisma.archiveFile.count({ where: { userId: id, category: 'personnel' } })
+        ]);
+
+        // 生成访问 URL
+        const filesWithUrls = await Promise.all(
+            files.map(async (file) => {
+                let accessUrl = '';
+                try {
+                    const urlInfo = await storage.getFileUrlFromDbRecord(file.filePath);
+                    accessUrl = urlInfo.url;
+                } catch (e) {
+                    console.error('Failed to get file URL:', e);
+                }
+                return { ...file, accessUrl };
+            })
+        );
+
+        return NextResponse.json({
+            user: { ...user, department: user.department?.name || '未分配' },
+            healthRecord: healthRecord || null,
+            data: filesWithUrls,
+            meta: { total, page, limit, totalPages: Math.ceil(total / limit) }
+        });
+    } catch (error) {
+        console.error('获取人员档案失败:', error);
+        return NextResponse.json({ error: '获取数据失败，请重试' }, { status: 500 });
     }
-
-    const [files, total] = await Promise.all([
-        prisma.archiveFile.findMany({
-            where: { userId: id, category: 'personnel' },
-            orderBy: { createdAt: 'desc' },
-            skip,
-            take: limit
-        }),
-        prisma.archiveFile.count({ where: { userId: id, category: 'personnel' } })
-    ]);
-
-    // 生成访问 URL
-    const filesWithUrls = await Promise.all(
-        files.map(async (file) => {
-            let accessUrl = '';
-            try {
-                const urlInfo = await storage.getFileUrlFromDbRecord(file.filePath);
-                accessUrl = urlInfo.url;
-            } catch (e) {
-                console.error('Failed to get file URL:', e);
-            }
-            return { ...file, accessUrl };
-        })
-    );
-
-    return NextResponse.json({
-        user: { ...user, department: user.department?.name || '未分配' },
-        data: filesWithUrls,
-        meta: { total, page, limit, totalPages: Math.ceil(total / limit) }
-    });
 };
 
 // POST: 上传人员档案文件

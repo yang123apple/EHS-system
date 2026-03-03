@@ -1,6 +1,6 @@
 // src/app/login/page.tsx
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
@@ -9,8 +9,17 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [autoLogoutMsg, setAutoLogoutMsg] = useState('');
   const { login } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    const msg = localStorage.getItem('ehs_auto_logout_msg');
+    if (msg) {
+      setAutoLogoutMsg(msg);
+      localStorage.removeItem('ehs_auto_logout_msg');
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +51,11 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+          {autoLogoutMsg && (
+            <div className="bg-yellow-500/20 border border-yellow-500/50 text-yellow-200 px-4 py-2 rounded text-xs sm:text-sm text-center">
+              {autoLogoutMsg}
+            </div>
+          )}
           {error && (
             <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-2 rounded text-xs sm:text-sm text-center">
               {error}

@@ -32,6 +32,12 @@ interface FilterBarProps {
 export function FilterBar({ filters, onFilterChange, config, departments, className }: FilterBarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showDeptSelector, setShowDeptSelector] = useState(false);
+  // 本地搜索文本状态，只在点击搜索或按 Enter 时才同步到父组件
+  const [localSearch, setLocalSearch] = useState(filters.search || '');
+
+  const handleCommitSearch = () => {
+    onFilterChange({ ...filters, search: localSearch });
+  };
   
   // 状态选项
   const statusOptions = [
@@ -66,6 +72,7 @@ export function FilterBar({ filters, onFilterChange, config, departments, classN
   const handleClearAll = () => {
     setStartDate(undefined);
     setEndDate(undefined);
+    setLocalSearch('');
     onFilterChange({ type: '', startDate: '', endDate: '', status: '', risk: '', responsibleDept: '', search: '' });
   };
   
@@ -104,23 +111,33 @@ export function FilterBar({ filters, onFilterChange, config, departments, classN
     <div className={cn("bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden", className)}>
       {/* 🟢 全局搜索框 - 始终可见 */}
       <div className="px-4 py-3 border-b border-slate-200">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            value={filters.search || ''}
-            onChange={(e) => handleChange('search', e.target.value)}
-            placeholder="搜索隐患编号、位置、描述、责任人..."
-            className="w-full pl-10 pr-10 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white placeholder:text-slate-400"
-          />
-          {filters.search && (
-            <button
-              onClick={() => handleChange('search', '')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 rounded transition-colors"
-            >
-              <X className="w-4 h-4 text-slate-400" />
-            </button>
-          )}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCommitSearch()}
+              placeholder="搜索隐患编号、位置、描述、责任人..."
+              className="w-full pl-10 pr-10 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white placeholder:text-slate-400"
+            />
+            {localSearch && (
+              <button
+                onClick={() => { setLocalSearch(''); onFilterChange({ ...filters, search: '' }); }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 rounded transition-colors"
+              >
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={handleCommitSearch}
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium shrink-0"
+          >
+            <Search className="w-4 h-4" />
+            搜索
+          </button>
         </div>
       </div>
 

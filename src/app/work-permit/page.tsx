@@ -39,6 +39,8 @@ export default function WorkPermitPage() {
   const [projectTotalPages, setProjectTotalPages] = useState(1);
   const [projectFilters, setProjectFilters] = useState({ text: '', status: '', date: '' });
   const projectLimit = 20;
+  // 已提交的过滤条件（点击搜索时才更新）
+  const [committedProjectFilters, setCommittedProjectFilters] = useState({ text: '', status: '', date: '' });
 
   // Pagination State for Templates
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -57,6 +59,8 @@ export default function WorkPermitPage() {
   const [recordFilters, setRecordFilters] = useState({ project: '', type: '', date: '' });
   const recordLimit = 50;
   const [totalRecordsCount, setTotalRecordsCount] = useState(0);
+  // 已提交的过滤条件（点击搜索时才更新）
+  const [committedRecordFilters, setCommittedRecordFilters] = useState({ project: '', type: '', date: '' });
 
   const [departments, setDepartments] = useState<any[]>([]); // 组织架构
   // 🟢 新增：所有人员状态 (用于流程配置时选择人员)
@@ -250,21 +254,23 @@ export default function WorkPermitPage() {
     fetchAllUsers(); // 🟢 初始化时加载人员
   }, []);
 
-  // Debounce for Projects
-  useEffect(() => {
-      const timer = setTimeout(() => {
-          fetchProjects(1, projectFilters);
-      }, 500);
-      return () => clearTimeout(timer);
-  }, [projectFilters]);
+  // 手动搜索处理
+  const handleProjectSearch = () => {
+    setCommittedProjectFilters(projectFilters);
+    fetchProjects(1, projectFilters);
+  };
 
-  // Debounce for Records
-  useEffect(() => {
-      const timer = setTimeout(() => {
-          fetchAllRecords(1, recordFilters);
-      }, 500);
-      return () => clearTimeout(timer);
-  }, [recordFilters]);
+  const handleRecordSearch = () => {
+    setCommittedRecordFilters(recordFilters);
+    fetchAllRecords(1, recordFilters);
+  };
+
+  const handleRecordReset = () => {
+    const empty = { project: '', type: '', date: '' };
+    setRecordFilters(empty);
+    setCommittedRecordFilters(empty);
+    fetchAllRecords(1, empty);
+  };
 
   // 🟢 检测 URL 参数，自动打开记录详情
   useEffect(() => {
@@ -327,8 +333,8 @@ export default function WorkPermitPage() {
     if(!confirm(`确定要删除项目"${name}"吗？`)) return;
     try {
       await apiFetch(`/api/projects?id=${id}&userId=${user?.id || ''}&userName=${encodeURIComponent(user?.name || '')}`, { method: 'DELETE' });
-      fetchProjects(projectPage);
-      fetchAllRecords(recordPage);
+      fetchProjects(projectPage, committedProjectFilters);
+      fetchAllRecords(recordPage, committedRecordFilters);
     } catch(e) {}
   };
 
@@ -345,7 +351,7 @@ export default function WorkPermitPage() {
     try {
       await apiFetch(`/api/permits?id=${id}&userId=${user?.id || ''}&userName=${user?.name || ''}`, { method: 'DELETE' });
       if(modals.projectDetail && selectedProject) fetchProjectRecords(selectedProject.id, projRecPage);
-      fetchAllRecords(recordPage);
+      fetchAllRecords(recordPage, committedRecordFilters);
       // 如果正在查看该记录，关闭详情弹窗
       if (selectedRecord?.id === id) toggleModal('viewRecord', false);
     } catch(e) {}
@@ -427,9 +433,10 @@ export default function WorkPermitPage() {
               onDeleteProject={handleDeleteProject}
               currentPage={projectPage}
               totalPages={projectTotalPages}
-              onPageChange={(p) => fetchProjects(p, projectFilters)}
+              onPageChange={(p) => fetchProjects(p, committedProjectFilters)}
               filters={projectFilters}
               onFilterChange={setProjectFilters}
+              onSearch={handleProjectSearch}
             />
           ) : viewMode === 'records' ? (
             <RecordListView
@@ -442,10 +449,12 @@ export default function WorkPermitPage() {
               onDeleteRecord={handleDeleteRecord}
               currentPage={recordPage}
               totalPages={recordTotalPages}
-              onPageChange={(p) => fetchAllRecords(p, recordFilters)}
+              onPageChange={(p) => fetchAllRecords(p, committedRecordFilters)}
               filters={recordFilters}
               onFilterChange={setRecordFilters}
               totalCount={totalRecordsCount}
+              onSearch={handleRecordSearch}
+              onReset={handleRecordReset}
             />
           ) : (
             // 🟢 渲染日志视图 (双重保险：再次校验权限)
@@ -557,7 +566,7 @@ export default function WorkPermitPage() {
           allUsers={allUsers}
           allTemplates={templates}
           onRefresh={() => {
-            fetchAllRecords(recordPage);
+            fetchAllRecords(recordPage, committedRecordFilters);
             if (selectedProject) fetchProjectRecords(selectedProject.id);
           }}
           onOpenApproval={() => toggleModal('approval', true)}
@@ -574,7 +583,7 @@ export default function WorkPermitPage() {
           onSuccess={() => {
             toggleModal('approval', false);
             //toggleModal('viewRecord', false);
-            fetchAllRecords(recordPage);
+            fetchAllRecords(recordPage, committedRecordFilters);
             if (selectedProject) fetchProjectRecords(selectedProject.id);
           }}
         />
@@ -586,7 +595,7 @@ export default function WorkPermitPage() {
           onClose={() => toggleModal('adjustDate', false)}
           project={selectedProject}
           onSuccess={() => {
-            fetchProjects(projectPage);
+            fetchProjects(projectPage, committedProjectFilters);
             toggleModal('adjustDate', false);
           }}
         />

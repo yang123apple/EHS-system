@@ -59,7 +59,9 @@ export default function PermissionConfigPage() {
       if (next[moduleKey]) {
         delete next[moduleKey]; // 删除即禁用
       } else {
-        next[moduleKey] = []; // 初始化为空数组即启用
+        // 启用时自动写入基础访问权限 'access'
+        const moduleConfig = SYSTEM_MODULES.find(m => m.key === moduleKey);
+        next[moduleKey] = moduleConfig ? [moduleConfig.basePermission] : ['access'];
       }
       return next;
     });
@@ -86,10 +88,16 @@ export default function PermissionConfigPage() {
       const next = { ...prev };
       if (!next[moduleKey]) next[moduleKey] = [];
       const currentPerms = next[moduleKey];
-      if (currentPerms.length === allPermKeys.length) {
-        next[moduleKey] = [];
+      const moduleConfig = SYSTEM_MODULES.find(m => m.key === moduleKey);
+      const basePermission = moduleConfig?.basePermission || 'access';
+      // 判断子权限是否已全部勾选（排除 basePermission）
+      const hasAllSubs = allPermKeys.every((k: string) => currentPerms.includes(k));
+      if (hasAllSubs) {
+        // 取消全选，只保留基础访问权限
+        next[moduleKey] = [basePermission];
       } else {
-        next[moduleKey] = [...allPermKeys];
+        // 全选，同时保留基础访问权限
+        next[moduleKey] = [basePermission, ...allPermKeys];
       }
       return next;
     });
@@ -179,7 +187,8 @@ export default function PermissionConfigPage() {
           const isModuleEnabled = permissions[module.key] !== undefined;
           const currentModulePerms = permissions[module.key] || [];
           const isAllSelected =
-            currentModulePerms.length === module.permissions.length && module.permissions.length > 0;
+            module.permissions.length > 0 &&
+            module.permissions.every(p => currentModulePerms.includes(p.key));
           return (
             <div
               key={module.key}

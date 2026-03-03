@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '12');
     const q = searchParams.get('q') || '';
     const dept = searchParams.get('dept') || '';
+    const fileType = (searchParams.get('fileType') || '').trim();
 
     const skip = (page - 1) * limit;
 
@@ -31,10 +32,31 @@ export async function GET(req: NextRequest) {
         whereCondition.department = { name: dept };
     }
 
+    if (fileType) {
+        const matchingFiles = await prisma.archiveFile.findMany({
+            where: { category: 'personnel', fileType, userId: { not: null } },
+            select: { userId: true }
+        });
+        const userIds = [...new Set(
+            matchingFiles.map(f => f.userId).filter((id): id is string => id !== null)
+        )];
+        // 没有任何人上传过此类型文件，直接返回空
+        if (userIds.length === 0) {
+            return NextResponse.json({
+                data: [],
+                meta: { total: 0, page, limit, totalPages: 0 }
+            });
+        }
+        whereCondition.id = { in: userIds };
+    }
+
     const [users, total] = await Promise.all([
         prisma.user.findMany({
             where: whereCondition,
-            orderBy: { name: 'asc' },
+            orderBy: [
+                { isActive: 'desc' }, // 在职员工 (true) 排在前面，已离职 (false) 排在最后
+                { name: 'asc' }
+            ],
             skip,
             take: limit,
             select: {

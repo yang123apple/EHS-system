@@ -13,12 +13,15 @@ interface Props {
     filters: { project: string; type: string; date: string };
     onFilterChange: (newFilters: any) => void;
     totalCount?: number;
+    onSearch: () => void;
+    onReset: () => void;
 }
 
 export default function RecordListView({
     records, hasPerm, onViewRecord, onDeleteRecord,
     currentPage = 1, totalPages = 1, onPageChange,
-    filters, onFilterChange, totalCount
+    filters, onFilterChange, totalCount,
+    onSearch, onReset
 }: Props) {
     // 静态类型列表 (可扩展)
     const staticTypes = ['动火', '高处', '受限空间', '吊装', '临时用电', '其他'];
@@ -38,6 +41,7 @@ export default function RecordListView({
                             placeholder="搜索项目名称..."
                             value={filters.project}
                             onChange={e => onFilterChange({ ...filters, project: e.target.value })}
+                            onKeyDown={(e) => e.key === 'Enter' && onSearch()}
                         />
                     </div>
                     <div className="flex items-center gap-2 bg-slate-50 border rounded-lg px-3 py-2">
@@ -60,9 +64,16 @@ export default function RecordListView({
                             onChange={e => onFilterChange({ ...filters, date: e.target.value })}
                         />
                     </div>
+                    <button
+                        onClick={onSearch}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    >
+                        <Search size={16} />
+                        搜索
+                    </button>
                     {(filters.project || filters.type || filters.date) && (
                         <button
-                            onClick={() => onFilterChange({ project: '', type: '', date: '' })}
+                            onClick={onReset}
                             className="text-blue-600 hover:underline px-2"
                         >
                             重置

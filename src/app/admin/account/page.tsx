@@ -620,13 +620,11 @@ export default function AccountManagement() {
     }
   };
 
-  // Debounce search
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      loadUsers(1, { term: searchTerm, dept: deptFilter });
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchTerm, deptFilter]);
+  // 手动触发搜索
+  const handleSearch = () => {
+    setCurrentPage(1);
+    loadUsers(1, { term: searchTerm, dept: deptFilter });
+  };
 
   if (isLoading) return <div className="p-8 text-center text-slate-500">加载中...</div>;
 
@@ -747,7 +745,14 @@ export default function AccountManagement() {
             <div className="flex flex-col sm:flex-row gap-2 md:gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                <input type="text" placeholder="搜索..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-7 md:pl-9 pr-3 md:pr-4 py-1.5 md:py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm outline-none focus:ring-2 focus:ring-hytzer-blue" />
+                <input
+                  type="text"
+                  placeholder="搜索姓名、账号..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  className="w-full pl-7 md:pl-9 pr-3 md:pr-4 py-1.5 md:py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm outline-none focus:ring-2 focus:ring-hytzer-blue"
+                />
               </div>
               <div className="relative w-full sm:w-40">
                 <Filter className="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10 pointer-events-none" size={14} />
@@ -762,6 +767,14 @@ export default function AccountManagement() {
                   </svg>
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={handleSearch}
+                className="flex items-center gap-1.5 px-3 md:px-4 py-1.5 md:py-2 bg-hytzer-blue text-white rounded-lg text-xs md:text-sm font-medium hover:bg-blue-600 transition-colors shrink-0"
+              >
+                <Search size={14} />
+                搜索
+              </button>
             </div>
           </div>
 

@@ -385,6 +385,40 @@ class MinIOService {
   }
 
   /**
+   * 将预签名 URL 中的内部地址替换为对外可访问的地址
+   *
+   * 问题背景：MinIO 客户端单例初始化后 endpoint 固定不变。
+   * 当初始化时 MINIO_ENDPOINT=localhost 被转换为 127.0.0.1，
+   * 生成的预签名 URL 会包含 127.0.0.1，局域网其他设备访问时
+   * 会将其解析为自己的本机地址，导致连接失败。
+   *
+   * 此方法每次调用时从 env 读取最新的 MINIO_ENDPOINT，
+   * 将 URL 中的内部地址（127.0.0.1/localhost）替换为公共可访问地址。
+   */
+  private replaceEndpointForPublicAccess(url: string): string {
+    const publicEndpoint = process.env.MINIO_ENDPOINT || 'localhost';
+    const port = process.env.MINIO_PORT || '9000';
+
+    // 如果公共地址本身就是本地地址，无需替换
+    if (publicEndpoint === '127.0.0.1' || publicEndpoint === 'localhost') {
+      return url;
+    }
+
+    // 将 URL 中的 127.0.0.1 或 localhost 替换为配置的公共地址
+    for (const internal of ['127.0.0.1', 'localhost']) {
+      const from = `://${internal}:${port}/`;
+      const to = `://${publicEndpoint}:${port}/`;
+      if (url.includes(from)) {
+        const replaced = url.replace(from, to);
+        console.log(`[MinIO] 已将预签名URL中的 ${internal} 替换为 ${publicEndpoint}`);
+        return replaced;
+      }
+    }
+
+    return url;
+  }
+
+  /**
    * 生成预签名 PUT URL（用于前端直接上传）
    */
   public async generatePresignedPutUrl(
@@ -393,7 +427,7 @@ class MinIOService {
     options: PresignedUrlOptions = {}
   ): Promise<string> {
     await this.ensureInitialized();
-    
+
     if (!this.client) {
       throw new Error('MinIO Client 未初始化');
     }
@@ -411,7 +445,7 @@ class MinIOService {
           ? await this.client.presignedPutObject(bucketName, objectName, expires)
           : await this.client.presignedUrl(upperMethod, bucketName, objectName, expires);
 
-      return url;
+      return this.replaceEndpointForPublicAccess(url);
     } catch (error: any) {
       console.error('生成预签名 URL 失败:', error);
       throw new Error(`生成预签名 URL 失败: ${error.message}`);
@@ -427,7 +461,7 @@ class MinIOService {
     expires: number = 3600
   ): Promise<string> {
     await this.ensureInitialized();
-    
+
     if (!this.client) {
       throw new Error('MinIO Client 未初始化');
     }
@@ -436,7 +470,7 @@ class MinIOService {
 
     try {
       const url = await this.client.presignedGetObject(bucketName, objectName, expires);
-      return url;
+      return this.replaceEndpointForPublicAccess(url);
     } catch (error: any) {
       console.error('生成预签名 GET URL 失败:', error);
       throw new Error(`生成预签名 GET URL 失败: ${error.message}`);
