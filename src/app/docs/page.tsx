@@ -20,12 +20,20 @@ interface HistoryRecord {
   revisionDate?: string | null; version?: string | null;
 }
 
+interface TocItem {
+  id: string;
+  title: string;
+  level: 2 | 3;
+  children: TocItem[];
+}
+
 interface DocFile {
   id: string; name: string; prefix: string; suffix: number; fullNum: string; level: number; parentId: string | null;
   dept: string; docxPath: string; pdfPath: string | null; type: 'docx' | 'pdf' | 'xlsx'; uploadTime: number;
   uploader?: string; history?: HistoryRecord[];
   searchText?: string;
   version?: string;
+  toc?: TocItem[] | null;
 }
 
 export default function DocSystemPage() {
@@ -64,6 +72,9 @@ export default function DocSystemPage() {
   const [editLevel, setEditLevel] = useState(1);
   const [currentFile, setCurrentFile] = useState<DocFile | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string>('');
+  const [previewToc, setPreviewToc] = useState<TocItem[]>([]);
+  const [previewHasExistingNumbers, setPreviewHasExistingNumbers] = useState(false);
+  const previewContentRef = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(false); // 上传状态
   const uploadingRef = useRef(false); // 🔴 使用 ref 立即标记，避免异步状态更新延迟
   const [showAllChildren, setShowAllChildren] = useState(false); // 是否显示所有下级文件
@@ -1121,6 +1132,8 @@ export default function DocSystemPage() {
   const handlePreview = useCallback(async (file: DocFile) => {
     setCurrentFile(file); setShowPreviewModal(true); setPreviewHtml('<div class="text-center p-4">正在解析...</div>');
     setShowAllChildren(false); // 重置为不显示全部状态
+    setPreviewToc([]); // 重置目录
+    setPreviewHasExistingNumbers(false); // 重置编号检测标志
     
     // 如果该文件的子文件还没有被加载，自动加载子文件（只有非4级文件可能有子文件）
     if (file.level < 4 && !loadedFolders.has(file.id)) {
@@ -1191,9 +1204,31 @@ export default function DocSystemPage() {
             } else if (data.html && data.html.trim()) {
                 // 🔒 清理 HTML 内容，防止 XSS 攻击
                 const cleanedHtml = sanitizeHtml(data.html);
-                
+
                 if (cleanedHtml.trim()) {
-                    // 🔴 为 DOCX 添加表格样式支持
+                    const hasExistingNums = !!data.hasExistingNumbers;
+                    // 仅在原文未含数字编号时才注入 CSS Counter，避免双重编号
+                    const counterCss = hasExistingNums ? '' : `
+                        /* H2 / H3 自动编号（CSS Counters） */
+                        .docx-content {
+                          counter-reset: h2-counter;
+                        }
+                        .docx-content h2 {
+                          counter-increment: h2-counter;
+                          counter-reset: h3-counter;
+                        }
+                        .docx-content h2::before {
+                          content: counter(h2-counter) "  ";
+                          font-weight: inherit;
+                        }
+                        .docx-content h3 {
+                          counter-increment: h3-counter;
+                        }
+                        .docx-content h3::before {
+                          content: counter(h2-counter) "." counter(h3-counter) "  ";
+                          font-weight: inherit;
+                        }`;
+                    // 🔴 注入样式：表格、首行缩进、按需标题自动编号
                     const styledHtml = `
                       <style>
                         /* DOCX 表格样式 */
@@ -1228,9 +1263,24 @@ export default function DocSystemPage() {
                           color: #475569;
                           text-align: left;
                         }
+                        /* 段落首行缩进（中文文档标准排版：2字符） */
+                        .docx-content p {
+                          text-indent: 2em;
+                        }
+                        /* 标题、列表、表格内段落不缩进 */
+                        .docx-content h1, .docx-content h2, .docx-content h3,
+                        .docx-content h4, .docx-content h5, .docx-content h6,
+                        .docx-content li, .docx-content td, .docx-content th,
+                        .docx-content li > p, .docx-content td > p, .docx-content th > p {
+                          text-indent: 0 !important;
+                        }
+                        ${counterCss}
                       </style>
-                      ${cleanedHtml}
+                      <div class="docx-content">${cleanedHtml}</div>
                     `;
+                    // 设置目录与编号检测标志（均来自 API 响应）
+                    setPreviewHasExistingNumbers(hasExistingNums);
+                    setPreviewToc(Array.isArray(data.toc) ? data.toc : []);
                     setPreviewHtml(styledHtml);
                 } else {
                     console.warn('⚠️ sanitizeHtml 过滤掉了所有内容');
@@ -1996,7 +2046,8 @@ export default function DocSystemPage() {
             <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
                 <div className="flex-1 overflow-y-auto p-3 md:p-8 bg-slate-100">
                     <div className={`bg-white shadow-sm p-4 md:p-10 min-h-full mx-auto relative ${currentFile.type === 'xlsx' ? 'max-w-full overflow-x-auto' : 'max-w-3xl prose prose-slate prose-sm md:prose'}`}>
-                        <div 
+                        <div
+                          ref={previewContentRef}
                           className="select-none"
                           dangerouslySetInnerHTML={{ __html: previewHtml }}
                           onCopy={(e) => e.preventDefault()}
@@ -2015,7 +2066,52 @@ export default function DocSystemPage() {
                         )}
                     </div>
                 </div>
-                <div className="w-full md:w-72 bg-white border-t md:border-t-0 md:border-l border-slate-200 p-3 md:p-4 overflow-y-auto shrink-0 flex flex-col gap-4 md:gap-6 max-h-[30vh] md:max-h-none">
+                <div className="w-full md:w-80 bg-white border-t md:border-t-0 md:border-l border-slate-200 p-3 md:p-4 overflow-y-auto shrink-0 flex flex-col gap-4 md:gap-6 max-h-[30vh] md:max-h-none">
+                    {/* 📑 文档目录（仅 DOCX 且有目录时展示） */}
+                    {currentFile.type === 'docx' && previewToc.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                          文档目录
+                        </h4>
+                        <nav className="max-h-[40vh] overflow-y-auto pr-1">
+                          <ul className="space-y-0.5">
+                            {previewToc.map((item) => (
+                              <li key={item.id}>
+                                <button
+                                  onClick={() => {
+                                    const el = previewContentRef.current?.querySelector<HTMLElement>(`#${CSS.escape(item.id)}`);
+                                    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                  }}
+                                  className="w-full text-left text-xs px-2 py-1.5 rounded font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors leading-snug"
+                                  title={item.title}
+                                >
+                                  <span className="line-clamp-2">{item.title}</span>
+                                </button>
+                                {item.children.length > 0 && (
+                                  <ul className="ml-3 mt-0.5 space-y-0.5 border-l border-slate-100 pl-2">
+                                    {item.children.map((child) => (
+                                      <li key={child.id}>
+                                        <button
+                                          onClick={() => {
+                                            const el = previewContentRef.current?.querySelector<HTMLElement>(`#${CSS.escape(child.id)}`);
+                                            el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                          }}
+                                          className="w-full text-left text-xs px-2 py-1 rounded text-slate-500 hover:bg-blue-50 hover:text-blue-600 transition-colors leading-snug"
+                                          title={child.title}
+                                        >
+                                          <span className="line-clamp-2">{child.title}</span>
+                                        </button>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </nav>
+                      </div>
+                    )}
                     <div>
                         <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><CornerDownRight size={14} /> 下级关联文件</h4>
                         <div className="space-y-2">

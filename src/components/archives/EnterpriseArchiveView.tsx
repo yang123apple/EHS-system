@@ -49,6 +49,7 @@ export default function EnterpriseArchiveView() {
     const canUpload = PermissionManager.hasPermission(user, 'archives', 'enterprise_upload');
     const canDelete = PermissionManager.hasPermission(user, 'archives', 'enterprise_delete');
     const canEdit = PermissionManager.hasPermission(user, 'archives', 'enterprise_edit');
+    const canDownload = PermissionManager.hasPermission(user, 'archives', 'download');
 
     // ── 函数定义（在所有 Hook 调用之前，Rules of Hooks 要求）──
 
@@ -241,6 +242,7 @@ export default function EnterpriseArchiveView() {
                                 <ArchiveFileCard
                                     key={file.id}
                                     file={file}
+                                    canDownload={canDownload}
                                     onDelete={canDelete ? handleDelete : undefined}
                                     onEdit={canEdit ? handleEdit : undefined}
                                     onPreview={handlePreview}

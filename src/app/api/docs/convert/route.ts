@@ -5,6 +5,36 @@ import mammoth from 'mammoth';
 import { withErrorHandling, withAuth } from '@/middleware/auth';
 import { minioStorageService } from '@/services/storage/MinioStorageService';
 import { parseFileRecordFromDb } from '@/utils/storage';
+import { processDocxHtml } from '@/lib/docxProcessor';
+
+/**
+ * Mammoth 自定义样式映射：
+ *   - 补全中文 Word 常见标题样式名变体（含无空格版本 "标题1"）
+ *   - ":fresh" 防止 mammoth 把连续同级标题合并成嵌套列表
+ *   - 其余样式继续走 mammoth 默认映射（表格、列表等保留）
+ */
+const MAMMOTH_STYLE_MAP = [
+  // 中文：带空格（最常见）
+  "p[style-name='标题 1'] => h1:fresh",
+  "p[style-name='标题 2'] => h2:fresh",
+  "p[style-name='标题 3'] => h3:fresh",
+  "p[style-name='标题 4'] => h4:fresh",
+  // 中文：无空格（部分模板）
+  "p[style-name='标题1'] => h1:fresh",
+  "p[style-name='标题2'] => h2:fresh",
+  "p[style-name='标题3'] => h3:fresh",
+  "p[style-name='标题4'] => h4:fresh",
+  // 英文：首字母大写（Word 默认）
+  "p[style-name='Heading 1'] => h1:fresh",
+  "p[style-name='Heading 2'] => h2:fresh",
+  "p[style-name='Heading 3'] => h3:fresh",
+  "p[style-name='Heading 4'] => h4:fresh",
+  // 英文：全小写（旧版或自定义）
+  "p[style-name='heading 1'] => h1:fresh",
+  "p[style-name='heading 2'] => h2:fresh",
+  "p[style-name='heading 3'] => h3:fresh",
+  "p[style-name='heading 4'] => h4:fresh",
+];
 
 export const GET = withErrorHandling(
   withAuth(async (req: NextRequest, context: { params: Promise<{}> }, user) => {
@@ -92,8 +122,10 @@ export const GET = withErrorHandling(
         console.log('📄 [DOCX转换API] 开始Mammoth转换, Buffer大小:', buffer.length, 'bytes');
       }
 
-      // 🔴 mammoth 默认会正确转换表格，使用默认配置即可
-      const result = await mammoth.convertToHtml({ buffer });
+      // 🔴 mammoth 转换：指定样式映射以正确处理中文 Word 标题样式
+      const result = await mammoth.convertToHtml({ buffer }, {
+        styleMap: MAMMOTH_STYLE_MAP,
+      });
 
       console.log('📄 [DOCX转换API] Mammoth转换完成');
       console.log('  - HTML长度:', result.value?.length || 0, 'characters');
@@ -118,7 +150,11 @@ export const GET = withErrorHandling(
         });
       }
 
-      return NextResponse.json({ html: result.value, messages: result.messages });
+      // 🔴 后处理：向 H2/H3 注入锚点 id，提取目录树，检测是否已有编号
+      const { html: processedHtml, toc, hasExistingNumbers } = processDocxHtml(result.value);
+      console.log('📄 [DOCX转换API] TOC提取完成，共', toc.length, '个顶层标题，已有编号:', hasExistingNumbers);
+
+      return NextResponse.json({ html: processedHtml, toc, hasExistingNumbers, messages: result.messages });
     } catch (error) {
       console.error('❌ [DOCX转换API] 转换失败:', error);
       return NextResponse.json(

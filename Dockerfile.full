@@ -83,6 +83,7 @@ ENV NODE_ENV=production \
 # 安装运行时依赖
 RUN apt-get update && apt-get install -y \
     curl \
+    sqlite3 \
     supervisor \
     && rm -rf /var/lib/apt/lists/*
 
@@ -155,7 +156,6 @@ environment=MINIO_ROOT_USER="admin",MINIO_ROOT_PASSWORD="change-me-now"
 EOF
 
 # 创建启动脚本
-# 迁移已由 CI/CD 流水线在独立 runner 中完成，此处仅启动业务进程
 RUN cat > /app/start.sh <<'EOF'
 #!/bin/bash
 set -e
@@ -170,7 +170,11 @@ echo "=========================================="
 # 确保运行时数据目录存在（volume 首次挂载时可能为空）
 mkdir -p /app/data/db /app/data/minio-data /app/public/uploads
 
-# 启动 supervisor（数据库迁移已由 CI/CD pre-deploy 步骤完成）
+# 启动业务进程前同步数据库结构，避免挂载旧数据目录时缺列/缺表
+echo "执行 Prisma 数据库迁移..."
+npx --no-install prisma migrate deploy
+
+# 启动 supervisor
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
 EOF
 

@@ -62,12 +62,23 @@ export default function OrgStructurePage() {
   const [showDepartedEmployees, setShowDepartedEmployees] = useState(false);
 
   // 🟢 部门拖拽状态
-  const [draggingDeptId, setDraggingDeptId] = useState<string | null>(null);
-  const [dragOverDeptId, setDragOverDeptId] = useState<string | null>(null);
-  const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
+  // dragStart 不调用 setState → 不触发 re-render → 树不会在开始拖动时刷新
+  const draggingDeptIdRef = useRef<string | null>(null);
+  const draggingDeptDescendantsRef = useRef<Set<string>>(new Set());
+  // 当前 hover 目标 — React state（保证跨 re-render 的视觉正确性）
+  // 用 ref 去重：只在目标部门变化时才 setState，避免每次 mousemove 都触发 re-render
+  const [dragOverTargetId, setDragOverTargetId] = useState<string | null>(null);
+  const dragOverTargetRef = useRef<string | null>(null);
 
   // 🟢 部门展开状态（集中管理，避免拖动时重置）
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
+  // 🟢 防重入：部门结构变更操作进行中标志
+  const [isReparenting, setIsReparenting] = useState(false);
+
+  // 🟢 部门移入确认弹窗状态
+  const [showReparentConfirm, setShowReparentConfirm] = useState(false);
+  const [pendingReparentDeptId, setPendingReparentDeptId] = useState<string | null>(null);
+  const [pendingReparentTargetId, setPendingReparentTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -185,7 +196,7 @@ export default function OrgStructurePage() {
     if (!draggedNode || !targetNode) return;
     if (draggedNode.id === targetNode.id) return; // Prevent self-drop
     if (draggedNode.parentId !== targetNode.parentId) {
-      alert('只能在同级部门之间调整顺序');
+      // Different parents: silently skip (user should use "drop inside" for reparenting)
       return;
     }
 
@@ -239,6 +250,20 @@ export default function OrgStructurePage() {
     return null;
   };
 
+  // Helper: Check if targetId is a descendant of ancestorId
+  const isDescendantOf = (nodes: OrgNode[], ancestorId: string, targetId: string): boolean => {
+    const ancestor = findNodeById(nodes, ancestorId);
+    if (!ancestor?.children) return false;
+    const check = (children: OrgNode[]): boolean => {
+      for (const child of children) {
+        if (child.id === targetId) return true;
+        if (child.children && check(child.children)) return true;
+      }
+      return false;
+    };
+    return check(ancestor.children);
+  };
+
   // Helper: Get all siblings of a node
   const getSiblings = (nodes: OrgNode[], nodeId: string): OrgNode[] => {
     const node = findNodeById(nodes, nodeId);
@@ -251,6 +276,46 @@ export default function OrgStructurePage() {
       // Find parent and return its children
       const parent = findNodeById(nodes, node.parentId);
       return parent?.children || [];
+    }
+  };
+
+  // 🟢 部门归属调整（拖到另一部门内部）
+  const handleDepartmentReparent = async (draggedId: string, newParentId: string) => {
+    if (isReparenting) return; // 防重入
+
+    const draggedNode = findNodeById(tree, draggedId);
+    if (!draggedNode) return;
+
+    // Can't drop onto self
+    if (draggedId === newParentId) return;
+
+    // Can't drop onto a descendant (circular reference)
+    if (isDescendantOf(tree, draggedId, newParentId)) {
+      alert('不能将部门移动到其子部门下');
+      return;
+    }
+
+    // Already a child of this parent - no-op
+    if (draggedNode.parentId === newParentId) return;
+
+    setIsReparenting(true);
+    try {
+      const res = await apiFetch('/api/org/reparent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ departmentId: draggedId, newParentId })
+      });
+
+      if (res.ok) {
+        fetchData();
+      } else {
+        const err = await res.json();
+        alert(err.error || '移动失败');
+      }
+    } catch (e) {
+      alert('网络错误');
+    } finally {
+      setIsReparenting(false);
     }
   };
 
@@ -572,8 +637,6 @@ export default function OrgStructurePage() {
   // ========================
   const TreeNode = ({ node, level }: { node: OrgNode, level: number }) => {
     const expanded = expandedDepts.has(node.id);
-    const [isDragOver, setIsDragOver] = useState(false);
-    const [localDropPosition, setLocalDropPosition] = useState<'before' | 'after' | null>(null);
 
     // 1. 找出归属于该部门的 直属 成员
     const directUsers = users.filter(u => {
@@ -603,82 +666,78 @@ export default function OrgStructurePage() {
     // 是否显示折叠箭头：有子部门 或者 有直属员工
     const hasChildren = (node.children && node.children.length > 0) || directUsers.length > 0;
 
-    // 🟢 NEW: Department drag handlers
+    // 🟢 Department drag handlers
+    // dragStart: 只写 ref，零 setState → 零 re-render，树不会闪烁
     const handleDeptDragStart = (e: React.DragEvent) => {
         e.stopPropagation();
         e.dataTransfer.setData("deptId", node.id);
         e.dataTransfer.effectAllowed = "move";
-        setDraggingDeptId(node.id);
+        draggingDeptIdRef.current = node.id;
+        const descendants = new Set<string>();
+        const collect = (nodes: OrgNode[]) => {
+            nodes.forEach(n => { descendants.add(n.id); if (n.children) collect(n.children); });
+        };
+        if (node.children) collect(node.children);
+        draggingDeptDescendantsRef.current = descendants;
     };
 
+    // dragOver: 用 ref 去重，只在目标部门切换时才 setState（不是每次 mousemove）
     const handleDeptDragOver = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
-
-        // Check if this is a department drag or user drag
-        const types = Array.from(e.dataTransfer.types);
-        const isDeptDrag = types.includes('text/plain') && e.dataTransfer.effectAllowed === 'move';
-
-        // Try to get deptId (won't work during dragOver in some browsers, so we check types)
-        if (draggingDeptId) {
-            // This is a department drag
-            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            const midpoint = rect.top + rect.height / 2;
-            const position = e.clientY < midpoint ? 'before' : 'after';
-
-            setDragOverDeptId(node.id);
-            setLocalDropPosition(position);
-        } else {
-            // This is a user drag, use existing logic
-            setIsDragOver(true);
+        const deptBeingDragged = draggingDeptIdRef.current;
+        if (deptBeingDragged) {
+            if (deptBeingDragged === node.id) return;
+            if (draggingDeptDescendantsRef.current.has(node.id)) return;
+        }
+        if (dragOverTargetRef.current !== node.id) {
+            dragOverTargetRef.current = node.id;
+            setDragOverTargetId(node.id);
         }
     };
 
     const handleDeptDragLeave = (e: React.DragEvent) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
         e.preventDefault();
-        e.stopPropagation();
-        setIsDragOver(false);
-        setDragOverDeptId(null);
-        setLocalDropPosition(null);
+        if (dragOverTargetRef.current === node.id) {
+            dragOverTargetRef.current = null;
+            setDragOverTargetId(null);
+        }
     };
 
     const handleDeptDrop = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        dragOverTargetRef.current = null;
+        setDragOverTargetId(null);
 
         const deptId = e.dataTransfer.getData("deptId");
         const userId = e.dataTransfer.getData("userId");
 
         if (userId) {
-            // User drop - existing logic
-            setIsDragOver(false);
             handleDrop(e, node);
-        } else if (deptId && localDropPosition) {
-            // Department drop - new logic
-            setDragOverDeptId(null);
-            setLocalDropPosition(null);
-            setDraggingDeptId(null);
-            handleDepartmentReorder(deptId, node.id, localDropPosition);
+        } else if (deptId) {
+            draggingDeptIdRef.current = null;
+            if (deptId !== node.id && !draggingDeptDescendantsRef.current.has(node.id)) {
+                setPendingReparentDeptId(deptId);
+                setPendingReparentTargetId(node.id);
+                setShowReparentConfirm(true);
+            }
+            draggingDeptDescendantsRef.current = new Set();
         }
     };
 
     const handleDeptDragEnd = () => {
-        setDraggingDeptId(null);
-        setDragOverDeptId(null);
-        setLocalDropPosition(null);
+        draggingDeptIdRef.current = null;
+        draggingDeptDescendantsRef.current = new Set();
+        if (dragOverTargetRef.current !== null) {
+            dragOverTargetRef.current = null;
+            setDragOverTargetId(null);
+        }
     };
-
-    // Determine if this node is being dragged or is a drop target
-    const isDragging = draggingDeptId === node.id;
-    const isDropTarget = dragOverDeptId === node.id;
 
     return (
       <div className="select-none transition-all">
-        {/* Drop indicator BEFORE */}
-        {isDropTarget && localDropPosition === 'before' && (
-          <div className="h-1 bg-blue-500 rounded-full mx-2 mb-1 animate-pulse" />
-        )}
-
         {/* 部门行 (Drop Zone) */}
         <div
             draggable
@@ -689,9 +748,7 @@ export default function OrgStructurePage() {
             onDragEnd={handleDeptDragEnd}
             className={`flex items-center justify-between p-2 md:p-3 my-1 rounded-lg border transition-all duration-200 group cursor-move
                 ${level === 0 ? 'bg-blue-50/80 border-blue-200 shadow-sm' : 'bg-white border-slate-100 hover:border-blue-200 hover:shadow-sm'}
-                ${isDragOver ? 'ring-2 ring-green-400 bg-green-50 scale-[1.01]' : ''}
-                ${isDragging ? 'opacity-50 scale-95' : ''}
-                ${isDropTarget ? 'ring-2 ring-blue-400' : ''}
+                ${dragOverTargetId === node.id ? 'ring-2 ring-blue-500 bg-blue-50 scale-[1.01]' : ''}
             `}
             style={{ marginLeft: `${level * 20}px` }}
         >
@@ -751,11 +808,6 @@ export default function OrgStructurePage() {
             <button onClick={() => handleDeleteDept(node.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
           </div>
         </div>
-
-        {/* Drop indicator AFTER */}
-        {isDropTarget && localDropPosition === 'after' && (
-          <div className="h-1 bg-blue-500 rounded-full mx-2 mt-1 animate-pulse" />
-        )}
 
         {/* 展开区域：成员 + 子部门 */}
         {expanded && hasChildren && (
@@ -849,7 +901,7 @@ export default function OrgStructurePage() {
                     组织架构图谱
                 </h1>
                 <p className="text-slate-500 mt-2 text-xs md:text-sm">
-                    支持拖拽调整人员归属。部门人数包含所有下级子部门人数。
+                    拖拽调整人员归属；拖部门到另一部门中间区域可调整从属关系，拖到顶部/底部可排序。
                 </p>
             </div>
             <div className="flex items-center gap-2 md:gap-3 flex-wrap">
@@ -900,7 +952,15 @@ export default function OrgStructurePage() {
             </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-8 min-h-[400px] md:min-h-[600px]">
+        <div className={`bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-8 min-h-[400px] md:min-h-[600px] relative ${isReparenting ? 'pointer-events-none' : ''}`}>
+            {isReparenting && (
+                <div className="absolute inset-0 bg-white/70 z-10 flex items-center justify-center rounded-xl">
+                    <div className="flex items-center gap-2 text-slate-600 text-sm font-medium bg-white px-4 py-2 rounded-full shadow-md border">
+                        <div className="w-4 h-4 border-2 border-hytzer-blue border-t-transparent rounded-full animate-spin" />
+                        正在调整部门结构...
+                    </div>
+                </div>
+            )}
             {isLoading ? (
                 <div className="text-center py-20 text-slate-400">正在加载...</div>
             ) : tree.length === 0 ? (
@@ -1230,6 +1290,46 @@ export default function OrgStructurePage() {
                 </div>
               </div>
             )}
+
+        {/* 🟢 部门移入确认弹窗 */}
+        {showReparentConfirm && pendingReparentDeptId && pendingReparentTargetId && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                  <Briefcase size={18} className="text-blue-600" />
+                </div>
+                <h3 className="text-base font-bold text-slate-800">确认移动部门</h3>
+              </div>
+              <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+                是否将 <span className="font-semibold text-slate-800">「{findNodeById(tree, pendingReparentDeptId)?.name}」</span> 移入 <span className="font-semibold text-slate-800">「{findNodeById(tree, pendingReparentTargetId)?.name}」</span>，使其成为该部门的子部门？
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => {
+                    setShowReparentConfirm(false);
+                    setPendingReparentDeptId(null);
+                    setPendingReparentTargetId(null);
+                  }}
+                  className="px-4 py-2 text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors font-medium"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => {
+                    setShowReparentConfirm(false);
+                    handleDepartmentReparent(pendingReparentDeptId, pendingReparentTargetId);
+                    setPendingReparentDeptId(null);
+                    setPendingReparentTargetId(null);
+                  }}
+                  className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors font-medium"
+                >
+                  确认移入
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }

@@ -314,6 +314,76 @@ export const db = {
     await Promise.all(promises);
   },
 
+  reparentDepartment: async (departmentId: string, newParentId: string | null): Promise<{ success: boolean; error?: string }> => {
+    // Wrap everything in a transaction to ensure atomicity
+    try {
+      return await prisma.$transaction(async (tx) => {
+        // Read inside the transaction for snapshot consistency
+        const allDepts = await tx.department.findMany();
+
+        const dept = allDepts.find(d => d.id === departmentId);
+        if (!dept) return { success: false, error: '部门不存在' };
+
+        // Can't move to itself
+        if (newParentId === departmentId) return { success: false, error: '不能将部门移动到自身下' };
+
+        // Check for circular reference: newParentId cannot be a descendant of departmentId
+        if (newParentId) {
+          const isDescendant = (nodeId: string): boolean => {
+            const children = allDepts.filter(d => d.parentId === nodeId);
+            for (const child of children) {
+              if (child.id === newParentId) return true;
+              if (isDescendant(child.id)) return true;
+            }
+            return false;
+          };
+          if (isDescendant(departmentId)) {
+            return { success: false, error: '不能将部门移动到其子部门下（会产生循环引用）' };
+          }
+
+          const newParent = allDepts.find(d => d.id === newParentId);
+          if (!newParent) return { success: false, error: '目标父部门不存在' };
+        }
+
+        // Calculate new level
+        let newLevel = 1;
+        if (newParentId) {
+          const newParent = allDepts.find(d => d.id === newParentId)!;
+          newLevel = newParent.level + 1;
+        }
+
+        const levelDiff = newLevel - dept.level;
+
+        // Update the department's parentId and level
+        await tx.department.update({
+          where: { id: departmentId },
+          data: { parentId: newParentId, level: newLevel }
+        });
+
+        // Iterative BFS to update levels of all descendants (avoids stack overflow on deep trees)
+        if (levelDiff !== 0) {
+          const queue: string[] = [departmentId];
+          while (queue.length > 0) {
+            const currentId = queue.shift()!;
+            const children = allDepts.filter(d => d.parentId === currentId);
+            for (const child of children) {
+              await tx.department.update({
+                where: { id: child.id },
+                data: { level: child.level + levelDiff }
+              });
+              queue.push(child.id);
+            }
+          }
+        }
+
+        return { success: true };
+      });
+    } catch (e: any) {
+      console.error('[reparentDepartment] Transaction failed:', e);
+      return { success: false, error: '数据库操作失败，所有变更已回滚' };
+    }
+  },
+
   // === 隐患 ===
   getHazards: async () => {
     const hazards = await prisma.hazardRecord.findMany({

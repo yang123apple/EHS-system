@@ -65,6 +65,7 @@ export default function EquipmentDetailModal({ isOpen, onClose, equipmentId, onU
     const canUpload = PermissionManager.hasPermission(user, 'archives', 'equipment_upload');
     const canDelete = PermissionManager.hasPermission(user, 'archives', 'equipment_delete');
     const canEdit = PermissionManager.hasPermission(user, 'archives', 'equipment_edit');
+    const canDownload = PermissionManager.hasPermission(user, 'archives', 'download');
 
     React.useEffect(() => {
         if (isOpen && equipmentId) {
@@ -279,6 +280,7 @@ export default function EquipmentDetailModal({ isOpen, onClose, equipmentId, onU
                                     <ArchiveFileCard
                                         key={file.id}
                                         file={file}
+                                        canDownload={canDownload}
                                         onDelete={canDelete ? handleDelete : undefined}
                                         onEdit={canEdit ? handleEdit : undefined}
                                         onPreview={handlePreview}

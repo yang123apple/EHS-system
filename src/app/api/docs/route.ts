@@ -8,6 +8,7 @@ import { prisma } from '@/lib/prisma';
 import { withErrorHandling, withAuth, withPermission, logApiOperation } from '@/middleware/auth';
 import crypto from 'crypto';
 import { minioStorageService } from '@/services/storage/MinioStorageService';
+import { processDocxHtml } from '@/lib/docxProcessor';
 
 // 使用 MinIO 存储，不需要本地上传目录
 
@@ -88,6 +89,7 @@ export const GET = withErrorHandling(
         version: d.version || '1.0',
         createdAt: d.createdAt instanceof Date ? d.createdAt.getTime() : new Date(d.createdAt).getTime(),
         updatedAt: d.updatedAt instanceof Date ? d.updatedAt.getTime() : new Date(d.updatedAt).getTime(),
+        toc: d.toc ? (() => { try { return JSON.parse(d.toc as string); } catch { return null; } })() : null,
         history
       };
     });
@@ -107,6 +109,19 @@ export const GET = withErrorHandling(
     return NextResponse.json(safeDocs);
   })
 );
+
+// 辅助函数：从 DOCX buffer 提取目录结构 (H2/H3)
+async function extractDocxToc(buffer: Buffer) {
+  try {
+    const result = await mammoth.convertToHtml({ buffer });
+    if (!result.value) return null;
+    const { toc } = processDocxHtml(result.value);
+    return toc.length > 0 ? toc : null;
+  } catch (e) {
+    console.warn('TOC提取失败（不影响上传流程）:', e);
+    return null;
+  }
+}
 
 // 辅助函数：提取文件纯文本
 async function extractTextFromFile(buffer: Buffer, isXlsx: boolean): Promise<string> {
@@ -145,7 +160,17 @@ export const POST = withErrorHandling(
     }
 
     const level = parseInt(formData.get('level') as string);
-    const parentId = formData.get('parentId') as string;
+
+    // ✅ parentId 防御性解析：
+    //   - FormData 键不存在时 get() 返回 JS null（不是字符串 "null"）
+    //   - 前端可能传来空字符串 ""、字符串 "null"、字符串 "undefined"
+    //   - Prisma 5.x 自关联场景：显式 null 触发 Invalid invocation，必须用 undefined
+    const parentIdRaw = formData.get('parentId');
+    const parentIdStr = typeof parentIdRaw === 'string' ? parentIdRaw.trim() : '';
+    const cleanParentId: string | undefined =
+      parentIdStr && parentIdStr !== 'null' && parentIdStr !== 'undefined'
+        ? parentIdStr
+        : undefined;
     const deptRaw = formData.get('dept') as string | null;
     // 清理 dept 字段：如果为 undefined、null 或字符串 "undefined"，则设置为 null
     const dept = (deptRaw && deptRaw !== 'undefined' && deptRaw.trim() !== '') ? deptRaw : null;
@@ -203,15 +228,18 @@ export const POST = withErrorHandling(
     // 2. 提取文本
     const searchText = await extractTextFromFile(buffer, !!isXlsx);
 
+    // 2b. 提取目录结构（仅 DOCX，不影响主流程）
+    const toc = isDocx ? await extractDocxToc(buffer) : null;
+
     // 3. 编号逻辑
     let finalPrefix = '';
     let suffix = 1;
 
     if (level === 4) {
-      if (!parentId) {
+      if (!cleanParentId) {
         return NextResponse.json({ error: '4级文件必须选择上级' }, { status: 400 });
       }
-      const parentFile = await prisma.document.findUnique({ where: { id: parentId } });
+      const parentFile = await prisma.document.findUnique({ where: { id: cleanParentId } });
       if (!parentFile) {
         return NextResponse.json({ error: '上级文件不存在' }, { status: 404 });
       }
@@ -220,7 +248,7 @@ export const POST = withErrorHandling(
 
       // 查找最大的 suffix
       const maxSibling = await prisma.document.findFirst({
-        where: { parentId, level: 4 },
+        where: { parentId: cleanParentId, level: 4 },
         orderBy: { suffix: 'desc' }
       });
       if (maxSibling && maxSibling.suffix) {
@@ -251,11 +279,14 @@ export const POST = withErrorHandling(
         type: ext,
         docxPath: dbRecord,
         level,
-        parentId: parentId || null,
+        // 用条件展开彻底避免 key 存在但值为 undefined（Prisma 自关联场景下最安全的写法）
+        ...(cleanParentId ? { parentId: cleanParentId } : {}),
         dept,
         uploader,
-        uploadTime: new Date(), // Prisma DateTime
+        uploadTime: new Date(),
         searchText,
+        // toc 是新字段，旧 bundle 缓存不认识它；用条件展开：null 时整个 key 不出现
+        ...(toc ? { toc: JSON.stringify(toc) } : {}),
         prefix: finalPrefix,
         suffix,
         fullNum,

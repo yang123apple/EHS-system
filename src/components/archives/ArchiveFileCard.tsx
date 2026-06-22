@@ -20,12 +20,13 @@ interface ArchiveFile {
 
 interface ArchiveFileCardProps {
     file: ArchiveFile;
+    canDownload?: boolean;
     onDelete?: (id: string) => void;
     onPreview?: (file: ArchiveFile) => void;
     onEdit?: (file: ArchiveFile) => void;
 }
 
-export default function ArchiveFileCard({ file, onDelete, onPreview, onEdit }: ArchiveFileCardProps) {
+export default function ArchiveFileCard({ file, canDownload, onDelete, onPreview, onEdit }: ArchiveFileCardProps) {
     const getFileIcon = () => {
         if (file.mimeType.includes('pdf')) return <FileText size={32} className="text-red-500" />;
         if (file.mimeType.includes('word')) return <FileText size={32} className="text-blue-500" />;
@@ -100,6 +101,7 @@ export default function ArchiveFileCard({ file, onDelete, onPreview, onEdit }: A
                 >
                     <Eye size={16} />
                 </button>
+                {canDownload && (
                 <button
                     onClick={handleDownload}
                     className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-green-600"
@@ -107,6 +109,7 @@ export default function ArchiveFileCard({ file, onDelete, onPreview, onEdit }: A
                 >
                     <Download size={16} />
                 </button>
+                )}
                 {onEdit && (
                     <button
                         onClick={() => onEdit(file)}

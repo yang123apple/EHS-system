@@ -27,23 +27,30 @@ export function adaptNextRequest(request?: NextRequest): Request | undefined {
  * @param request Request 对象（包括 NextRequest）
  * @returns IP 地址或 undefined
  */
+/**
+ * 规范化 IP 地址，去除 IPv6 映射 IPv4 前缀（如 ::ffff:1.2.3.4 → 1.2.3.4）
+ */
+function normalizeIP(ip: string): string {
+  return ip.replace(/^::ffff:/i, '').trim();
+}
+
 export function getClientIP(request?: Request): string | undefined {
   if (!request) return undefined;
 
   const headers = request.headers;
-  
+
   // 优先从 x-forwarded-for 获取（适用于代理/负载均衡场景）
   const forwardedFor = headers.get('x-forwarded-for');
   if (forwardedFor) {
-    return forwardedFor.split(',')[0].trim();
+    return normalizeIP(forwardedFor.split(',')[0].trim());
   }
-  
+
   // 其次从 x-real-ip 获取
   const realIP = headers.get('x-real-ip');
   if (realIP) {
-    return realIP;
+    return normalizeIP(realIP);
   }
-  
+
   return undefined;
 }
 

@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     // ── 4. 执行热更新（不杀进程、不删文件）────────────────────
     const revalidated: string[] = [];
     for (const tag of tags) {
-        revalidateTag(tag);
+        revalidateTag(tag, "max");
         revalidated.push(tag);
     }
 

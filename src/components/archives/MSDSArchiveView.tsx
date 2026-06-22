@@ -48,6 +48,7 @@ export default function MSDSArchiveView() {
                     PermissionManager.hasPermission(user, 'archives', 'access');
     const canUpload = PermissionManager.hasPermission(user, 'archives', 'msds_upload');
     const canDelete = PermissionManager.hasPermission(user, 'archives', 'msds_delete');
+    const canDownload = PermissionManager.hasPermission(user, 'archives', 'download');
 
     // ── 函数定义（在所有 Hook 调用之前）──
 
@@ -237,6 +238,7 @@ export default function MSDSArchiveView() {
                                 <ArchiveFileCard
                                     key={file.id}
                                     file={file}
+                                    canDownload={canDownload}
                                     onDelete={canDelete ? handleDelete : undefined}
                                     onPreview={handlePreview}
                                 />

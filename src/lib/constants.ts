@@ -92,6 +92,8 @@ export const SYSTEM_MODULES = [
       { key: 'msds_view', name: '查看MSDS库' },
       { key: 'msds_upload', name: 'MSDS上传文件' },
       { key: 'msds_delete', name: 'MSDS删除文件' },
+      // 通用权限
+      { key: 'download', name: '下载文件' },
     ]
   }
 ];

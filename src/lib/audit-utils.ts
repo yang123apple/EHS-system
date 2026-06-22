@@ -175,6 +175,13 @@ export function extractClientInfo(request?: Request): ClientInfo {
 }
 
 /**
+ * 规范化 IP 地址，去除 IPv6 映射 IPv4 前缀（如 ::ffff:1.2.3.4 → 1.2.3.4）
+ */
+function normalizeIP(ip: string): string {
+  return ip.replace(/^::ffff:/i, '').trim();
+}
+
+/**
  * 提取 IP 地址（支持代理）
  */
 function extractIPAddress(request: Request): string | undefined {
@@ -184,16 +191,14 @@ function extractIPAddress(request: Request): string | undefined {
   const forwardedFor = headers.get('x-forwarded-for');
   if (forwardedFor) {
     // x-forwarded-for 可能包含多个 IP，取第一个
-    return forwardedFor.split(',')[0].trim();
+    return normalizeIP(forwardedFor.split(',')[0].trim());
   }
 
   const realIP = headers.get('x-real-ip');
   if (realIP) {
-    return realIP;
+    return normalizeIP(realIP);
   }
 
-  // 从 request URL 获取（适用于某些环境）
-  // 注意：在 Next.js 中可能需要其他方式获取
   return undefined;
 }
 

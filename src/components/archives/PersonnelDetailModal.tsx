@@ -108,6 +108,7 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
     // 权限检查
     const canUpload = PermissionManager.hasPermission(user, 'archives', 'personnel_upload');
     const canDelete = PermissionManager.hasPermission(user, 'archives', 'personnel_delete');
+    const canDownload = PermissionManager.hasPermission(user, 'archives', 'download');
 
     // 自动计算下次体检日期
     // dayjs.utc() 直接解析 YYYY-MM-DD 为 UTC 00:00，避免本地时区偏移
@@ -580,6 +581,7 @@ export default function PersonnelDetailModal({ isOpen, onClose, personnelId }: P
                                     <ArchiveFileCard
                                         key={file.id}
                                         file={file}
+                                        canDownload={canDownload}
                                         onDelete={canDelete ? handleDelete : undefined}
                                         onPreview={handlePreview}
                                     />

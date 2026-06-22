@@ -566,6 +566,7 @@ model Document {
   uploadedAt   DateTime? // 上传时间
   version    String    @default("1.0") // 文档版本号
   searchText String?
+  toc        String?   // 文档目录结构 JSON 字符串 (SQLite 不支持 Json 类型，序列化存储 TocItem[])
 
   // 🟢 EHS Archive Fields
   archiveCategory String? // 'enterprise', 'equipment', 'personnel'
